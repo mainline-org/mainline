@@ -240,10 +240,7 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 			continue
 		}
 
-		via := note.Via
-		if via == "" {
-			via = "merge"
-		}
+		via := normaliseVia(note.Via)
 
 		for _, ref := range note.Intents {
 			if iv, exists := intentMap[ref.IntentID]; exists {
@@ -271,6 +268,23 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 				iv.StatusEvidence.RevertedMainCommit = entry.Hash
 			}
 		}
+	}
+}
+
+// normaliseVia collapses the on-disk via spelling into the two values the
+// view layer cares about: "merge" or "reconcile". rc4 introduced
+// reconcile_auto / reconcile_manual to let audit code distinguish how a
+// note was written; everything older (legacy "reconcile" and the early
+// ad-hoc "manual") still maps to "reconcile" so existing notes keep
+// rendering correctly.
+func normaliseVia(raw string) string {
+	switch raw {
+	case "", "merge":
+		return "merge"
+	case "reconcile", "reconcile_auto", "reconcile_manual", "manual":
+		return "reconcile"
+	default:
+		return raw
 	}
 }
 
