@@ -2,6 +2,9 @@ package engine
 
 import (
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	"mainline/internal/core"
 	"mainline/internal/domain"
@@ -16,17 +19,27 @@ type LogResult struct {
 }
 
 type LogIntentEntry struct {
-	IntentID string              `json:"intent_id"`
-	Status   domain.IntentStatus `json:"status"`
-	Title    string              `json:"title,omitempty"`
-	Goal     string              `json:"goal,omitempty"`
-	Thread   string              `json:"thread,omitempty"`
-	SealedAt string              `json:"sealed_at,omitempty"`
-	ActorID  string              `json:"actor_id,omitempty"`
+	IntentID   string              `json:"intent_id"`
+	Status     domain.IntentStatus `json:"status"`
+	Title      string              `json:"title,omitempty"`
+	Goal       string              `json:"goal,omitempty"`
+	Thread     string              `json:"thread,omitempty"`
+	SealedAt   string              `json:"sealed_at,omitempty"`
+	ActivityAt string              `json:"activity_at,omitempty"`
+	ActorID    string              `json:"actor_id,omitempty"`
 }
 
-func (s *Service) Log(limit int) (*LogResult, error) {
+func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 	if err := s.requireInit(); err != nil {
+		return nil, err
+	}
+
+	rawStatusFilter := ""
+	if len(statusFilter) > 0 {
+		rawStatusFilter = statusFilter[0]
+	}
+	filter, err := normalizeLogStatusFilter(rawStatusFilter)
+	if err != nil {
 		return nil, err
 	}
 
@@ -39,23 +52,28 @@ func (s *Service) Log(limit int) (*LogResult, error) {
 	}
 
 	result := &LogResult{}
+	seenIntentIDs := make(map[string]bool)
 
 	// Collect from mainline view
 	view, _ := s.Store.ReadMainlineView()
 	if view != nil {
 		for _, iv := range view.Intents {
+			seenIntentIDs[iv.IntentID] = true
 			entry := LogIntentEntry{
-				IntentID: iv.IntentID,
-				Status:   iv.Status,
-				Goal:     iv.Goal,
-				Thread:   iv.Thread,
-				SealedAt: iv.SealedAt,
-				ActorID:  iv.ActorID,
+				IntentID:   iv.IntentID,
+				Status:     iv.Status,
+				Goal:       iv.Goal,
+				Thread:     iv.Thread,
+				SealedAt:   iv.SealedAt,
+				ActivityAt: s.intentViewActivityAt(iv),
+				ActorID:    iv.ActorID,
 			}
 			if iv.Summary != nil {
 				entry.Title = iv.Summary.Title
 			}
-			result.Intents = append(result.Intents, entry)
+			if logStatusMatches(entry.Status, filter) {
+				result.Intents = append(result.Intents, entry)
+			}
 		}
 	}
 
@@ -66,23 +84,36 @@ func (s *Service) Log(limit int) (*LogResult, error) {
 		if d == nil {
 			continue
 		}
-		// Skip if already in view
-		found := false
-		for _, entry := range result.Intents {
-			if entry.IntentID == id {
-				found = true
-				break
+		if !seenIntentIDs[id] {
+			entry := LogIntentEntry{
+				IntentID:   d.IntentID,
+				Status:     d.Status,
+				Goal:       d.Goal,
+				Thread:     d.Thread,
+				ActivityAt: draftActivityAt(d),
+			}
+			if logStatusMatches(entry.Status, filter) {
+				result.Intents = append(result.Intents, entry)
 			}
 		}
-		if !found {
-			result.Intents = append(result.Intents, LogIntentEntry{
-				IntentID: d.IntentID,
-				Status:   d.Status,
-				Goal:     d.Goal,
-				Thread:   d.Thread,
-			})
-		}
 	}
+
+	sort.SliceStable(result.Intents, func(i, j int) bool {
+		left := result.Intents[i]
+		right := result.Intents[j]
+		leftTime, leftOK := parseLogActivityTime(left.ActivityAt)
+		rightTime, rightOK := parseLogActivityTime(right.ActivityAt)
+		if leftOK != rightOK {
+			return leftOK
+		}
+		if leftOK && !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
+		}
+		if left.ActivityAt != right.ActivityAt {
+			return left.ActivityAt > right.ActivityAt
+		}
+		return left.IntentID < right.IntentID
+	})
 
 	if len(result.Intents) > limit {
 		result.Intents = result.Intents[:limit]
@@ -91,16 +122,79 @@ func (s *Service) Log(limit int) (*LogResult, error) {
 	return result, nil
 }
 
+func normalizeLogStatusFilter(status string) (domain.IntentStatus, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" || status == "all" {
+		return "", nil
+	}
+	switch domain.IntentStatus(status) {
+	case domain.StatusDrafting,
+		domain.StatusSealedLocal,
+		domain.StatusProposed,
+		domain.StatusMerged,
+		domain.StatusAbandoned,
+		domain.StatusSuperseded,
+		domain.StatusReverted:
+		return domain.IntentStatus(status), nil
+	default:
+		return "", domain.NewError(domain.ErrInvalidInput,
+			fmt.Sprintf("invalid status %q", status))
+	}
+}
+
+func logStatusMatches(status domain.IntentStatus, filter domain.IntentStatus) bool {
+	return filter == "" || status == filter
+}
+
+func (s *Service) intentViewActivityAt(iv domain.IntentView) string {
+	switch iv.Status {
+	case domain.StatusMerged:
+		if iv.StatusEvidence.MergedMainCommit != "" {
+			if date, err := s.Git.CommitDate(iv.StatusEvidence.MergedMainCommit); err == nil {
+				return date
+			}
+		}
+	case domain.StatusReverted:
+		if iv.StatusEvidence.RevertedMainCommit != "" {
+			if date, err := s.Git.CommitDate(iv.StatusEvidence.RevertedMainCommit); err == nil {
+				return date
+			}
+		}
+	}
+	if iv.SealedAt != "" {
+		return iv.SealedAt
+	}
+	return iv.ViewRebuiltAt
+}
+
+func draftActivityAt(d *domain.DraftIntent) string {
+	if d.LastModifiedAt != "" {
+		return d.LastModifiedAt
+	}
+	return d.CreatedAt
+}
+
+func parseLogActivityTime(value string) (time.Time, bool) {
+	if value == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
 // -----------------------------------------------------------
 // Context
 // -----------------------------------------------------------
 
 type ContextResult struct {
-	RepoRoot    string              `json:"repo_root"`
-	Branch      string              `json:"branch"`
-	MainBranch  string              `json:"main_branch"`
-	ActorID     string              `json:"actor_id"`
-	ActiveIntent *ContextIntent     `json:"active_intent,omitempty"`
+	RepoRoot        string          `json:"repo_root"`
+	Branch          string          `json:"branch"`
+	MainBranch      string          `json:"main_branch"`
+	ActorID         string          `json:"actor_id"`
+	ActiveIntent    *ContextIntent  `json:"active_intent,omitempty"`
 	ProposedIntents []ContextIntent `json:"proposed_intents"`
 	MergedRecent    []ContextIntent `json:"merged_recent"`
 }
