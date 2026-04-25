@@ -1,0 +1,19 @@
+# 2026/04/25 22:56:44.589744 [TestPropertySyncIdempotent] [rapid] draw nMerged: 1
+# 2026/04/25 22:56:44.589748 [TestPropertySyncIdempotent] [rapid] draw nProposed: 2
+# 2026/04/25 22:56:44.589750 [TestPropertySyncIdempotent] [rapid] draw nResyncs: 4
+# 2026/04/25 22:56:45.347109 [TestPropertySyncIdempotent] git [checkout main]: error: Your local changes to the following files would be overwritten by checkout:
+# 	.ml-cache/drafts/int_6f83e097.json
+# Please commit your changes or stash them before you switch branches.
+# Aborting
+#  exit status 1
+# 
+v0.4.8#11260451323963719042
+0xa90db3aae1010
+0x4088754a89a6
+0x1
+0x7a168ab973e19
+0x1e85cf0fe97bca
+0x2
+0x1be40af8bcadbf
+0xc9124abc76c61
+0x2

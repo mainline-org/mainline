@@ -4,13 +4,18 @@
 build:
 	go build -o mainline .
 
-# Run all tests with race detection
+# Run all tests with race detection. -short keeps the rapid PBTs at 20
+# samples per property; CI uses the full 100 via the `ci` target.
 test:
-	go test -race -count=1 ./...
+	go test -race -count=1 -short ./...
 
 # Run tests verbose
 test-verbose:
-	go test -v -race -count=1 ./...
+	go test -v -race -count=1 -short ./...
+
+# Run tests with full rapid PBT coverage (100 samples per property).
+test-pbt:
+	go test -race -count=1 ./...
 
 # Run benchmarks
 bench:
@@ -42,5 +47,5 @@ self-test: test build bootstrap
 	./mainline append "Core domain types, engine, CLI, tests"
 	@echo "Self-test complete. Intent started for self-management."
 
-# Full CI pipeline
-ci: lint test bench build
+# Full CI pipeline (full rapid PBT coverage)
+ci: lint test-pbt bench build

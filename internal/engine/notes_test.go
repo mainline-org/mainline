@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
+	"mainline/internal/core"
 	"mainline/internal/domain"
 )
 
@@ -296,15 +297,29 @@ func TestPropertyCommitNoteRoundtrip(t *testing.T) {
 	}
 }
 
-// Property: all note fields survive canonical JSON
+// Property: CanonicalHash of a CommitNote is deterministic and key-order
+// independent. Mutating any field must change the hash.
 func TestPropertyCommitNoteCanonicalHash(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		note := randomCommitNote()
-		// Hash should be deterministic
-		data1, _ := json.Marshal(note)
-		data2, _ := json.Marshal(note)
-		if string(data1) != string(data2) {
-			t.Error("same note should produce same JSON")
+		h1, err := core.CanonicalHash(note)
+		if err != nil {
+			t.Fatalf("hash: %v", err)
+		}
+		h2, err := core.CanonicalHash(note)
+		if err != nil {
+			t.Fatalf("hash: %v", err)
+		}
+		if h1 != h2 {
+			t.Errorf("CanonicalHash not deterministic: %s vs %s", h1, h2)
+		}
+
+		// Mutating a field must change the hash.
+		mutated := note
+		mutated.Via = mutated.Via + "_mutated"
+		h3, _ := core.CanonicalHash(mutated)
+		if h3 == h1 {
+			t.Error("mutating .Via must change CanonicalHash")
 		}
 	}
 }

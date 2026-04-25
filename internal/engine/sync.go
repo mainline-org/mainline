@@ -179,6 +179,13 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, intentMap map[string]*do
 		return
 	}
 
+	// LogOneline returns newest-first; replay chronologically so a later
+	// revert commit can correctly overwrite the earlier merge state for the
+	// same intent.
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+
 	for _, entry := range entries {
 		noteContent, err := s.Git.NotesShow(entry.Hash)
 		if err != nil || noteContent == "" {

@@ -518,10 +518,9 @@ func TestPropertyTurnIndexSequential(t *testing.T) {
 	}
 }
 
-// Property: abandoning a sealed intent returns correct error
-func TestPropertyCannotAbandonMerged(t *testing.T) {
-	// Terminal states should not allow further transitions
-	// Tested at core level; this verifies engine enforces it
+// Sealed-local intents may still be abandoned per the state machine
+// (sealed_local → abandoned is a valid transition).
+func TestSealedLocalCanBeAbandoned(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 
@@ -529,16 +528,42 @@ func TestPropertyCannotAbandonMerged(t *testing.T) {
 	svc.Init("agent")
 	start, _ := svc.Start("goal", "")
 
-	// Seal the intent
 	sr := validSealResult(start.IntentID)
 	data, _ := json.Marshal(sr)
 	svc.SealSubmit(json.RawMessage(data))
 
-	// Abandoning a sealed_local intent should fail (sealed_local → abandoned is valid)
-	err := svc.Abandon(start.IntentID, "reason")
-	// sealed_local → abandoned IS valid, so this should succeed
-	if err != nil {
+	if err := svc.Abandon(start.IntentID, "reason"); err != nil {
 		t.Errorf("sealed_local → abandoned should be valid: %v", err)
+	}
+}
+
+// Merged intents must not be abandoned: the only legal transition out of
+// merged is → reverted.
+func TestPropertyCannotAbandonMerged(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	gitCmd(t, dir, "checkout", "-b", "feature/no-abandon-merged")
+	start, _ := svc.Start("merged then abandon", "")
+	writeFile(t, dir, "x.go", "package main\n")
+	gitCmd(t, dir, "add", "x.go")
+	gitCmd(t, dir, "commit", "-m", "x")
+	svc.Append("work")
+
+	sr := validSealResult(start.IntentID)
+	data, _ := json.Marshal(sr)
+	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if _, err := svc.Merge(start.IntentID); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	if err := svc.Abandon(start.IntentID, "should fail"); err == nil {
+		t.Error("merged → abandoned must be rejected")
 	}
 }
 
@@ -546,7 +571,7 @@ func TestPropertyCannotAbandonMerged(t *testing.T) {
 // Helpers
 // -----------------------------------------------------------
 
-func gitCmd(t *testing.T, dir string, args ...string) {
+func gitCmd(t helperTB, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -555,7 +580,7 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func writeFile(t *testing.T, dir, name, content string) {
+func writeFile(t helperTB, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, name)
 	os.MkdirAll(filepath.Dir(path), 0o755)
