@@ -70,9 +70,26 @@ type CommitNote struct {
 	Reverts       []string          `json:"reverts,omitempty"`
 	AddedAt       string            `json:"added_at"`
 	AddedBy       string            `json:"added_by"`
-	Via           string            `json:"via,omitempty"` // "merge" | "reconcile" | "manual"
-	ReconciledAt  string            `json:"reconciled_at,omitempty"`
-	ReconciledBy  string            `json:"reconciled_by,omitempty"`
+	// Via records how the note came to exist:
+	//   "merge"             — written by Service.Merge.
+	//   "reconcile_auto"    — written by Service.Reconcile after a
+	//                         high-confidence automatic match.
+	//   "reconcile_manual"  — written by Service.ReconcileManual on an
+	//                         explicit (intent, commit) pairing.
+	//   "reconcile"         — legacy single-bucket value still emitted by
+	//                         older versions and treated as a synonym for
+	//                         "reconcile_auto" by current readers.
+	//   "manual"            — pre-rc4 ad-hoc value, treated like "reconcile_manual".
+	Via string `json:"via,omitempty"`
+	// MatchStrategy records which automated rule connected the intent to
+	// this commit (only set when Via is reconcile_auto). Values:
+	//   "tree_hash"   — commit tree equals intent.code_commit's tree.
+	//   "commit_hash" — commit hash equals intent.code_commit.
+	//   "goal_text"   — commit message contains intent.goal verbatim.
+	//   "manual"      — operator pinned the link via ReconcileManual.
+	MatchStrategy string `json:"match_strategy,omitempty"`
+	ReconciledAt  string `json:"reconciled_at,omitempty"`
+	ReconciledBy  string `json:"reconciled_by,omitempty"`
 }
 
 type IntentReference struct {
