@@ -33,6 +33,38 @@ func gitRunIn(t *testing.T, dir string, args ...string) (string, error) {
 	return svc.Git.Run(args...)
 }
 
+// seedMergedIntent creates a feature branch, runs the full
+// start→commit→append→seal→merge cycle and returns (intent ID, merge
+// commit hash). Lives here (rather than property_test.go) so non-PBT
+// builds with -tags quick still see it.
+func seedMergedIntent(t helperTB, dir string, svc *Service, branchSuffix, fileName string) (intentID, mergeCommit string) {
+	t.Helper()
+	branch := "feature/" + branchSuffix
+	gitCmd(t, dir, "checkout", "main")
+	gitCmd(t, dir, "checkout", "-b", branch)
+	start, err := svc.Start("seed "+branchSuffix, "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	writeFile(t, dir, fileName, "package main\n")
+	gitCmd(t, dir, "add", fileName)
+	gitCmd(t, dir, "commit", "-m", "seed "+branchSuffix)
+	if _, err := svc.Append("seed work"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	sr := validSealResult(start.IntentID)
+	data, _ := json.Marshal(sr)
+	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	mr, err := svc.Merge(start.IntentID)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	return start.IntentID, mr.MergeCommit
+}
+
 // seedSealedIntent walks the agent flow up to seal but stops before any
 // merge so the test can drive the reconcile path against the fresh
 // proposed intent. Returns intent ID + the feature branch tip commit.
