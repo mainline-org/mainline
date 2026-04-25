@@ -7,6 +7,7 @@ import (
 
 	"mainline/internal/core"
 	"mainline/internal/domain"
+	"mainline/internal/gitops"
 )
 
 // -----------------------------------------------------------
@@ -221,11 +222,34 @@ func (s *Service) gitRun(args ...string) (string, error) {
 // Reconcile
 // -----------------------------------------------------------
 
-type ReconcileResult struct {
-	Reconciled int      `json:"reconciled"`
-	IntentIDs  []string `json:"intent_ids"`
+// ReconciledLink records one (intent, commit, strategy) triple produced by
+// Reconcile. Strategy is the rule that won (see CommitNote.MatchStrategy).
+type ReconciledLink struct {
+	IntentID      string `json:"intent_id"`
+	Commit        string `json:"commit"`
+	MatchStrategy string `json:"match_strategy"`
 }
 
+type ReconcileResult struct {
+	Reconciled int              `json:"reconciled"`
+	IntentIDs  []string         `json:"intent_ids"`
+	Links      []ReconciledLink `json:"links,omitempty"`
+}
+
+// matchStrategy is the priority-ordered list of rules tried by Reconcile.
+// tree_hash is first because squash merge preserves the tree exactly, and
+// it is what GitHub's web UI does by default — the case Reconcile must
+// handle to be useful in practice.
+var reconcileStrategies = []string{"tree_hash", "commit_hash", "goal_text"}
+
+// Reconcile scans every proposed intent in the materialised view and tries
+// to associate it with a main-branch commit using a cascade of rules
+// (tree_hash → commit_hash → goal_text). The first matching commit wins.
+//
+// Unlike pre-rc4 builds, Reconcile is no longer restricted to intents
+// owned by the calling actor: notes live on shared main commits and any
+// teammate may attach one. The note's added_by field still records who
+// performed the reconciliation so the audit trail is preserved.
 func (s *Service) Reconcile() (*ReconcileResult, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
@@ -237,77 +261,220 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 		return nil, err
 	}
 
-	// rc3: reconcile writes git notes to commits (not actor log events)
-	// Find proposed intents that appear to be merged but lack notes
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
 		return &ReconcileResult{}, nil
 	}
 
-	var reconciled []string
 	entries, _ := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
 
+	// Cache main-commit tree hashes so a sweep over N intents and M commits
+	// only does M tree lookups, not N*M.
+	treeOf := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		t, err := s.Git.CommitTreeHash(entry.Hash)
+		if err == nil {
+			treeOf[entry.Hash] = t
+		}
+	}
+
+	result := &ReconcileResult{}
 	for _, iv := range view.Intents {
 		if iv.Status != domain.StatusProposed {
 			continue
 		}
-		if iv.ActorID != identity.ActorID {
+
+		match, strategy := s.findReconcileMatch(iv, entries, treeOf)
+		if match == "" {
 			continue
 		}
 
-		// Try to find a commit on main that matches this intent's code
-		for _, entry := range entries {
-			// Check if commit already has a note for this intent
-			noteContent, _ := s.Git.NotesShow(entry.Hash)
-			if noteContent != "" {
-				var existing domain.CommitNote
-				if json.Unmarshal([]byte(noteContent), &existing) == nil {
-					for _, ref := range existing.Intents {
-						if ref.IntentID == iv.IntentID {
-							goto nextIntent // already noted
-						}
-					}
-				}
-			}
-
-			// Heuristic: check if the commit message contains the intent goal
-			msg, _ := s.Git.FullCommitMessage(entry.Hash)
-			if !strings.Contains(msg, iv.Goal) && iv.CodeCommit != entry.Hash {
-				continue
-			}
-
-			// Write reconcile note
-			hash, _ := core.CanonicalHash(iv)
-			note := domain.CommitNote{
-				SchemaVersion: 1,
-				Kind:          "mainline.commit_note",
-				Intents: []domain.IntentReference{
-					{IntentID: iv.IntentID, SealResultHash: "sha256:" + hash},
-				},
-				AddedAt:      core.Now(),
-				AddedBy:      identity.ActorID,
-				Via:          "reconcile",
-				ReconciledAt: core.Now(),
-				ReconciledBy: identity.ActorID,
-			}
-			noteJSON, _ := json.Marshal(note)
-			if err := s.Git.NotesAdd(entry.Hash, string(noteJSON)); err == nil {
-				reconciled = append(reconciled, iv.IntentID)
-			}
-			break
+		if alreadyHasIntent(s.Git, match, iv.IntentID) {
+			continue
 		}
-	nextIntent:
-	}
 
-	// Push notes
-	if len(reconciled) > 0 && s.Git.HasRemote("origin") {
+		hash, _ := core.CanonicalHash(iv)
+		note := domain.CommitNote{
+			SchemaVersion: 1,
+			Kind:          "mainline.commit_note",
+			Intents: []domain.IntentReference{
+				{IntentID: iv.IntentID, SealResultHash: "sha256:" + hash},
+			},
+			AddedAt:       core.Now(),
+			AddedBy:       identity.ActorID,
+			Via:           "reconcile_auto",
+			MatchStrategy: strategy,
+			ReconciledAt:  core.Now(),
+			ReconciledBy:  identity.ActorID,
+		}
+		noteJSON, _ := json.Marshal(note)
+		if err := s.Git.NotesAdd(match, string(noteJSON)); err != nil {
+			continue
+		}
+		result.IntentIDs = append(result.IntentIDs, iv.IntentID)
+		result.Links = append(result.Links, ReconciledLink{
+			IntentID:      iv.IntentID,
+			Commit:        match,
+			MatchStrategy: strategy,
+		})
+	}
+	result.Reconciled = len(result.IntentIDs)
+
+	if result.Reconciled > 0 && s.Git.HasRemote("origin") {
 		s.Git.Push("origin", "refs/notes/mainline/intents")
 	}
 
-	return &ReconcileResult{
-		Reconciled: len(reconciled),
-		IntentIDs:  reconciled,
+	return result, nil
+}
+
+// ReconcileManual writes a reconcile_manual note pinning intentID to
+// commitHash without consulting the heuristic cascade. It is the escape
+// hatch when the automatic match cannot reach the right commit (e.g. a
+// rebase scrambled the tree, or the agent never recorded code_commit).
+//
+// The intent must currently be in the proposed state and the commit must
+// exist; the note's added_by records the calling actor regardless of who
+// owns the intent.
+func (s *Service) ReconcileManual(intentID, commitHash string) (*ReconciledLink, error) {
+	if err := s.requireInit(); err != nil {
+		return nil, err
+	}
+	if intentID == "" || commitHash == "" {
+		return nil, domain.NewError(domain.ErrInvalidInput,
+			"reconcile manual requires both intent and commit")
+	}
+
+	identity, err := s.getIdentity()
+	if err != nil {
+		return nil, err
+	}
+
+	resolved, err := s.Git.Run("rev-parse", "--verify", commitHash+"^{commit}")
+	if err != nil {
+		return nil, domain.NewError(domain.ErrInvalidInput,
+			fmt.Sprintf("commit %q not found: %v", commitHash, err))
+	}
+	resolved = strings.TrimSpace(resolved)
+
+	view, _ := s.Store.ReadMainlineView()
+	var iv *domain.IntentView
+	if view != nil {
+		for i := range view.Intents {
+			if view.Intents[i].IntentID == intentID {
+				iv = &view.Intents[i]
+				break
+			}
+		}
+	}
+	if iv == nil {
+		return nil, domain.NewError(domain.ErrNoActiveIntent,
+			fmt.Sprintf("intent %s not found in view; run mainline sync first", intentID))
+	}
+	if iv.Status != domain.StatusProposed {
+		return nil, domain.NewError(domain.ErrInvalidStatus,
+			fmt.Sprintf("intent %s is in status %s; only proposed intents can be reconciled",
+				intentID, iv.Status))
+	}
+
+	if alreadyHasIntent(s.Git, resolved, intentID) {
+		return &ReconciledLink{
+			IntentID:      intentID,
+			Commit:        resolved,
+			MatchStrategy: "manual",
+		}, nil
+	}
+
+	hash, _ := core.CanonicalHash(iv)
+	note := domain.CommitNote{
+		SchemaVersion: 1,
+		Kind:          "mainline.commit_note",
+		Intents: []domain.IntentReference{
+			{IntentID: intentID, SealResultHash: "sha256:" + hash},
+		},
+		AddedAt:       core.Now(),
+		AddedBy:       identity.ActorID,
+		Via:           "reconcile_manual",
+		MatchStrategy: "manual",
+		ReconciledAt:  core.Now(),
+		ReconciledBy:  identity.ActorID,
+	}
+	noteJSON, _ := json.Marshal(note)
+	if err := s.Git.NotesAdd(resolved, string(noteJSON)); err != nil {
+		return nil, fmt.Errorf("write note: %w", err)
+	}
+	if s.Git.HasRemote("origin") {
+		s.Git.Push("origin", "refs/notes/mainline/intents")
+	}
+
+	return &ReconciledLink{
+		IntentID:      intentID,
+		Commit:        resolved,
+		MatchStrategy: "manual",
 	}, nil
+}
+
+// findReconcileMatch walks reconcileStrategies in order and returns the
+// first matching commit hash plus the strategy name that won. Returns
+// ("", "") when no strategy matches any candidate commit.
+func (s *Service) findReconcileMatch(iv domain.IntentView, entries []gitops.LogEntry, treeOf map[string]string) (string, string) {
+	for _, strategy := range reconcileStrategies {
+		switch strategy {
+		case "tree_hash":
+			if iv.CodeCommit == "" {
+				continue
+			}
+			intentTree, err := s.Git.CommitTreeHash(iv.CodeCommit)
+			if err != nil || intentTree == "" {
+				continue
+			}
+			for _, entry := range entries {
+				if treeOf[entry.Hash] == intentTree {
+					return entry.Hash, strategy
+				}
+			}
+		case "commit_hash":
+			if iv.CodeCommit == "" {
+				continue
+			}
+			for _, entry := range entries {
+				if entry.Hash == iv.CodeCommit {
+					return entry.Hash, strategy
+				}
+			}
+		case "goal_text":
+			if iv.Goal == "" {
+				continue
+			}
+			for _, entry := range entries {
+				msg, _ := s.Git.FullCommitMessage(entry.Hash)
+				if strings.Contains(msg, iv.Goal) {
+					return entry.Hash, strategy
+				}
+			}
+		}
+	}
+	return "", ""
+}
+
+// alreadyHasIntent returns true if the existing note on commit already
+// references intentID — Reconcile must not double-stamp the same intent on
+// the same commit (otherwise NotesAdd's `-f` would overwrite an unrelated
+// intent that happened to share the commit).
+func alreadyHasIntent(git *gitops.Git, commit, intentID string) bool {
+	noteContent, _ := git.NotesShow(commit)
+	if noteContent == "" {
+		return false
+	}
+	var existing domain.CommitNote
+	if err := json.Unmarshal([]byte(noteContent), &existing); err != nil {
+		return false
+	}
+	for _, ref := range existing.Intents {
+		if ref.IntentID == intentID {
+			return true
+		}
+	}
+	return false
 }
 
 // -----------------------------------------------------------
