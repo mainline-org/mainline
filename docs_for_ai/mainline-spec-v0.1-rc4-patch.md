@@ -230,6 +230,50 @@ make quick-test          # 全套单元测试 + reconcile 新增测试通过
 
 ---
 
-**文档版本**：v0.1-rc4 patch
+---
+
+## Patch 6 (rc4 增补)：Phase1 threshold 默认值 0.15 → 0.10
+
+Dogfood 在 PR #6/#8 合并后跑 `mainline check --prepare`，发现：
+
+- `int_60ba4f57` (CommitNote upsert) vs `int_895e342e` (reconcile usability fix) 真实 overlap = **0.146**，差 0.004 没过 0.15 阈值。
+- 两者都改 `engine/merge.go`、同 `engine` subsystem、同共享 `rc4` / `bugfix` tag —— 这是 phase1 的明显应当抓但放过的 case。
+- 当时没发现是因为 `internal/engine/check.go` 的 `FingerprintOverlap` 缺 PBT 覆盖；spec 里 `fingerprint_threshold = 0.30` 的标注本来就附带"收集 ≥50 真实冲突 case 后 grid search"的承诺，那批数据从未存在。
+
+**改动**：
+
+```diff
+ [check]
+-phase1_threshold = 0.15
++phase1_threshold = 0.10
+```
+
+同步落到 `internal/domain/config.go` 的 `DefaultTeamConfig()` 和这个 repo 的 `.mainline/config.toml`。
+
+**理由**：
+
+- Phase1 是粗筛，phase2 agent judgment 才是最终判断。漏掉一个 conflict 比误送一个 judgment task 严重得多。
+- Phase1 false positive 的代价是 phase2 多跑一次 agent judgment（agent 通常会判出 "no conflict"，几秒成本）；false negative 的代价是冲突直接合到 main，需要后续修复。
+- 0.10 在 dogfood 数据上命中目标 case (0.146) 且只额外收一个 false positive (0.112)。
+
+**测试覆盖**（一并补上的 PBT —— `internal/engine/check_property_test.go`）：
+
+- `TestPropertyFingerprintOverlapSymmetricRapid` — `overlap(a, b) == overlap(b, a)`
+- `TestPropertyFingerprintOverlapBoundedRapid` — `overlap ∈ [0, 1]`
+- `TestPropertyFingerprintOverlapSelfDominates` — `overlap(a, a) ≥ overlap(a, b)`
+- `TestPropertyFingerprintOverlapMonotonicAddingShared` — 添加共享元素到任一维度，分数不降
+- `TestPropertyFingerprintOverlapEmptyIsZero` — 任一空 fingerprint → 0
+- `TestPropertyCheckPrepareCountsEveryEligibleIntent` — `suspicious + below_threshold == eligible`
+- `TestPropertyCheckPrepareThresholdEdges` — threshold=0 全标 suspicious；threshold>1 一个都不标
+- `TestPropertyCheckPrepareTasksSortedByOverlap` — judgment task 按 overlap 降序
+
+**Follow-up**（仍未做）：
+
+- 真实 50+ 真实冲突 case 数据采集 + grid search 校准。0.10 是 dogfood-driven 的 9-case sample 选定，远不足以确定最优值。
+- 给 `FingerprintOverlap` 重新设计权重：当前 weighted-jaccard 在多维度上稀释，单维度高分被冲掉（这是为什么 0.146 才是上限）。可以考虑 `max(weighted_jaccard, score_of_single_dim_above_strong_threshold)` 之类的复合规则。
+
+---
+
+**文档版本**：v0.1-rc4 patch (含 Patch 6 增补)
 **应用对象**：v0.1-rc3 spec
 **状态**：实现完成，待合并到 main

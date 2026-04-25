@@ -71,9 +71,18 @@ func DefaultTeamConfig() TeamConfig {
 			Interval: "30s",
 		},
 		Check: CheckSection{
-			AutoCheck:          true,
-			Lookback:           50,
-			Phase1Threshold:    0.15,
+			AutoCheck: true,
+			Lookback:  50,
+			// Phase1Threshold lowered from 0.15 to 0.10 in rc4 dogfood:
+			// real cross-PR pairs that should have triggered judgment
+			// (same subsystem, overlapping files) scored ~0.146 under
+			// the weighted-jaccard formula, narrowly missing 0.15. The
+			// spec explicitly flags this value as "calibrate after 50+
+			// real conflict cases via grid search"; until that data
+			// exists, prefer false positives (extra phase2 judgment
+			// tasks for the agent) over false negatives (missed
+			// conflicts). See docs_for_ai/mainline-spec-v0.1-rc4-patch.md.
+			Phase1Threshold:    0.10,
 			RequireBeforeMerge: false,
 		},
 		Publish: PublishSection{
