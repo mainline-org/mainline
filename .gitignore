@@ -1,4 +1,5 @@
 .ml-cache/
+.mainline/local.toml
 ./mainline
 mainline
 .claude/
