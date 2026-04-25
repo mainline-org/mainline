@@ -67,36 +67,8 @@ func viewSignature(v *domain.MainlineView) string {
 	return h
 }
 
-// seedMergedIntent creates a feature branch, runs the full
-// start→commit→append→seal→merge cycle and returns the merge commit hash.
-// It exists so several PBTs can build a non-trivial mainline state cheaply.
-func seedMergedIntent(t helperTB, dir string, svc *Service, branchSuffix, fileName string) (intentID, mergeCommit string) {
-	t.Helper()
-	branch := "feature/" + branchSuffix
-	gitCmd(t, dir, "checkout", "main")
-	gitCmd(t, dir, "checkout", "-b", branch)
-	start, err := svc.Start("seed "+branchSuffix, "")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	writeFile(t, dir, fileName, "package main\n")
-	gitCmd(t, dir, "add", fileName)
-	gitCmd(t, dir, "commit", "-m", "seed "+branchSuffix)
-	if _, err := svc.Append("seed work"); err != nil {
-		t.Fatalf("append: %v", err)
-	}
-
-	sr := validSealResult(start.IntentID)
-	data, _ := json.Marshal(sr)
-	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
-		t.Fatalf("seal: %v", err)
-	}
-	mr, err := svc.Merge(start.IntentID)
-	if err != nil {
-		t.Fatalf("merge: %v", err)
-	}
-	return start.IntentID, mr.MergeCommit
-}
+// seedMergedIntent moved to reconcile_test.go so it is reachable from
+// non-PBT (-tags quick) builds too.
 
 // -----------------------------------------------------------
 // Sync idempotency

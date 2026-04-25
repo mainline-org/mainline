@@ -157,8 +157,7 @@ func (s *Service) Merge(intentID string) (*MergeResult, error) {
 		AddedBy: identity.ActorID,
 		Via:     "merge",
 	}
-	noteJSON, _ := json.Marshal(note)
-	if err := s.Git.NotesAdd(mergeCommit, string(noteJSON)); err != nil {
+	if err := upsertCommitNote(s.Git, mergeCommit, note); err != nil {
 		// Non-fatal: note write failure doesn't block merge
 	}
 
@@ -320,8 +319,7 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 			ReconciledAt:  core.Now(),
 			ReconciledBy:  identity.ActorID,
 		}
-		noteJSON, _ := json.Marshal(note)
-		if err := s.Git.NotesAdd(match, string(noteJSON)); err != nil {
+		if err := upsertCommitNote(s.Git, match, note); err != nil {
 			continue
 		}
 		result.IntentIDs = append(result.IntentIDs, iv.IntentID)
@@ -411,8 +409,7 @@ func (s *Service) ReconcileManual(intentID, commitHash string) (*ReconciledLink,
 		ReconciledAt:  core.Now(),
 		ReconciledBy:  identity.ActorID,
 	}
-	noteJSON, _ := json.Marshal(note)
-	if err := s.Git.NotesAdd(resolved, string(noteJSON)); err != nil {
+	if err := upsertCommitNote(s.Git, resolved, note); err != nil {
 		return nil, fmt.Errorf("write note: %w", err)
 	}
 	if s.Git.HasRemote("origin") {
