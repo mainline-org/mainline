@@ -29,6 +29,13 @@ type LogIntentEntry struct {
 	Author     string              `json:"author,omitempty"`
 	ActorID    string              `json:"actor_id,omitempty"`
 	ActorName  string              `json:"actor_name,omitempty"`
+	// Check is a one-character marker for the intent's most recent
+	// phase2 check verdict, suitable for inline log rendering:
+	//   ""  no check yet
+	//   "ok" no_conflict, no human review needed
+	//   "!"  has_conflict
+	//   "?"  needs_human_review
+	Check string `json:"check,omitempty"`
 }
 
 func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
@@ -71,6 +78,7 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 				Author:     authorName(iv.ActorName, iv.ActorID),
 				ActorID:    iv.ActorID,
 				ActorName:  iv.ActorName,
+				Check:      checkMarker(iv.LastCheck),
 			}
 			if iv.Summary != nil {
 				entry.Title = iv.Summary.Title
@@ -162,6 +170,21 @@ func normalizeLogStatusFilter(status string) (domain.IntentStatus, error) {
 
 func logStatusMatches(status domain.IntentStatus, filter domain.IntentStatus) bool {
 	return filter == "" || status == filter
+}
+
+// checkMarker turns a CheckSummary into a one-token marker for inline
+// log rendering. The empty string means no check has been recorded.
+func checkMarker(lc *domain.CheckSummary) string {
+	if lc == nil {
+		return ""
+	}
+	if lc.NeedsHumanReview {
+		return "?"
+	}
+	if lc.HasConflict {
+		return "!"
+	}
+	return "ok"
 }
 
 func (s *Service) intentViewActivityAt(iv domain.IntentView) string {

@@ -50,7 +50,27 @@ type IntentView struct {
 	Summary     *IntentSummary       `json:"summary,omitempty"`
 	Fingerprint *SemanticFingerprint `json:"fingerprint,omitempty"`
 
+	// LastCheck summarises the most recent CheckJudgmentEvent whose
+	// candidate_intent equals this IntentID. Nil means no agent has run
+	// `mainline check --submit` against this intent yet (or the event
+	// log was lost). Replaces the silent black-hole behaviour where
+	// CheckSubmit wrote an event no command could read back.
+	LastCheck *CheckSummary `json:"last_check,omitempty"`
+
 	ViewRebuiltAt string `json:"view_rebuilt_at"`
+}
+
+// CheckSummary is the per-intent rollup of the latest phase2 judgment
+// stored in IntentView.LastCheck.
+type CheckSummary struct {
+	EventID          string   `json:"event_id"`
+	AtTime           string   `json:"at"`
+	ByActor          string   `json:"by"`
+	JudgmentCount    int      `json:"judgment_count"`
+	HasConflict      bool     `json:"has_conflict"`
+	HighestSeverity  string   `json:"highest_severity"`
+	NeedsHumanReview bool     `json:"needs_human_review"`
+	AgainstIntents   []string `json:"against_intents,omitempty"`
 }
 
 type StatusEvidence struct {
