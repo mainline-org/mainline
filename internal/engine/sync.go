@@ -13,11 +13,11 @@ import (
 // -----------------------------------------------------------
 
 type SyncResult struct {
-	Fetched        bool   `json:"fetched"`
-	ViewRebuilt    bool   `json:"view_rebuilt"`
-	IntentsInView  int    `json:"intents_in_view"`
-	ProposedCount  int    `json:"proposed_count"`
-	MainHead       string `json:"main_head"`
+	Fetched       bool   `json:"fetched"`
+	ViewRebuilt   bool   `json:"view_rebuilt"`
+	IntentsInView int    `json:"intents_in_view"`
+	ProposedCount int    `json:"proposed_count"`
+	MainHead      string `json:"main_head"`
 }
 
 func (s *Service) Sync() (*SyncResult, error) {
@@ -35,7 +35,8 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// Fetch main branch
 		s.Git.Fetch("origin", cfg.Mainline.MainBranch)
 		// Fetch actor log refs
-		refspec := fmt.Sprintf("refs/%s/*:refs/%s/*", cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
+		refspec := fmt.Sprintf("refs/heads/%s/*:refs/remotes/origin/%s/*",
+			cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
 		s.Git.Fetch("origin", refspec)
 		// Fetch notes (rc3: notes are source of truth for merged status)
 		s.Git.Fetch("origin", "refs/notes/mainline/*:refs/notes/mainline/*")
@@ -161,14 +162,41 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 }
 
 func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
-	// List all actor refs
-	identity, _ := s.getIdentity()
-	if identity == nil {
-		return nil, nil
+	refPrefixes := []string{
+		fmt.Sprintf("refs/heads/%s", prefix),
+		fmt.Sprintf("refs/remotes/origin/%s", prefix),
 	}
 
-	// Read events from local actor's log
-	events, _ := s.Store.ReadActorLogEvents(identity.ActorID, prefix)
+	seenRefs := make(map[string]bool)
+	seenEvents := make(map[string]bool)
+	var events []json.RawMessage
+
+	for _, refPrefix := range refPrefixes {
+		refs, err := s.Git.ListRefs(refPrefix)
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range refs {
+			if seenRefs[ref] {
+				continue
+			}
+			seenRefs[ref] = true
+
+			refEvents, err := s.Store.ReadActorLogEventsFromRef(ref)
+			if err != nil {
+				return nil, err
+			}
+			for _, event := range refEvents {
+				key := string(event)
+				if seenEvents[key] {
+					continue
+				}
+				seenEvents[key] = true
+				events = append(events, event)
+			}
+		}
+	}
+
 	return events, nil
 }
 
