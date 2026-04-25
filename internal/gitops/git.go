@@ -402,6 +402,15 @@ func (g *Git) FullCommitMessage(commitHash string) (string, error) {
 	return out, nil
 }
 
+// CommitDate returns a commit's author date as an ISO 8601 string.
+func (g *Git) CommitDate(commitHash string) (string, error) {
+	out, err := g.run("log", "-1", "--format=%aI", commitHash)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // CommitTreeHash returns the tree hash of a commit. Two commits with the
 // same tree hash have byte-identical working trees — the property that lets
 // reconcile recognise a squash merge as the merged form of a feature branch.

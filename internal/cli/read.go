@@ -9,6 +9,7 @@ import (
 )
 
 var logLimit int
+var logStatus string
 
 var logCmd = &cobra.Command{
 	Use:   "log",
@@ -20,7 +21,7 @@ var logCmd = &cobra.Command{
 			return
 		}
 
-		result, err := svc.Log(logLimit)
+		result, err := svc.Log(logLimit, logStatus)
 		if err != nil {
 			outputError(err)
 			return
@@ -199,4 +200,5 @@ var canonicalHashCmd = &cobra.Command{
 
 func init() {
 	logCmd.Flags().IntVar(&logLimit, "limit", 0, "max intents to show (default: from config)")
+	logCmd.Flags().StringVar(&logStatus, "status", "", "filter by status (drafting, sealed_local, proposed, merged, abandoned, superseded, reverted)")
 }
