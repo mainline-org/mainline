@@ -57,8 +57,27 @@ type StatusEvidence struct {
 	SupersededByIntent  string `json:"superseded_by_intent,omitempty"`
 	AbandonedEventID    string `json:"abandoned_event_id,omitempty"`
 	MergedMainCommit    string `json:"merged_main_commit,omitempty"`
-	MergedConfidence    string `json:"merged_confidence,omitempty"` // "confirmed" | "acknowledged"
+	MergedVia           string `json:"merged_via,omitempty"` // "merge" | "reconcile"
 	RevertedMainCommit  string `json:"reverted_main_commit,omitempty"`
+}
+
+// CommitNote is the structured JSON attached as a git note to main commits.
+// Stored at refs/notes/mainline/intents.
+type CommitNote struct {
+	SchemaVersion int               `json:"schema_version"`
+	Kind          string            `json:"kind"` // "mainline.commit_note"
+	Intents       []IntentReference `json:"intents"`
+	Reverts       []string          `json:"reverts,omitempty"`
+	AddedAt       string            `json:"added_at"`
+	AddedBy       string            `json:"added_by"`
+	Via           string            `json:"via,omitempty"` // "merge" | "reconcile" | "manual"
+	ReconciledAt  string            `json:"reconciled_at,omitempty"`
+	ReconciledBy  string            `json:"reconciled_by,omitempty"`
+}
+
+type IntentReference struct {
+	IntentID       string `json:"intent_id"`
+	SealResultHash string `json:"seal_result_hash"`
 }
 
 // Turn is the minimal record unit of one meaningful agent work fragment.

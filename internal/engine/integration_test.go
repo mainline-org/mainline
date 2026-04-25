@@ -373,8 +373,8 @@ func TestThreadLifecycle(t *testing.T) {
 	}
 }
 
-// TestPRTrailerAndDescription tests PR output generation.
-func TestPRTrailerAndDescription(t *testing.T) {
+// TestPRDescription tests PR description generation (rc3: no trailer).
+func TestPRDescription(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 
@@ -382,15 +382,7 @@ func TestPRTrailerAndDescription(t *testing.T) {
 	svc.Init("agent")
 	start, _ := svc.Start("add feature", "")
 
-	// PR trailer
-	trailer, err := svc.PRTrailer(start.IntentID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if trailer == "" {
-		t.Error("trailer should not be empty")
-	}
-
+	// rc3: pr-trailer removed, only pr-description exists
 	// PR description
 	desc, err := svc.PRDescription(start.IntentID)
 	if err != nil {

@@ -3,7 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"mainline/internal/core"
 	"mainline/internal/domain"
@@ -38,6 +37,8 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// Fetch actor log refs
 		refspec := fmt.Sprintf("refs/%s/*:refs/%s/*", cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
 		s.Git.Fetch("origin", refspec)
+		// Fetch notes (rc3: notes are source of truth for merged status)
+		s.Git.Fetch("origin", "refs/notes/mainline/*:refs/notes/mainline/*")
 		fetched = true
 	}
 
@@ -140,13 +141,13 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 			if iv, ok := intentMap[evt.IntentID]; ok {
 				iv.Status = domain.StatusMerged
 				iv.StatusEvidence.MergedMainCommit = evt.MergeCommit
-				iv.StatusEvidence.MergedConfidence = "acknowledged"
+				iv.StatusEvidence.MergedVia = "reconcile"
 			}
 		}
 	}
 
-	// Also scan main branch trailers for merge evidence
-	s.scanMainTrailers(cfg, intentMap)
+	// Scan main branch notes for merge evidence (rc3: notes replace trailers)
+	s.scanMainNotes(cfg, intentMap)
 
 	for _, iv := range intentMap {
 		view.Intents = append(view.Intents, *iv)
@@ -171,38 +172,56 @@ func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 	return events, nil
 }
 
-func (s *Service) scanMainTrailers(cfg *domain.TeamConfig, intentMap map[string]*domain.IntentView) {
-	// Scan recent main branch commits for Mainline-Intent trailers
+func (s *Service) scanMainNotes(cfg *domain.TeamConfig, intentMap map[string]*domain.IntentView) {
+	// rc3: scan main branch commits for git notes (source of truth for merged)
 	entries, err := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
 	if err != nil {
 		return
 	}
 
 	for _, entry := range entries {
-		trailers, err := s.Git.CommitTrailers(entry.Hash)
-		if err != nil {
+		noteContent, err := s.Git.NotesShow(entry.Hash)
+		if err != nil || noteContent == "" {
 			continue
 		}
-		intentID, ok := trailers["Mainline-Intent"]
-		if !ok {
+
+		var note domain.CommitNote
+		if err := json.Unmarshal([]byte(noteContent), &note); err != nil {
 			continue
 		}
-		intentID = strings.TrimSpace(intentID)
-		if iv, exists := intentMap[intentID]; exists {
-			iv.Status = domain.StatusMerged
-			iv.StatusEvidence.MergedMainCommit = entry.Hash
-			iv.StatusEvidence.MergedConfidence = "confirmed"
-		} else {
-			// Create a minimal view from trailer
-			intentMap[intentID] = &domain.IntentView{
-				IntentID:      intentID,
-				SchemaVersion: 1,
-				Status:        domain.StatusMerged,
-				ViewRebuiltAt: core.Now(),
-				StatusEvidence: domain.StatusEvidence{
-					MergedMainCommit: entry.Hash,
-					MergedConfidence: "confirmed",
-				},
+		if note.Kind != "mainline.commit_note" {
+			continue
+		}
+
+		via := note.Via
+		if via == "" {
+			via = "merge"
+		}
+
+		for _, ref := range note.Intents {
+			if iv, exists := intentMap[ref.IntentID]; exists {
+				iv.Status = domain.StatusMerged
+				iv.StatusEvidence.MergedMainCommit = entry.Hash
+				iv.StatusEvidence.MergedVia = via
+			} else {
+				intentMap[ref.IntentID] = &domain.IntentView{
+					IntentID:      ref.IntentID,
+					SchemaVersion: 1,
+					Status:        domain.StatusMerged,
+					ViewRebuiltAt: core.Now(),
+					StatusEvidence: domain.StatusEvidence{
+						MergedMainCommit: entry.Hash,
+						MergedVia:        via,
+					},
+				}
+			}
+		}
+
+		// Handle reverts
+		for _, revertedID := range note.Reverts {
+			if iv, exists := intentMap[revertedID]; exists {
+				iv.Status = domain.StatusReverted
+				iv.StatusEvidence.RevertedMainCommit = entry.Hash
 			}
 		}
 	}
