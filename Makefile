@@ -17,6 +17,11 @@ test-verbose:
 test-pbt:
 	go test -race -count=1 ./...
 
+# Inner-loop test: skip rapid PBT files via the `!quick` build tag and the
+# package-level race detector for fastest feedback (~5s).
+quick-test:
+	go test -count=1 -tags quick ./...
+
 # Run benchmarks
 bench:
 	go test -bench=. -benchmem ./internal/core/ ./internal/engine/
