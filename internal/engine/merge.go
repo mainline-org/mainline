@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -129,10 +130,33 @@ func (s *Service) Merge(intentID string) (*MergeResult, error) {
 		return nil, domain.NewError(domain.ErrMergeFailed, mergeErr.Error())
 	}
 
+	// rc3: write git note to the merge commit (not trailer)
+	identity, _ := s.getIdentity()
+	hash, _ := core.CanonicalHash(draft)
+	note := domain.CommitNote{
+		SchemaVersion: 1,
+		Kind:          "mainline.commit_note",
+		Intents: []domain.IntentReference{
+			{IntentID: draft.IntentID, SealResultHash: "sha256:" + hash},
+		},
+		AddedAt: core.Now(),
+		AddedBy: identity.ActorID,
+		Via:     "merge",
+	}
+	noteJSON, _ := json.Marshal(note)
+	if err := s.Git.NotesAdd(mergeCommit, string(noteJSON)); err != nil {
+		// Non-fatal: note write failure doesn't block merge
+	}
+
 	// Update draft status
 	draft.Status = domain.StatusMerged
 	draft.LastModifiedAt = core.Now()
 	s.Store.WriteDraft(draft)
+
+	// Push notes if remote exists
+	if s.Git.HasRemote("origin") {
+		s.Git.Push("origin", "refs/notes/mainline/intents")
+	}
 
 	return &MergeResult{
 		IntentID:    intentID,
@@ -147,9 +171,8 @@ func (s *Service) squashMerge(branch, mainBranch string, draft *domain.DraftInte
 		return "", fmt.Errorf("checkout %s: %w", mainBranch, err)
 	}
 
-	title := draft.Goal
-	message := fmt.Sprintf("%s\n\nMainline-Intent: %s\nMainline-Thread: %s\n",
-		title, draft.IntentID, draft.Thread)
+	// rc3: clean commit message, no Mainline-* fields
+	message := draft.Goal
 
 	if _, err := s.gitRun("merge", "--squash", branch); err != nil {
 		// Attempt to abort on failure
@@ -176,8 +199,8 @@ func (s *Service) regularMerge(branch, mainBranch string, draft *domain.DraftInt
 		return "", fmt.Errorf("checkout %s: %w", mainBranch, err)
 	}
 
-	message := fmt.Sprintf("Merge %s: %s\n\nMainline-Intent: %s\nMainline-Thread: %s\n",
-		branch, draft.Goal, draft.IntentID, draft.Thread)
+	// rc3: clean commit message, no Mainline-* fields
+	message := fmt.Sprintf("Merge %s: %s", branch, draft.Goal)
 
 	if _, err := s.gitRun("merge", "--no-ff", branch, "-m", message); err != nil {
 		s.gitRun("merge", "--abort")
@@ -208,47 +231,77 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 		return nil, err
 	}
 
-	cfg, err := s.getTeamConfig()
-	if err != nil {
-		return nil, err
-	}
+	cfg, _ := s.getTeamConfig()
 	identity, err := s.getIdentity()
 	if err != nil {
 		return nil, err
 	}
 
+	// rc3: reconcile writes git notes to commits (not actor log events)
+	// Find proposed intents that appear to be merged but lack notes
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
 		return &ReconcileResult{}, nil
 	}
 
 	var reconciled []string
+	entries, _ := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
+
 	for _, iv := range view.Intents {
-		if iv.Status != domain.StatusMerged {
-			continue
-		}
-		if iv.StatusEvidence.MergedConfidence == "acknowledged" {
+		if iv.Status != domain.StatusProposed {
 			continue
 		}
 		if iv.ActorID != identity.ActorID {
 			continue
 		}
 
-		// Write merge acknowledged event
-		eventID := core.GenerateEventID()
-		event := domain.IntentMergeAcknowledgedEvent{
-			BaseEvent: domain.BaseEvent{
-				EventID:       eventID,
+		// Try to find a commit on main that matches this intent's code
+		for _, entry := range entries {
+			// Check if commit already has a note for this intent
+			noteContent, _ := s.Git.NotesShow(entry.Hash)
+			if noteContent != "" {
+				var existing domain.CommitNote
+				if json.Unmarshal([]byte(noteContent), &existing) == nil {
+					for _, ref := range existing.Intents {
+						if ref.IntentID == iv.IntentID {
+							goto nextIntent // already noted
+						}
+					}
+				}
+			}
+
+			// Heuristic: check if the commit message contains the intent goal
+			msg, _ := s.Git.FullCommitMessage(entry.Hash)
+			if !strings.Contains(msg, iv.Goal) && iv.CodeCommit != entry.Hash {
+				continue
+			}
+
+			// Write reconcile note
+			hash, _ := core.CanonicalHash(iv)
+			note := domain.CommitNote{
 				SchemaVersion: 1,
-				EventType:     domain.EventIntentMergeAcknowledged,
-				ActorID:       identity.ActorID,
-				Timestamp:     core.Now(),
-			},
-			IntentID:    iv.IntentID,
-			MergeCommit: iv.StatusEvidence.MergedMainCommit,
+				Kind:          "mainline.commit_note",
+				Intents: []domain.IntentReference{
+					{IntentID: iv.IntentID, SealResultHash: "sha256:" + hash},
+				},
+				AddedAt:      core.Now(),
+				AddedBy:      identity.ActorID,
+				Via:          "reconcile",
+				ReconciledAt: core.Now(),
+				ReconciledBy: identity.ActorID,
+			}
+			noteJSON, _ := json.Marshal(note)
+			if err := s.Git.NotesAdd(entry.Hash, string(noteJSON)); err == nil {
+				reconciled = append(reconciled, iv.IntentID)
+			}
+			break
 		}
-		s.Store.AppendActorLogEvent(identity.ActorID, cfg.Mainline.ActorLogPrefix, event)
-		reconciled = append(reconciled, iv.IntentID)
+	nextIntent:
+	}
+
+	// Push notes
+	if len(reconciled) > 0 && s.Git.HasRemote("origin") {
+		s.Git.Push("origin", "refs/notes/mainline/intents")
 	}
 
 	return &ReconcileResult{
@@ -258,22 +311,8 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 }
 
 // -----------------------------------------------------------
-// PR helpers
+// PR description (rc3: no trailers, pure human-readable markdown)
 // -----------------------------------------------------------
-
-func (s *Service) PRTrailer(intentID string) (string, error) {
-	if err := s.requireInit(); err != nil {
-		return "", err
-	}
-
-	draft, _ := s.Store.ReadDraft(intentID)
-	if draft == nil {
-		return "", domain.NewError(domain.ErrNoActiveIntent, fmt.Sprintf("intent %s not found", intentID))
-	}
-
-	trailer := fmt.Sprintf("Mainline-Intent: %s\nMainline-Thread: %s", draft.IntentID, draft.Thread)
-	return trailer, nil
-}
 
 func (s *Service) PRDescription(intentID string) (string, error) {
 	if err := s.requireInit(); err != nil {
@@ -293,43 +332,60 @@ func (s *Service) PRDescription(intentID string) (string, error) {
 	// Fallback to draft info
 	draft, _ := s.Store.ReadDraft(intentID)
 	if draft != nil {
-		return fmt.Sprintf("## %s\n\n**Goal:** %s\n\n---\nMainline-Intent: %s\nMainline-Thread: %s\n",
-			draft.Goal, draft.Goal, draft.IntentID, draft.Thread), nil
+		return fmt.Sprintf("## Mainline Intent\n\n**Intent:** `%s`\n**Goal:** %s\n",
+			draft.IntentID, draft.Goal), nil
 	}
 
 	return "", domain.NewError(domain.ErrNoActiveIntent, fmt.Sprintf("intent %s not found", intentID))
 }
 
+// rc3: pure human-readable markdown, no Mainline-* fields
 func formatPRDescription(intentID string, summary *domain.IntentSummary, fp *domain.SemanticFingerprint) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## %s\n\n", summary.Title))
-	sb.WriteString(fmt.Sprintf("**What:** %s\n\n", summary.What))
-	sb.WriteString(fmt.Sprintf("**Why:** %s\n\n", summary.Why))
+	sb.WriteString("## Mainline Intent\n\n")
+	sb.WriteString(fmt.Sprintf("**Intent:** `%s`\n", intentID))
+	sb.WriteString(fmt.Sprintf("**Title:** %s\n\n", summary.Title))
+
+	sb.WriteString("### What changed\n\n")
+	sb.WriteString(summary.What + "\n\n")
+
+	sb.WriteString("### Why\n\n")
+	sb.WriteString(summary.Why + "\n\n")
 
 	if len(summary.Decisions) > 0 {
-		sb.WriteString("### Decisions\n")
+		sb.WriteString("### Decisions\n\n")
 		for _, d := range summary.Decisions {
-			sb.WriteString(fmt.Sprintf("- **%s**: chose %s", d.Point, d.Chose))
+			sb.WriteString(fmt.Sprintf("- **%s:** %s", d.Point, d.Chose))
 			if d.Rationale != "" {
 				sb.WriteString(fmt.Sprintf(" (%s)", d.Rationale))
 			}
 			sb.WriteString("\n")
+			for _, rej := range d.Rejected {
+				sb.WriteString(fmt.Sprintf("  - Rejected: %s\n", rej))
+			}
 		}
 		sb.WriteString("\n")
 	}
 
 	if len(summary.Risks) > 0 {
-		sb.WriteString("### Risks\n")
+		sb.WriteString("### Risks\n\n")
 		for _, r := range summary.Risks {
 			sb.WriteString(fmt.Sprintf("- %s\n", r))
 		}
 		sb.WriteString("\n")
 	}
 
-	if fp != nil && len(fp.Subsystems) > 0 {
-		sb.WriteString(fmt.Sprintf("**Subsystems:** %s\n\n", strings.Join(fp.Subsystems, ", ")))
+	if len(summary.Followups) > 0 {
+		sb.WriteString("### Follow-ups\n\n")
+		for _, f := range summary.Followups {
+			sb.WriteString(fmt.Sprintf("- %s\n", f))
+		}
+		sb.WriteString("\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("---\nMainline-Intent: %s\n", intentID))
+	if fp != nil && len(fp.Subsystems) > 0 {
+		sb.WriteString(fmt.Sprintf("**Subsystems:** %s\n", strings.Join(fp.Subsystems, ", ")))
+	}
+
 	return sb.String()
 }

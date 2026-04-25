@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"mainline/internal/core"
 	"mainline/internal/domain"
@@ -96,8 +97,22 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	// Write AGENTS.md if it doesn't exist
 	s.writeAgentsMD()
 
-	// Write PR template
+	// Write PR template (no trailers, rc3)
 	s.writePRTemplate()
+
+	// Configure git notes fetch/push (rc3: notes are source of truth)
+	if s.Git.HasRemote("origin") {
+		notesFetch := "+refs/notes/mainline/*:refs/notes/mainline/*"
+		if !strings.Contains(s.Git.ConfigGet("remote.origin.fetch"), "refs/notes/mainline") {
+			s.Git.ConfigAdd("remote.origin.fetch", notesFetch)
+		}
+		notesPush := "refs/notes/mainline/*:refs/notes/mainline/*"
+		if !strings.Contains(s.Git.ConfigGet("remote.origin.push"), "refs/notes/mainline") {
+			s.Git.ConfigAdd("remote.origin.push", notesPush)
+		}
+	}
+	// Configure git log to show mainline notes by default
+	s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 
 	// Commit .mainline/ config + tracked files
 	if err := s.Git.WriteAndCommitFile(".mainline/config.toml", mustReadFile(s.Store, cfg), "mainline: init"); err != nil {
@@ -210,11 +225,17 @@ func (s *Service) writePRTemplate() {
 
 <!-- Describe what this PR does -->
 
-## Mainline
+## Mainline Intent
 
-<!-- Do NOT remove. Verify trailers remain in the final squash commit message. -->
+<!--
+This section is auto-filled by mainline pr-description.
+It is for human reviewers; Mainline does not parse it.
+-->
 
-` + "```\nMainline-Intent: <intent-id>\nMainline-Seal: sha256:<hash>\n```\n"
+## Tested
+
+<!-- How was this tested? -->
+`
 	os.WriteFile(path, []byte(content), 0o644)
 }
 

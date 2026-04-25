@@ -51,7 +51,7 @@ func init() {
 	rootCmd.AddCommand(logCmd)
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(threadCmd)
-	rootCmd.AddCommand(prTrailerCmd)
+	// rc3: pr-trailer removed, metadata goes via git notes
 	rootCmd.AddCommand(prDescriptionCmd)
 	rootCmd.AddCommand(reconcileCmd)
 	rootCmd.AddCommand(contextCmd)

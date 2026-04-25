@@ -468,3 +468,59 @@ func (g *Git) EnsureGitignore(patterns []string) error {
 	}
 	return nil
 }
+
+// -----------------------------------------------------------
+// Git Notes operations (refs/notes/mainline/intents)
+// -----------------------------------------------------------
+
+const NotesRef = "refs/notes/mainline/intents"
+
+// NotesAdd attaches a note to a commit under the mainline notes ref.
+func (g *Git) NotesAdd(commitHash, content string) error {
+	_, err := g.run("notes", "--ref=mainline/intents", "add", "-f", "-m", content, commitHash)
+	return err
+}
+
+// NotesShow returns the note content for a commit, or empty string if none.
+func (g *Git) NotesShow(commitHash string) (string, error) {
+	out, err := g.run("notes", "--ref=mainline/intents", "show", commitHash)
+	if err != nil {
+		return "", nil // no note is not an error
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// NotesListCommits returns all commit hashes that have notes in the mainline ref.
+func (g *Git) NotesListCommits() ([]string, error) {
+	out, err := g.run("notes", "--ref=mainline/intents", "list")
+	if err != nil {
+		return nil, nil // no notes ref yet
+	}
+	var commits []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		// format: <note-hash> <commit-hash>
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			commits = append(commits, parts[1])
+		}
+	}
+	return commits, nil
+}
+
+// ConfigAdd runs git config --add for a key=value pair.
+func (g *Git) ConfigAdd(key, value string) error {
+	_, err := g.run("config", "--add", key, value)
+	return err
+}
+
+// ConfigGet returns the value of a git config key, empty if not set.
+func (g *Git) ConfigGet(key string) string {
+	out, err := g.run("config", "--get-all", key)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}

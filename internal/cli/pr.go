@@ -6,41 +6,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var prTrailerIntentID string
-
-var prTrailerCmd = &cobra.Command{
-	Use:   "pr-trailer",
-	Short: "Output PR trailer for an intent",
-	Run: func(cmd *cobra.Command, args []string) {
-		svc, err := getService()
-		if err != nil {
-			outputError(err)
-			return
-		}
-
-		if prTrailerIntentID == "" && len(args) > 0 {
-			prTrailerIntentID = args[0]
-		}
-		if prTrailerIntentID == "" {
-			outputError(fmt.Errorf("intent ID is required"))
-			return
-		}
-
-		trailer, err := svc.PRTrailer(prTrailerIntentID)
-		if err != nil {
-			outputError(err)
-			return
-		}
-
-		fmt.Println(trailer)
-	},
-}
+// rc3: pr-trailer command removed. Metadata goes via git notes, not trailers.
 
 var prDescIntentID string
 
 var prDescriptionCmd = &cobra.Command{
 	Use:   "pr-description",
-	Short: "Generate PR description for an intent",
+	Short: "Generate PR description for an intent (human-readable markdown)",
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -62,11 +34,14 @@ var prDescriptionCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(desc)
+		if jsonOutput {
+			outputJSON(map[string]string{"intent_id": prDescIntentID, "markdown": desc})
+		} else {
+			fmt.Println(desc)
+		}
 	},
 }
 
 func init() {
-	prTrailerCmd.Flags().StringVar(&prTrailerIntentID, "intent", "", "intent ID")
 	prDescriptionCmd.Flags().StringVar(&prDescIntentID, "intent", "", "intent ID")
 }
