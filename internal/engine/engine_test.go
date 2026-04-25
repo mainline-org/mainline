@@ -10,8 +10,17 @@ import (
 	"mainline/internal/domain"
 )
 
+// helperTB is the minimal *testing.T surface used by test helpers in this
+// package. It exists so the rapid PBTs in property_test.go can pass a tiny
+// adapter wrapping *rapid.T into the same setup helpers.
+type helperTB interface {
+	Helper()
+	Fatal(args ...interface{})
+	Fatalf(format string, args ...interface{})
+}
+
 // testRepo creates a temporary git repository and returns (path, cleanup).
-func testRepo(t *testing.T) (string, func()) {
+func testRepo(t helperTB) (string, func()) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "mainline-test-*")
 	if err != nil {

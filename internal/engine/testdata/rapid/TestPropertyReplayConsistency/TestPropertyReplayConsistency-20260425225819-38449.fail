@@ -1,0 +1,16 @@
+# 2026/04/25 22:58:19.110281 [TestPropertyReplayConsistency] [rapid] draw nMerged: 0
+# 2026/04/25 22:58:19.110287 [TestPropertyReplayConsistency] [rapid] draw nProposed: 2
+# 2026/04/25 22:58:19.579619 [TestPropertyReplayConsistency] git [checkout main]: error: Your local changes to the following files would be overwritten by checkout:
+# 	.ml-cache/drafts/int_ab9038ab.json
+# Please commit your changes or stash them before you switch branches.
+# Aborting
+#  exit status 1
+# 
+v0.4.8#10249465475992324243
+0x1d476c9b3bf24d
+0x1979b98996d8b5
+0x0
+0x68fe65a1c5904
+0x91d8070fd5cab
+0x3
+0x2
