@@ -93,13 +93,13 @@ Return ONLY valid JSON matching the SealResult schema.`
 // -----------------------------------------------------------
 
 type SealSubmitResult struct {
-	IntentID    string `json:"intent_id"`
-	Status      string `json:"status"`
-	Published   bool   `json:"published"`
-	CodeCommit  string `json:"code_commit"`
-	EventID     string `json:"event_id"`
-	Hash        string `json:"canonical_hash"`
-	Warning     string `json:"warning,omitempty"`
+	IntentID   string `json:"intent_id"`
+	Status     string `json:"status"`
+	Published  bool   `json:"published"`
+	CodeCommit string `json:"code_commit"`
+	EventID    string `json:"event_id"`
+	Hash       string `json:"canonical_hash"`
+	Warning    string `json:"warning,omitempty"`
 }
 
 func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
@@ -155,6 +155,7 @@ func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
 			SchemaVersion: 1,
 			EventType:     domain.EventIntentSealed,
 			ActorID:       identity.ActorID,
+			ActorName:     s.actorDisplayName(identity),
 			Timestamp:     core.Now(),
 		},
 		IntentID:    sr.IntentID,

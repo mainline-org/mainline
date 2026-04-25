@@ -102,6 +102,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				SchemaVersion: 1,
 				Status:        domain.StatusProposed,
 				ActorID:       evt.ActorID,
+				ActorName:     evt.ActorName,
 				Thread:        evt.Thread,
 				GitBranch:     evt.GitBranch,
 				Goal:          evt.Goal,

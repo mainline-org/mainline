@@ -356,6 +356,20 @@ func (s *Service) getIdentity() (*domain.Identity, error) {
 	return id, nil
 }
 
+func (s *Service) actorDisplayName(identity *domain.Identity) string {
+	name := strings.TrimSpace(s.Git.ConfigGet("user.name"))
+	if name != "" {
+		return name
+	}
+	if identity != nil {
+		if identity.ActorName != "" {
+			return identity.ActorName
+		}
+		return identity.ActorID
+	}
+	return ""
+}
+
 func (s *Service) getTeamConfig() (*domain.TeamConfig, error) {
 	cfg, err := s.Store.ReadTeamConfig()
 	if err != nil {

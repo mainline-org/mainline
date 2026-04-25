@@ -37,6 +37,7 @@ type IntentView struct {
 	Publication    string         `json:"publication"` // "local_only" | "published"
 
 	ActorID   string `json:"actor_id"`
+	ActorName string `json:"actor_name,omitempty"`
 	Thread    string `json:"thread"`
 	GitBranch string `json:"git_branch"`
 	Goal      string `json:"goal"`
@@ -46,19 +47,19 @@ type IntentView struct {
 	CodeCommit string `json:"code_commit,omitempty"`
 	CodeTree   string `json:"code_tree,omitempty"`
 
-	Summary     *IntentSummary     `json:"summary,omitempty"`
+	Summary     *IntentSummary       `json:"summary,omitempty"`
 	Fingerprint *SemanticFingerprint `json:"fingerprint,omitempty"`
 
 	ViewRebuiltAt string `json:"view_rebuilt_at"`
 }
 
 type StatusEvidence struct {
-	SealedEventID       string `json:"sealed_event_id,omitempty"`
-	SupersededByIntent  string `json:"superseded_by_intent,omitempty"`
-	AbandonedEventID    string `json:"abandoned_event_id,omitempty"`
-	MergedMainCommit    string `json:"merged_main_commit,omitempty"`
-	MergedVia           string `json:"merged_via,omitempty"` // "merge" | "reconcile"
-	RevertedMainCommit  string `json:"reverted_main_commit,omitempty"`
+	SealedEventID      string `json:"sealed_event_id,omitempty"`
+	SupersededByIntent string `json:"superseded_by_intent,omitempty"`
+	AbandonedEventID   string `json:"abandoned_event_id,omitempty"`
+	MergedMainCommit   string `json:"merged_main_commit,omitempty"`
+	MergedVia          string `json:"merged_via,omitempty"` // "merge" | "reconcile"
+	RevertedMainCommit string `json:"reverted_main_commit,omitempty"`
 }
 
 // CommitNote is the structured JSON attached as a git note to main commits.
@@ -99,14 +100,14 @@ type IntentReference struct {
 
 // Turn is the minimal record unit of one meaningful agent work fragment.
 type Turn struct {
-	ID          string       `json:"id"`
-	IntentID    string       `json:"intent_id"`
-	Index       int          `json:"index"`
-	CreatedAt   string       `json:"created_at"`
-	Description string       `json:"description"`
+	ID           string       `json:"id"`
+	IntentID     string       `json:"intent_id"`
+	Index        int          `json:"index"`
+	CreatedAt    string       `json:"created_at"`
+	Description  string       `json:"description"`
 	FilesChanged []FileChange `json:"files_changed"`
-	DiffStats   DiffStats    `json:"diff_stats"`
-	Caller      CallerInfo   `json:"caller"`
+	DiffStats    DiffStats    `json:"diff_stats"`
+	Caller       CallerInfo   `json:"caller"`
 }
 
 type TurnSummary struct {
@@ -173,15 +174,15 @@ type RejectedAlternative struct {
 
 // SemanticFingerprint is a structured summary for fast conflict pre-screening.
 type SemanticFingerprint struct {
-	Subsystems           []string          `json:"subsystems"`
-	FilesTouched         []string          `json:"files_touched"`
-	ArchitecturalClaims  []string          `json:"architectural_claims"`
-	BehavioralChanges    []string          `json:"behavioral_changes"`
-	APIChanges           []APIChange       `json:"api_changes"`
-	DataModelChanges     []DataModelChange `json:"data_model_changes"`
-	SecurityImplications []string          `json:"security_implications"`
-	MigrationNotes       []string          `json:"migration_notes"`
-	Tags                 []string          `json:"tags"`
+	Subsystems           []string            `json:"subsystems"`
+	FilesTouched         []string            `json:"files_touched"`
+	ArchitecturalClaims  []string            `json:"architectural_claims"`
+	BehavioralChanges    []string            `json:"behavioral_changes"`
+	APIChanges           []APIChange         `json:"api_changes"`
+	DataModelChanges     []DataModelChange   `json:"data_model_changes"`
+	SecurityImplications []string            `json:"security_implications"`
+	MigrationNotes       []string            `json:"migration_notes"`
+	Tags                 []string            `json:"tags"`
 	Quality              *FingerprintQuality `json:"quality,omitempty"`
 }
 
@@ -209,11 +210,11 @@ type DataModelChange struct {
 
 // SealResult is the JSON submitted by agents to seal an intent.
 type SealResult struct {
-	IntentID    string              `json:"intent_id"`
-	Summary     IntentSummary       `json:"summary"`
-	Fingerprint SemanticFingerprint `json:"fingerprint"`
-	Confidence  SealConfidence      `json:"confidence"`
-	UnsupportedClaims []string      `json:"unsupported_claims,omitempty"`
+	IntentID          string              `json:"intent_id"`
+	Summary           IntentSummary       `json:"summary"`
+	Fingerprint       SemanticFingerprint `json:"fingerprint"`
+	Confidence        SealConfidence      `json:"confidence"`
+	UnsupportedClaims []string            `json:"unsupported_claims,omitempty"`
 }
 
 type SealConfidence struct {
@@ -227,11 +228,11 @@ type SealPreparePackage struct {
 	SchemaVersion int    `json:"schema_version"`
 
 	Intent struct {
-		ID         string `json:"id"`
-		Goal       string `json:"goal"`
-		Thread     string `json:"thread"`
-		GitBranch  string `json:"git_branch"`
-		BaseCommit string `json:"base_commit"`
+		ID          string `json:"id"`
+		Goal        string `json:"goal"`
+		Thread      string `json:"thread"`
+		GitBranch   string `json:"git_branch"`
+		BaseCommit  string `json:"base_commit"`
 		CurrentHead string `json:"current_head"`
 	} `json:"intent"`
 
@@ -254,21 +255,21 @@ type CheckJudgmentResult struct {
 }
 
 type CheckOverall struct {
-	HasConflict     bool   `json:"has_conflict"`
-	HighestSeverity string `json:"highest_severity"` // none|low|medium|high
-	NeedsHumanReview bool  `json:"needs_human_review"`
+	HasConflict      bool   `json:"has_conflict"`
+	HighestSeverity  string `json:"highest_severity"` // none|low|medium|high
+	NeedsHumanReview bool   `json:"needs_human_review"`
 }
 
 type ConflictJudgment struct {
-	TaskID          string            `json:"task_id"`
-	HasConflict     bool              `json:"has_conflict"`
-	Type            string            `json:"type,omitempty"` // architectural|behavioral|api_breaking|data_model|security|intent_contradiction
-	Severity        string            `json:"severity"`       // low|medium|high
-	Confidence      float64           `json:"confidence"`
-	Explanation     string            `json:"explanation"`
-	Evidence        []ConflictEvidence `json:"evidence"`
-	ResolutionOptions []string        `json:"resolution_options"`
-	NeedsHumanReview  bool            `json:"needs_human_review"`
+	TaskID            string             `json:"task_id"`
+	HasConflict       bool               `json:"has_conflict"`
+	Type              string             `json:"type,omitempty"` // architectural|behavioral|api_breaking|data_model|security|intent_contradiction
+	Severity          string             `json:"severity"`       // low|medium|high
+	Confidence        float64            `json:"confidence"`
+	Explanation       string             `json:"explanation"`
+	Evidence          []ConflictEvidence `json:"evidence"`
+	ResolutionOptions []string           `json:"resolution_options"`
+	NeedsHumanReview  bool               `json:"needs_human_review"`
 }
 
 type ConflictEvidence struct {
