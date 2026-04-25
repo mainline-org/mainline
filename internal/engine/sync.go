@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"mainline/internal/core"
 	"mainline/internal/domain"
@@ -153,6 +154,31 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				iv.StatusEvidence.MergedMainCommit = evt.MergeCommit
 				iv.StatusEvidence.MergedVia = "reconcile"
 			}
+
+		case domain.EventCheckJudgment:
+			var evt domain.CheckJudgmentEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			iv, ok := intentMap[evt.CandidateIntent]
+			if !ok {
+				// Candidate not yet in the view (e.g. cross-repo, or
+				// the sealed event hasn't been collected yet). Drop —
+				// next sync will pick it up once the seal lands.
+				continue
+			}
+			// last-write-wins: events stream in chronological order so
+			// the final iteration is always the most recent judgment.
+			iv.LastCheck = &domain.CheckSummary{
+				EventID:          evt.EventID,
+				AtTime:           evt.Timestamp,
+				ByActor:          evt.ActorID,
+				JudgmentCount:    len(evt.Judgments),
+				HasConflict:      evt.Overall.HasConflict,
+				HighestSeverity:  evt.Overall.HighestSeverity,
+				NeedsHumanReview: evt.Overall.NeedsHumanReview,
+				AgainstIntents:   extractAgainstIntents(evt.Judgments, evt.CandidateIntent),
+			}
 		}
 	}
 
@@ -274,6 +300,41 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 			}
 		}
 	}
+}
+
+// extractAgainstIntents pulls the unique mainline intent ids out of a
+// judgment list. Each ConflictJudgment carries a TaskID of the form
+// "task_<candidate>_<mainline>" and (optionally) Evidence with explicit
+// MainlineIntent fields. We try the evidence first because it is
+// self-describing; we fall back to parsing the task id when evidence is
+// empty (some judgments legitimately omit evidence on no_conflict).
+func extractAgainstIntents(judgments []domain.ConflictJudgment, candidate string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(id string) {
+		if id == "" || id == candidate || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	for _, j := range judgments {
+		evidenceFound := false
+		for _, ev := range j.Evidence {
+			if ev.MainlineIntent != "" {
+				add(ev.MainlineIntent)
+				evidenceFound = true
+			}
+		}
+		if !evidenceFound && j.TaskID != "" {
+			// Format: task_<candidate>_<mainline> where each id is
+			// "int_<8 hex>". Find the last "int_" in the suffix.
+			if idx := strings.LastIndex(j.TaskID, "_int_"); idx >= 0 {
+				add("int_" + j.TaskID[idx+len("_int_"):])
+			}
+		}
+	}
+	return out
 }
 
 // normaliseVia collapses the on-disk via spelling into the two values the
