@@ -32,14 +32,18 @@ func (s *Service) Sync() (*SyncResult, error) {
 
 	fetched := false
 	if s.Git.HasRemote("origin") {
-		// Fetch main branch
-		s.Git.Fetch("origin", cfg.Mainline.MainBranch)
-		// Fetch actor log refs
-		refspec := fmt.Sprintf("refs/heads/%s/*:refs/remotes/origin/%s/*",
+		// One fetch, three refspecs: main branch + every actor log +
+		// the notes ref (rc3: notes are the source of truth for merged
+		// status). A single `git fetch` shares one ssh handshake with
+		// the remote — three separate fetches cost three round-trips
+		// (~3s each on github), which dominated sync wall time.
+		actorRefspec := fmt.Sprintf("refs/heads/%s/*:refs/remotes/origin/%s/*",
 			cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
-		s.Git.Fetch("origin", refspec)
-		// Fetch notes (rc3: notes are source of truth for merged status)
-		s.Git.Fetch("origin", "refs/notes/mainline/*:refs/notes/mainline/*")
+		s.Git.Fetch("origin",
+			cfg.Mainline.MainBranch,
+			actorRefspec,
+			"refs/notes/mainline/*:refs/notes/mainline/*",
+		)
 		fetched = true
 	}
 
