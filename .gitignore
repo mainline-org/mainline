@@ -3,4 +3,5 @@
 ./mainline
 mainline
 .claude/
+.codex/
 .mainline/local.toml
