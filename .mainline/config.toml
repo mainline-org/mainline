@@ -1,0 +1,24 @@
+[mainline]
+schema_version = 1
+main_branch = "main"
+actor_log_prefix = "_mainline/actor"
+require_seal_before = "push"
+
+[sync]
+auto_sync = true
+interval = "30s"
+
+[check]
+auto_check = true
+lookback = 50
+phase1_threshold = 0.15
+require_before_merge = false
+
+[publish]
+auto_publish = false
+
+[merge]
+strategy = "squash"
+
+[log]
+default_limit = 20
