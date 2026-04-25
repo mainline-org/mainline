@@ -38,17 +38,62 @@ func NewServiceFromRoot(root string) *Service {
 // -----------------------------------------------------------
 
 type InitResult struct {
-	RepoRoot  string `json:"repo_root"`
-	ActorID   string `json:"actor_id"`
-	ActorName string `json:"actor_name"`
+	RepoRoot   string `json:"repo_root"`
+	ActorID    string `json:"actor_id"`
+	ActorName  string `json:"actor_name"`
 	MainBranch string `json:"main_branch"`
 	Created    bool   `json:"created"`
 }
 
 func (s *Service) Init(actorName string) (*InitResult, error) {
 	if s.Store.IsInitialized() {
-		return nil, domain.NewError(domain.ErrAlreadyInitialized,
-			".mainline already exists in this repository")
+		if err := s.Store.EnsureDirs(); err != nil {
+			return nil, fmt.Errorf("create dirs: %w", err)
+		}
+
+		cfg, err := s.Store.ReadTeamConfig()
+		if err != nil {
+			return nil, domain.NewError(domain.ErrNotInitialized, "config not found; run 'mainline init'")
+		}
+
+		if _, err := s.Store.ReadIdentity(); err == nil {
+			return nil, domain.NewError(domain.ErrAlreadyInitialized,
+				".mainline already exists and local identity is configured")
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("read identity: %w", err)
+		}
+
+		if actorName == "" {
+			actorName = "default-agent"
+		}
+		identity := &domain.Identity{
+			ActorID:   core.GenerateActorID(),
+			ActorName: actorName,
+			CreatedAt: core.Now(),
+		}
+		if err := s.Store.WriteIdentity(identity); err != nil {
+			return nil, fmt.Errorf("write identity: %w", err)
+		}
+
+		localCfg := &domain.LocalConfig{
+			Actor: domain.ActorSection{
+				ID:   identity.ActorID,
+				Name: identity.ActorName,
+			},
+		}
+		if err := s.Store.WriteLocalConfig(localCfg); err != nil {
+			return nil, fmt.Errorf("write local config: %w", err)
+		}
+
+		s.ensureLocalViews(cfg)
+
+		return &InitResult{
+			RepoRoot:   s.Git.RepoRoot,
+			ActorID:    identity.ActorID,
+			ActorName:  identity.ActorName,
+			MainBranch: cfg.Mainline.MainBranch,
+			Created:    true,
+		}, nil
 	}
 
 	// Create default team config
@@ -104,21 +149,7 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 		// Non-fatal: maybe there are no changes or index is locked
 	}
 
-	// Initialize empty mainline view
-	view := &domain.MainlineView{
-		SchemaVersion: 1,
-		RebuiltAt:     core.Now(),
-		MainBranch:    cfg.Mainline.MainBranch,
-	}
-	head, _ := s.Git.HeadCommit()
-	view.MainHead = head
-	s.Store.WriteMainlineView(view)
-
-	idx := &domain.ProposedIndex{
-		SchemaVersion: 1,
-		RebuiltAt:     core.Now(),
-	}
-	s.Store.WriteProposedIndex(idx)
+	s.ensureLocalViews(&cfg)
 
 	return &InitResult{
 		RepoRoot:   s.Git.RepoRoot,
@@ -127,6 +158,27 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 		MainBranch: cfg.Mainline.MainBranch,
 		Created:    true,
 	}, nil
+}
+
+func (s *Service) ensureLocalViews(cfg *domain.TeamConfig) {
+	if view, _ := s.Store.ReadMainlineView(); view == nil {
+		view = &domain.MainlineView{
+			SchemaVersion: 1,
+			RebuiltAt:     core.Now(),
+			MainBranch:    cfg.Mainline.MainBranch,
+		}
+		head, _ := s.Git.HeadCommit()
+		view.MainHead = head
+		s.Store.WriteMainlineView(view)
+	}
+
+	if idx, _ := s.Store.ReadProposedIndex(); idx == nil {
+		idx = &domain.ProposedIndex{
+			SchemaVersion: 1,
+			RebuiltAt:     core.Now(),
+		}
+		s.Store.WriteProposedIndex(idx)
+	}
 }
 
 func mustReadFile(st *storage.Store, cfg domain.TeamConfig) string {
@@ -223,13 +275,13 @@ func (s *Service) writePRTemplate() {
 // -----------------------------------------------------------
 
 type StatusResult struct {
-	Initialized bool                `json:"initialized"`
-	Branch      string              `json:"branch,omitempty"`
-	ActorID     string              `json:"actor_id,omitempty"`
-	ActiveIntent *domain.DraftIntent `json:"active_intent,omitempty"`
-	TurnCount   int                 `json:"turn_count"`
-	ProposedCount int               `json:"proposed_count"`
-	MainHead    string              `json:"main_head,omitempty"`
+	Initialized   bool                `json:"initialized"`
+	Branch        string              `json:"branch,omitempty"`
+	ActorID       string              `json:"actor_id,omitempty"`
+	ActiveIntent  *domain.DraftIntent `json:"active_intent,omitempty"`
+	TurnCount     int                 `json:"turn_count"`
+	ProposedCount int                 `json:"proposed_count"`
+	MainHead      string              `json:"main_head,omitempty"`
 }
 
 func (s *Service) Status() (*StatusResult, error) {
