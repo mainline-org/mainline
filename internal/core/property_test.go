@@ -1,3 +1,5 @@
+//go:build !quick
+
 package core
 
 import (
