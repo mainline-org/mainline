@@ -63,7 +63,11 @@ func (s *Service) Sync() (*SyncResult, error) {
 }
 
 func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, error) {
-	head, _ := s.Git.HeadCommit()
+	mainRef := s.syncedMainRef(cfg.Mainline.MainBranch)
+	head := s.Git.ReadRef(mainRef)
+	if head == "" {
+		head, _ = s.Git.HeadCommit()
+	}
 
 	view := &domain.MainlineView{
 		SchemaVersion: 1,
@@ -148,7 +152,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 	}
 
 	// Scan main branch notes for merge evidence (rc3: notes replace trailers)
-	s.scanMainNotes(cfg, intentMap)
+	s.scanMainNotes(cfg, mainRef, intentMap)
 
 	for _, iv := range intentMap {
 		view.Intents = append(view.Intents, *iv)
@@ -200,9 +204,17 @@ func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 	return events, nil
 }
 
-func (s *Service) scanMainNotes(cfg *domain.TeamConfig, intentMap map[string]*domain.IntentView) {
+func (s *Service) syncedMainRef(mainBranch string) string {
+	remoteRef := "refs/remotes/origin/" + mainBranch
+	if s.Git.ReadRef(remoteRef) != "" {
+		return remoteRef
+	}
+	return mainBranch
+}
+
+func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMap map[string]*domain.IntentView) {
 	// rc3: scan main branch commits for git notes (source of truth for merged)
-	entries, err := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
+	entries, err := s.Git.LogOneline(mainRef, cfg.Check.Lookback)
 	if err != nil {
 		return
 	}
