@@ -273,6 +273,22 @@ func (g *Git) ReadRef(ref string) string {
 	return strings.TrimSpace(out)
 }
 
+// ListRefs returns fully qualified ref names under the given prefix.
+func (g *Git) ListRefs(prefix string) ([]string, error) {
+	out, err := g.run("for-each-ref", "--format=%(refname)", prefix)
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		ref := strings.TrimSpace(line)
+		if ref != "" {
+			refs = append(refs, ref)
+		}
+	}
+	return refs, nil
+}
+
 // CatBlob returns the content of a blob object.
 func (g *Git) CatBlob(hash string) ([]byte, error) {
 	out, err := g.run("cat-file", "-p", hash)

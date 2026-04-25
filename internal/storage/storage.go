@@ -29,11 +29,11 @@ func New(repoRoot string, g *gitops.Git) *Store {
 // Paths
 // -----------------------------------------------------------
 
-func (s *Store) mainlineDir() string  { return filepath.Join(s.RepoRoot, ".mainline") }
-func (s *Store) cacheDir() string     { return filepath.Join(s.RepoRoot, ".ml-cache") }
-func (s *Store) draftsDir() string    { return filepath.Join(s.cacheDir(), "drafts") }
-func (s *Store) viewsDir() string     { return filepath.Join(s.cacheDir(), "views") }
-func (s *Store) sessionsDir() string  { return filepath.Join(s.cacheDir(), "sessions") }
+func (s *Store) mainlineDir() string { return filepath.Join(s.RepoRoot, ".mainline") }
+func (s *Store) cacheDir() string    { return filepath.Join(s.RepoRoot, ".ml-cache") }
+func (s *Store) draftsDir() string   { return filepath.Join(s.cacheDir(), "drafts") }
+func (s *Store) viewsDir() string    { return filepath.Join(s.cacheDir(), "views") }
+func (s *Store) sessionsDir() string { return filepath.Join(s.cacheDir(), "sessions") }
 
 func (s *Store) teamConfigPath() string  { return filepath.Join(s.mainlineDir(), "config.toml") }
 func (s *Store) localConfigPath() string { return filepath.Join(s.mainlineDir(), "local.toml") }
@@ -318,6 +318,11 @@ func (s *Store) AppendActorLogEvent(actorID, prefix string, event interface{}) e
 // ReadActorLogEvents reads all events from an actor's log.
 func (s *Store) ReadActorLogEvents(actorID, prefix string) ([]json.RawMessage, error) {
 	ref := s.ActorLogRef(actorID, prefix)
+	return s.ReadActorLogEventsFromRef(ref)
+}
+
+// ReadActorLogEventsFromRef reads all events from a concrete actor log ref.
+func (s *Store) ReadActorLogEventsFromRef(ref string) ([]json.RawMessage, error) {
 	head := s.Git.ReadRef(ref)
 	if head == "" {
 		return nil, nil
@@ -366,8 +371,8 @@ func (s *Store) ReadActorLogEvents(actorID, prefix string) ([]json.RawMessage, e
 // Views
 // -----------------------------------------------------------
 
-func (s *Store) mainlineViewPath() string    { return filepath.Join(s.viewsDir(), "mainline.json") }
-func (s *Store) proposedIndexPath() string   { return filepath.Join(s.viewsDir(), "proposed-index.json") }
+func (s *Store) mainlineViewPath() string  { return filepath.Join(s.viewsDir(), "mainline.json") }
+func (s *Store) proposedIndexPath() string { return filepath.Join(s.viewsDir(), "proposed-index.json") }
 
 func (s *Store) ReadMainlineView() (*domain.MainlineView, error) {
 	data, err := os.ReadFile(s.mainlineViewPath())
