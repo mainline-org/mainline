@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -45,8 +46,13 @@ var logCmd = &cobra.Command{
 				if author == "" {
 					author = entry.ActorID
 				}
-				fmt.Printf("%-12s [%s] %s %s  %s",
-					entry.IntentID, status, formatLogTime(entry.ActivityAt), author, title)
+				check := entry.Check
+				if check == "" {
+					check = "-"
+				}
+				fmt.Printf("%-12s [%s] [check:%s] %s %s  %s",
+					entry.IntentID, status, check,
+					formatLogTime(entry.ActivityAt), author, title)
 				if entry.Thread != "" {
 					fmt.Printf(" (%s)", entry.Thread)
 				}
@@ -109,6 +115,21 @@ var showCmd = &cobra.Command{
 					fmt.Printf("Title:   %s\n", v.Summary.Title)
 					fmt.Printf("What:    %s\n", v.Summary.What)
 					fmt.Printf("Why:     %s\n", v.Summary.Why)
+				}
+				if v.LastCheck != nil {
+					lc := v.LastCheck
+					verdict := "no_conflict"
+					if lc.HasConflict {
+						verdict = "conflict (" + lc.HighestSeverity + ")"
+					}
+					if lc.NeedsHumanReview {
+						verdict += " · human review"
+					}
+					fmt.Printf("Check:   %s · %d judgment(s) by %s at %s\n",
+						verdict, lc.JudgmentCount, lc.ByActor, lc.AtTime)
+					if len(lc.AgainstIntents) > 0 {
+						fmt.Printf("         against: %s\n", strings.Join(lc.AgainstIntents, ", "))
+					}
 				}
 			}
 		}
