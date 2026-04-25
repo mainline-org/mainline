@@ -413,7 +413,8 @@ func (g *Git) CommitDate(commitHash string) (string, error) {
 
 // CommitTreeHash returns the tree hash of a commit. Two commits with the
 // same tree hash have byte-identical working trees — the property that lets
-// reconcile recognise a squash merge as the merged form of a feature branch.
+// pin (formerly reconcile) recognise a squash merge as the merged form of
+// a feature branch.
 func (g *Git) CommitTreeHash(commitHash string) (string, error) {
 	out, err := g.run("log", "-1", "--format=%T", commitHash)
 	if err != nil {
