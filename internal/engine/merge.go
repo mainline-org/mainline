@@ -54,17 +54,30 @@ func (s *Service) Publish(intentID string) (*PublishResult, error) {
 
 	ref := s.Store.ActorLogRef(identity.ActorID, cfg.Mainline.ActorLogPrefix)
 
+	draft, err := s.Store.ReadDraft(intentID)
+	if err != nil || draft == nil {
+		return nil, domain.NewError(domain.ErrNoActiveIntent,
+			fmt.Sprintf("intent %s not found", intentID))
+	}
+	if draft.Status != domain.StatusSealedLocal && draft.Status != domain.StatusProposed {
+		return nil, domain.NewError(domain.ErrInvalidStatus,
+			fmt.Sprintf("intent %s is in status %s, expected sealed_local or proposed", intentID, draft.Status))
+	}
+
 	pushed := false
 	if s.Git.HasRemote("origin") {
 		refspec := fmt.Sprintf("%s:%s", ref, ref)
-		if err := s.Git.Push("origin", refspec); err == nil {
-			pushed = true
+		if err := s.Git.Push("origin", refspec); err != nil {
+			return nil, domain.NewRecoverableError(domain.ErrPublishFailed,
+				fmt.Sprintf("failed to push actor log %s: %v", ref, err),
+				"check remote access",
+				"retry mainline publish --intent "+intentID,
+			)
 		}
+		pushed = true
 	}
 
-	// Update draft status
-	draft, _ := s.Store.ReadDraft(intentID)
-	if draft != nil && draft.Status == domain.StatusSealedLocal {
+	if pushed && draft.Status == domain.StatusSealedLocal {
 		draft.Status = domain.StatusProposed
 		draft.LastModifiedAt = core.Now()
 		s.Store.WriteDraft(draft)
