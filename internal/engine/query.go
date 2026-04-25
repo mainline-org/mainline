@@ -26,7 +26,9 @@ type LogIntentEntry struct {
 	Thread     string              `json:"thread,omitempty"`
 	SealedAt   string              `json:"sealed_at,omitempty"`
 	ActivityAt string              `json:"activity_at,omitempty"`
+	Author     string              `json:"author,omitempty"`
 	ActorID    string              `json:"actor_id,omitempty"`
+	ActorName  string              `json:"actor_name,omitempty"`
 }
 
 func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
@@ -66,7 +68,9 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 				Thread:     iv.Thread,
 				SealedAt:   iv.SealedAt,
 				ActivityAt: s.intentViewActivityAt(iv),
+				Author:     authorName(iv.ActorName, iv.ActorID),
 				ActorID:    iv.ActorID,
+				ActorName:  iv.ActorName,
 			}
 			if iv.Summary != nil {
 				entry.Title = iv.Summary.Title
@@ -78,6 +82,8 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 	}
 
 	// Collect from local drafts
+	identity, _ := s.getIdentity()
+	draftAuthor := s.actorDisplayName(identity)
 	drafts, _ := s.Store.ListDrafts()
 	for _, id := range drafts {
 		d, _ := s.Store.ReadDraft(id)
@@ -91,6 +97,11 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 				Goal:       d.Goal,
 				Thread:     d.Thread,
 				ActivityAt: draftActivityAt(d),
+				Author:     draftAuthor,
+			}
+			if identity != nil {
+				entry.ActorID = identity.ActorID
+				entry.ActorName = draftAuthor
 			}
 			if logStatusMatches(entry.Status, filter) {
 				result.Intents = append(result.Intents, entry)
@@ -120,6 +131,13 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 	}
 
 	return result, nil
+}
+
+func authorName(actorName, actorID string) string {
+	if actorName != "" {
+		return actorName
+	}
+	return actorID
 }
 
 func normalizeLogStatusFilter(status string) (domain.IntentStatus, error) {

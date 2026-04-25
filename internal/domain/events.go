@@ -4,11 +4,11 @@ package domain
 type EventType string
 
 const (
-	EventIntentSealed           EventType = "intent.sealed"
-	EventIntentSuperseded       EventType = "intent.superseded"
-	EventIntentAbandoned        EventType = "intent.abandoned"
+	EventIntentSealed            EventType = "intent.sealed"
+	EventIntentSuperseded        EventType = "intent.superseded"
+	EventIntentAbandoned         EventType = "intent.abandoned"
 	EventIntentMergeAcknowledged EventType = "intent.merge_acknowledged"
-	EventCheckJudgment          EventType = "check.judgment"
+	EventCheckJudgment           EventType = "check.judgment"
 )
 
 // BaseEvent holds fields common to every actor-log event.
@@ -17,6 +17,7 @@ type BaseEvent struct {
 	SchemaVersion int       `json:"schema_version"`
 	EventType     EventType `json:"event_type"`
 	ActorID       string    `json:"actor_id"`
+	ActorName     string    `json:"actor_name,omitempty"`
 	Timestamp     string    `json:"timestamp"`
 }
 

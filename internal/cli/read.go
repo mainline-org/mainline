@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -40,14 +41,27 @@ var logCmd = &cobra.Command{
 				if entry.Title != "" {
 					title = entry.Title
 				}
-				fmt.Printf("%-12s [%-12s] %s", entry.IntentID, status, title)
+				author := entry.Author
+				if author == "" {
+					author = entry.ActorID
+				}
+				fmt.Printf("%-12s [%s] %s %s  %s",
+					entry.IntentID, status, formatLogTime(entry.ActivityAt), author, title)
 				if entry.Thread != "" {
-					fmt.Printf("  (%s)", entry.Thread)
+					fmt.Printf(" (%s)", entry.Thread)
 				}
 				fmt.Println()
 			}
 		}
 	},
+}
+
+func formatLogTime(value string) string {
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	return t.Local().Format("2006-01-02 15:04")
 }
 
 var showCmd = &cobra.Command{

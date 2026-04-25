@@ -136,12 +136,12 @@ Return ONLY valid JSON matching the CheckJudgmentResult schema.`
 // -----------------------------------------------------------
 
 type CheckSubmitResult struct {
-	CandidateIntent string `json:"candidate_intent"`
-	HasConflict     bool   `json:"has_conflict"`
-	HighestSeverity string `json:"highest_severity"`
-	NeedsHumanReview bool  `json:"needs_human_review"`
-	JudgmentCount   int    `json:"judgment_count"`
-	EventID         string `json:"event_id"`
+	CandidateIntent  string `json:"candidate_intent"`
+	HasConflict      bool   `json:"has_conflict"`
+	HighestSeverity  string `json:"highest_severity"`
+	NeedsHumanReview bool   `json:"needs_human_review"`
+	JudgmentCount    int    `json:"judgment_count"`
+	EventID          string `json:"event_id"`
 }
 
 func (s *Service) CheckSubmit(input json.RawMessage) (*CheckSubmitResult, error) {
@@ -176,6 +176,7 @@ func (s *Service) CheckSubmit(input json.RawMessage) (*CheckSubmitResult, error)
 			SchemaVersion: 1,
 			EventType:     domain.EventCheckJudgment,
 			ActorID:       identity.ActorID,
+			ActorName:     s.actorDisplayName(identity),
 			Timestamp:     core.Now(),
 		},
 		CandidateIntent: cr.CandidateIntent,
