@@ -402,6 +402,17 @@ func (g *Git) FullCommitMessage(commitHash string) (string, error) {
 	return out, nil
 }
 
+// CommitTreeHash returns the tree hash of a commit. Two commits with the
+// same tree hash have byte-identical working trees — the property that lets
+// reconcile recognise a squash merge as the merged form of a feature branch.
+func (g *Git) CommitTreeHash(commitHash string) (string, error) {
+	out, err := g.run("log", "-1", "--format=%T", commitHash)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // HasRemote checks if a remote exists.
 func (g *Git) HasRemote(name string) bool {
 	out, _ := g.run("remote")
