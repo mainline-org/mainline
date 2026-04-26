@@ -37,16 +37,27 @@ that without re-creating identity or team config.`,
 				outputJSON(r)
 			} else {
 				if !r.HadRemote {
-					fmt.Println("No 'origin' remote configured — refspecs not written.")
+					fmt.Println("No remote configured — refspecs not written.")
 					fmt.Println("Add a remote first, then re-run 'mainline init --rewire'.")
 				} else if len(r.RefspecsAdded) == 0 {
-					fmt.Println("Refspecs already configured. AGENTS.md and PR template re-written.")
+					fmt.Println("Refspecs already configured.")
 				} else {
 					fmt.Printf("Wired up %d refspec(s):\n", len(r.RefspecsAdded))
 					for _, s := range r.RefspecsAdded {
 						fmt.Printf("  + %s\n", s)
 					}
-					fmt.Println("AGENTS.md and PR template re-written.")
+				}
+				if r.AGENTSWritten {
+					fmt.Println("AGENTS.md mainline section refreshed.")
+				}
+				if len(r.IDEStubsWritten) > 0 {
+					fmt.Printf("IDE pointer stubs refreshed: %d file(s)\n", len(r.IDEStubsWritten))
+					for _, p := range r.IDEStubsWritten {
+						fmt.Printf("  + %s\n", p)
+					}
+				}
+				if r.PRTplWritten {
+					fmt.Println("PR template re-written.")
 				}
 			}
 			return

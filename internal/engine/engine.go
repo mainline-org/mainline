@@ -222,12 +222,13 @@ func (s *Service) configureRemoteRefspecs(actorLogPrefix string) []string {
 
 // RewireResult is returned by Service.Rewire / `mainline init --rewire`.
 type RewireResult struct {
-	HadRemote      bool     `json:"had_remote"`
-	RefspecsAdded  []string `json:"refspecs_added"`
-	NotesDisplayed bool     `json:"notes_displayed"`
-	AGENTSWritten  bool     `json:"agents_written"`
-	PRTplWritten   bool     `json:"pr_template_written"`
-	GitignoreFixed bool     `json:"gitignore_fixed"`
+	HadRemote       bool     `json:"had_remote"`
+	RefspecsAdded   []string `json:"refspecs_added"`
+	NotesDisplayed  bool     `json:"notes_displayed"`
+	AGENTSWritten   bool     `json:"agents_written"`
+	IDEStubsWritten []string `json:"ide_stubs_written,omitempty"`
+	PRTplWritten    bool     `json:"pr_template_written"`
+	GitignoreFixed  bool     `json:"gitignore_fixed"`
 }
 
 // Rewire re-applies the parts of `mainline init` that depend on the
@@ -259,25 +260,31 @@ func (s *Service) Rewire() (*RewireResult, error) {
 	s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 	r.NotesDisplayed = true
 
-	// Re-apply .gitignore, AGENTS.md, PR template — but unlike init,
-	// force-rewrite the templates to pick up newer content. We do this
-	// by deleting then re-creating; safer than os.Stat-check.
+	// Re-apply .gitignore.
 	if err := s.Git.EnsureGitignore([]string{".ml-cache/"}); err == nil {
 		r.GitignoreFixed = true
 	}
-	agentsPath := filepath.Join(s.Git.RepoRoot, "AGENTS.md")
-	if _, err := os.Stat(agentsPath); err == nil {
-		os.Remove(agentsPath)
-	}
-	s.writeAgentsMD()
-	r.AGENTSWritten = true
 
-	prtPath := filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md")
-	if _, err := os.Stat(prtPath); err == nil {
-		os.Remove(prtPath)
+	// AGENTS.md + IDE stubs use the section-aware upsert: only the
+	// `<!-- mainline:begin -->`..`<!-- mainline:end -->` block is
+	// touched, surrounding user content is preserved. Pre-v0.3
+	// AGENTS.md files (no markers, just `## Mainline` heading) get
+	// migrated in place to the marker-wrapped form.
+	if changed, err := upsertAgentsMD(s.Git.RepoRoot); err == nil {
+		r.AGENTSWritten = changed
 	}
-	s.writePRTemplate()
-	r.PRTplWritten = true
+	if stubs, err := upsertAgentInstructionStubs(s.Git.RepoRoot); err == nil {
+		r.IDEStubsWritten = stubs
+	}
+
+	// PR template: as before, recreated only if missing — no upsert
+	// machinery needed because PR templates are typically not
+	// hand-edited and the template is short.
+	prtPath := filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md")
+	if _, err := os.Stat(prtPath); err != nil {
+		s.writePRTemplate()
+		r.PRTplWritten = true
+	}
 
 	return r, nil
 }
@@ -340,77 +347,12 @@ default_limit = %d
 	)
 }
 
+// writeAgentsMD is the legacy thin wrapper retained for the Init code
+// path. Real logic moved to upsertAgentsMD (section-aware, preserves
+// user content, handles legacy section migration). See agents_md.go.
 func (s *Service) writeAgentsMD() {
-	path := filepath.Join(s.Git.RepoRoot, "AGENTS.md")
-	if _, err := os.Stat(path); err == nil {
-		return // already exists
-	}
-	content := `## Mainline
-
-<!-- mainline-agents-md-version: 3 -->
-
-This project uses Mainline to record the intent behind AI-assisted code changes.
-
-### Before changing code
-
-    mainline status --json
-
-If there is no active intent, start one:
-
-    mainline start "<short description of the user's goal>" --json
-
-For unfamiliar subsystems, query history (auto-syncs with the team):
-
-    mainline context <keyword> --json
-
-### While working
-
-After each meaningful logical change, record a turn:
-
-    mainline append "<specific description of what changed>" --json
-
-### When the task is complete
-
-1. Make sure all code changes are committed:
-
-       git add <files> && git commit -m "<message>"
-
-2. Prepare a seal package:
-
-       mainline seal --prepare --json
-
-3. Generate JSON matching the returned schema. Include rich tags in
-   the fingerprint (primary subsystem, synonyms, parent concepts,
-   related technologies):
-
-       "tags": ["auth", "authentication", "security", "jwt", "session"]
-
-4. Submit it:
-
-       mainline seal --submit --json < seal.json
-
-   Mainline syncs with the team and runs phase1 conflict checks
-   automatically inside --submit. If the JSON response includes a
-   "conflicts" array, surface those conflicts to the user clearly
-   before continuing.
-
-### Semantic conflict checks
-
-When asked to check semantic conflicts (auto-syncs first):
-
-    mainline check --prepare --intent <id> --json
-
-Generate a CheckJudgmentResult JSON matching the schema, then submit:
-
-    mainline check --submit --json < judgment.json
-
-### Do not run unless explicitly asked
-
-    mainline merge
-    mainline pin <intent> <commit>
-    mainline revert
-`
-	os.WriteFile(path, []byte(content), 0o644)
+	upsertAgentsMD(s.Git.RepoRoot)
+	upsertAgentInstructionStubs(s.Git.RepoRoot)
 }
 
 func (s *Service) writePRTemplate() {
