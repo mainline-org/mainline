@@ -53,3 +53,19 @@ type LastSync struct {
 	MainHead      string `json:"main_head"`
 	NewSealedSeen int    `json:"new_sealed_seen"` // delta vs prior LastSync
 }
+
+// Phase1WarningsCache snapshots every cross-actor phase1 ConflictPair
+// reachable from the current view. Persisted at
+// .ml-cache/views/phase1-warnings.json after every Service.Sync that
+// runs auto-check. Lifetime is "until next sync" — phase1 results are
+// transient (next sync may add or drop pairs as actor logs evolve), so
+// the file is overwritten in full each time, never appended to.
+//
+// The render layer asks "does intent X currently have any phase1
+// warning?" by scanning Pairs for either side equal to X. With < 100
+// pairs and < 50 active intents this is trivially fast.
+type Phase1WarningsCache struct {
+	SchemaVersion int            `json:"schema_version"`
+	UpdatedAt     string         `json:"updated_at"`
+	Pairs         []ConflictPair `json:"pairs"`
+}

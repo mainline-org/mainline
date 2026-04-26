@@ -13,18 +13,43 @@ import (
 
 func TestCheckMarkerStates(t *testing.T) {
 	cases := []struct {
-		name string
-		in   *domain.CheckSummary
-		want string
+		name             string
+		status           domain.IntentStatus
+		lc               *domain.CheckSummary
+		hasPhase1Warning bool
+		want             string
 	}{
-		{"nil", nil, ""},
-		{"clean", &domain.CheckSummary{}, "ok"},
-		{"conflict", &domain.CheckSummary{HasConflict: true}, "!"},
-		{"human", &domain.CheckSummary{NeedsHumanReview: true}, "?"},
-		{"both", &domain.CheckSummary{HasConflict: true, NeedsHumanReview: true}, "?"},
+		// Terminal lifecycle states never render the column at all —
+		// reviewers care about pre-merge attention, not history.
+		{"merged-no-judgment", domain.StatusMerged, nil, false, ""},
+		{"merged-with-conflict-judgment", domain.StatusMerged,
+			&domain.CheckSummary{HasConflict: true}, true, ""},
+		{"abandoned", domain.StatusAbandoned, nil, true, ""},
+		{"superseded", domain.StatusSuperseded, nil, true, ""},
+		{"reverted", domain.StatusReverted, nil, true, ""},
+
+		// Phase2 judgment dominates phase1 hint when both exist.
+		{"proposed-clean-phase2", domain.StatusProposed,
+			&domain.CheckSummary{}, true, "ok"},
+		{"proposed-conflict-phase2", domain.StatusProposed,
+			&domain.CheckSummary{HasConflict: true}, true, "!"},
+		{"proposed-human-phase2", domain.StatusProposed,
+			&domain.CheckSummary{NeedsHumanReview: true}, false, "human?"},
+		// HasConflict beats NeedsHumanReview — a known conflict is
+		// the louder signal.
+		{"proposed-conflict-and-human", domain.StatusProposed,
+			&domain.CheckSummary{HasConflict: true, NeedsHumanReview: true}, false, "!"},
+
+		// Phase1-only signal (no phase2 judgment yet).
+		{"proposed-phase1-only", domain.StatusProposed, nil, true, "~"},
+		{"sealed-local-phase1-only", domain.StatusSealedLocal, nil, true, "~"},
+
+		// No signal at all.
+		{"proposed-nothing", domain.StatusProposed, nil, false, "?"},
+		{"drafting-nothing", domain.StatusDrafting, nil, false, "?"},
 	}
 	for _, tc := range cases {
-		if got := checkMarker(tc.in); got != tc.want {
+		if got := checkMarker(tc.status, tc.lc, tc.hasPhase1Warning); got != tc.want {
 			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
 		}
 	}

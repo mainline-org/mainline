@@ -79,7 +79,37 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config.toml: %w", err)
 	}
+	// Backfill rc5+ defaults for older config files that were
+	// written before these fields existed. TOML unmarshal of a
+	// missing field gives the zero value, so without backfilling,
+	// AutoCheckAfterSync silently becomes false on every pre-rc5
+	// repo and the new auto-check loop never fires.
+	if cfg.Sync.FreshnessSeconds == 0 {
+		cfg.Sync.FreshnessSeconds = 300
+	}
+	if cfg.Sync.StaleThresholdSeconds == 0 {
+		cfg.Sync.StaleThresholdSeconds = 86400
+	}
+	if !explicitlyHasKey(data, "[sync]", "auto_check_after_sync") {
+		cfg.Sync.AutoCheckAfterSync = true
+	}
 	return &cfg, nil
+}
+
+// explicitlyHasKey reports whether the given key appears in the given
+// TOML section in the raw bytes. Used to distinguish "field absent —
+// apply default" from "field explicitly set to false".
+func explicitlyHasKey(raw []byte, section, key string) bool {
+	text := string(raw)
+	sectionStart := strings.Index(text, section)
+	if sectionStart < 0 {
+		return false
+	}
+	rest := text[sectionStart+len(section):]
+	if next := strings.Index(rest, "\n["); next >= 0 {
+		rest = rest[:next]
+	}
+	return strings.Contains(rest, key+" =") || strings.Contains(rest, key+"=")
 }
 
 func (s *Store) WriteTeamConfig(cfg *domain.TeamConfig) error {
@@ -402,6 +432,38 @@ func (s *Store) WriteLastSync(ls *domain.LastSync) error {
 		return err
 	}
 	return os.WriteFile(s.lastSyncPath(), data, 0o644)
+}
+
+func (s *Store) phase1WarningsPath() string {
+	return filepath.Join(s.viewsDir(), "phase1-warnings.json")
+}
+
+// ReadPhase1Warnings returns the cached phase1 conflict snapshot, or
+// nil if no sync has run yet (treated as "no warnings").
+func (s *Store) ReadPhase1Warnings() (*domain.Phase1WarningsCache, error) {
+	data, err := os.ReadFile(s.phase1WarningsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var c domain.Phase1WarningsCache
+	if err := json.Unmarshal(data, &c); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (s *Store) WritePhase1Warnings(c *domain.Phase1WarningsCache) error {
+	if err := os.MkdirAll(s.viewsDir(), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.phase1WarningsPath(), data, 0o644)
 }
 
 func (s *Store) ReadMainlineView() (*domain.MainlineView, error) {
