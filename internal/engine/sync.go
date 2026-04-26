@@ -21,6 +21,10 @@ type SyncResult struct {
 	MainHead      string                `json:"main_head"`
 	NewSealedSeen int                   `json:"new_sealed_seen,omitempty"`
 	NewConflicts  []domain.ConflictPair `json:"new_conflicts,omitempty"`
+	// AutoPinned lists the (intent, commit, strategy) triples
+	// produced by the v0.2 auto-pin step. Empty when nothing matched
+	// or AutoPinAfterSync is disabled.
+	AutoPinned []PinnedCommit `json:"auto_pinned,omitempty"`
 }
 
 func (s *Service) Sync() (*SyncResult, error) {
@@ -67,6 +71,21 @@ func (s *Service) Sync() (*SyncResult, error) {
 		return nil, fmt.Errorf("rebuild view: %w", err)
 	}
 
+	// v0.2: auto-pin runs the strategy cascade in-line so users
+	// never need to invoke `mainline pin` separately. We do this
+	// BEFORE the phase1 auto-check because pinning flips intents
+	// from proposed to merged, and the post-pin view is the truth
+	// the rest of sync's outputs (delta, conflicts, proposed_count)
+	// should reflect.
+	var autoPinned []PinnedCommit
+	if cfg.Sync.AutoPinAfterSync {
+		if pinResult, err := s.Pin(); err == nil && pinResult != nil && pinResult.Pinned > 0 {
+			autoPinned = pinResult.Links
+			// Re-rebuild now that new pin notes have landed locally.
+			view, _ = s.rebuildView(cfg)
+		}
+	}
+
 	// Rebuild proposed index
 	idx := s.rebuildProposedIndex(view)
 	s.Store.WriteProposedIndex(idx)
@@ -92,6 +111,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 		ProposedCount: len(idx.Proposed),
 		MainHead:      view.MainHead,
 		NewSealedSeen: newSealedSeen,
+		AutoPinned:    autoPinned,
 	}
 
 	if cfg.Sync.AutoCheckAfterSync {
