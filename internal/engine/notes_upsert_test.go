@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // -----------------------------------------------------------

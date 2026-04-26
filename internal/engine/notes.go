@@ -3,8 +3,8 @@ package engine
 import (
 	"encoding/json"
 
-	"mainline/internal/domain"
-	"mainline/internal/gitops"
+	"github.com/mainline-org/mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/gitops"
 )
 
 // upsertCommitNote attaches `addition` to commit. If the commit already

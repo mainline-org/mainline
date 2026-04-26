@@ -6,15 +6,24 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"mainline/internal/engine"
+	"github.com/mainline-org/mainline/internal/engine"
 )
 
 var doctorFix bool
 var doctorStaleAfter time.Duration
+var doctorSetup bool
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Inspect and repair local mainline state",
+	Long: `Default mode: scans local drafts for orphans (referencing missing
+git branches) and stale ones; --fix deletes orphans.
+
+--setup mode: runs install / wiring sanity checks — verifies the git
+remote refspec configuration, identity file, AGENTS.md, PR template,
+and .gitignore. Combined with --fix, missing remote refspec entries
+are rewired in place. Use this as the first step when 'mainline sync'
+is not picking up team activity.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -25,6 +34,7 @@ var doctorCmd = &cobra.Command{
 		result, err := svc.Doctor(engine.DoctorOptions{
 			Fix:        doctorFix,
 			StaleAfter: doctorStaleAfter,
+			Setup:      doctorSetup,
 		})
 		if err != nil {
 			outputError(err)
@@ -33,6 +43,11 @@ var doctorCmd = &cobra.Command{
 
 		if jsonOutput {
 			outputJSON(result)
+			return
+		}
+
+		if result.Setup != nil {
+			renderSetupReport(result.Setup, doctorFix)
 			return
 		}
 
@@ -68,7 +83,51 @@ var doctorCmd = &cobra.Command{
 	},
 }
 
+func renderSetupReport(r *engine.DoctorSetupReport, fixed bool) {
+	check := func(ok bool, label string) {
+		mark := "✗"
+		if ok {
+			mark = "✓"
+		}
+		fmt.Printf("  %s %s\n", mark, label)
+	}
+	fmt.Println("Setup check:")
+	check(r.IdentityOK, fmt.Sprintf("identity present (%s)", r.IdentityActorID))
+	check(r.AgentsMDOK, "AGENTS.md present at repo root")
+	check(r.PRTemplateOK, ".github/PULL_REQUEST_TEMPLATE.md present")
+	check(r.GitignoreOK, ".gitignore contains .ml-cache/")
+	check(r.NotesDisplayRefOK, "git config notes.displayRef points at mainline")
+	if r.HasRemote {
+		check(r.NotesFetchOK, fmt.Sprintf("remote.%s.fetch covers refs/notes/mainline/*", r.RemoteName))
+		check(r.NotesPushOK, fmt.Sprintf("remote.%s.push covers refs/notes/mainline/*", r.RemoteName))
+		check(r.ActorFetchOK, fmt.Sprintf("remote.%s.fetch covers actor logs", r.RemoteName))
+		check(r.ActorPushOK, fmt.Sprintf("remote.%s.push covers actor logs", r.RemoteName))
+	} else {
+		fmt.Printf("  ✗ no '%s' remote — cross-actor sync requires one\n", r.RemoteName)
+	}
+
+	if len(r.Fixed) > 0 {
+		fmt.Printf("\nFixed %d refspec(s):\n", len(r.Fixed))
+		for _, f := range r.Fixed {
+			fmt.Printf("  + %s\n", f)
+		}
+	}
+
+	if len(r.Issues) == 0 {
+		fmt.Println("\nAll checks passed.")
+		return
+	}
+	fmt.Printf("\n%d issue(s) found:\n", len(r.Issues))
+	for _, msg := range r.Issues {
+		fmt.Printf("  - %s\n", msg)
+	}
+	if !fixed && r.HasRemote {
+		fmt.Println("\nRun 'mainline doctor --setup --fix' to apply automatic fixes.")
+	}
+}
+
 func init() {
-	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "delete orphan local draft files")
+	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "delete orphan local draft files (default mode), or rewire refspecs (with --setup)")
 	doctorCmd.Flags().DurationVar(&doctorStaleAfter, "stale-after", 24*time.Hour, "mark drafting intents stale after this duration")
+	doctorCmd.Flags().BoolVar(&doctorSetup, "setup", false, "run install / wiring sanity checks (refspec, identity, AGENTS.md, PR template, .gitignore)")
 }

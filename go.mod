@@ -1,4 +1,4 @@
-module mainline
+module github.com/mainline-org/mainline
 
 go 1.22
 

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // Git wraps git CLI operations for a repository.

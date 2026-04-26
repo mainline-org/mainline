@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // GenerateIntentID returns a new intent ID of the form "int_<8 hex chars>".

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"mainline/internal/core"
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/core"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // -----------------------------------------------------------
@@ -201,10 +201,10 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 	finalStatus := domain.StatusSealedLocal
 
 	offline := opts != nil && opts.Offline
-	if s.Git.HasRemote("origin") && !offline {
+	if s.Git.HasRemote(s.remoteName()) && !offline {
 		ref := s.Store.ActorLogRef(identity.ActorID, cfg.Mainline.ActorLogPrefix)
 		refspec := fmt.Sprintf("%s:%s", ref, ref)
-		if err := s.Git.Push("origin", refspec); err == nil {
+		if err := s.Git.Push(s.remoteName(), refspec); err == nil {
 			published = true
 			finalStatus = domain.StatusProposed
 		} else {
