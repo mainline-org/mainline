@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // helperTB is the minimal *testing.T surface used by test helpers in this

@@ -15,6 +15,12 @@ type MainlineSection struct {
 	MainBranch        string `toml:"main_branch"`
 	ActorLogPrefix    string `toml:"actor_log_prefix"` // refs/heads/_mainline/actor
 	RequireSealBefore string `toml:"require_seal_before"` // push|merge|never
+	// Remote is the git remote name mainline reads/writes notes and
+	// actor-log refs to. Defaults to "origin" — what `git clone`
+	// produces. Teams that use a different remote name (e.g. forks
+	// with `upstream`, multi-remote setups, GitLab/Gitea conventions)
+	// set this explicitly.
+	Remote string `toml:"remote"`
 }
 
 type SyncSection struct {
@@ -83,6 +89,7 @@ func DefaultTeamConfig() TeamConfig {
 			MainBranch:        "main",
 			ActorLogPrefix:    "_mainline/actor",
 			RequireSealBefore: "push",
+			Remote:            "origin",
 		},
 		Sync: SyncSection{
 			AutoSync:              true,

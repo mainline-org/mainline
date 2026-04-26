@@ -7,7 +7,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // rapidStringSet draws a small set of short tokens. The alphabet is

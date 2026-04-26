@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"mainline/internal/core"
-	"mainline/internal/domain"
-	"mainline/internal/gitops"
+	"github.com/mainline-org/mainline/internal/core"
+	"github.com/mainline-org/mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/gitops"
 )
 
 // -----------------------------------------------------------
@@ -66,9 +66,9 @@ func (s *Service) Publish(intentID string) (*PublishResult, error) {
 	}
 
 	pushed := false
-	if s.Git.HasRemote("origin") {
+	if s.Git.HasRemote(s.remoteName()) {
 		refspec := fmt.Sprintf("%s:%s", ref, ref)
-		if err := s.Git.Push("origin", refspec); err != nil {
+		if err := s.Git.Push(s.remoteName(), refspec); err != nil {
 			return nil, domain.NewRecoverableError(domain.ErrPublishFailed,
 				fmt.Sprintf("failed to push actor log %s: %v", ref, err),
 				"check remote access",
@@ -167,8 +167,8 @@ func (s *Service) Merge(intentID string) (*MergeResult, error) {
 	s.Store.WriteDraft(draft)
 
 	// Push notes if remote exists
-	if s.Git.HasRemote("origin") {
-		s.Git.Push("origin", "refs/notes/mainline/intents")
+	if s.Git.HasRemote(s.remoteName()) {
+		s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
 	}
 
 	return &MergeResult{
@@ -340,8 +340,8 @@ func (s *Service) Pin() (*PinResult, error) {
 	}
 	result.Pinned = len(result.IntentIDs)
 
-	if result.Pinned > 0 && s.Git.HasRemote("origin") {
-		s.Git.Push("origin", "refs/notes/mainline/intents")
+	if result.Pinned > 0 && s.Git.HasRemote(s.remoteName()) {
+		s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
 	}
 
 	return result, nil
@@ -422,8 +422,8 @@ func (s *Service) PinExplicit(intentID, commitHash string) (*PinnedCommit, error
 	if err := upsertCommitNote(s.Git, resolved, note); err != nil {
 		return nil, fmt.Errorf("write note: %w", err)
 	}
-	if s.Git.HasRemote("origin") {
-		s.Git.Push("origin", "refs/notes/mainline/intents")
+	if s.Git.HasRemote(s.remoteName()) {
+		s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
 	}
 
 	return &PinnedCommit{

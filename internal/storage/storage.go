@@ -10,8 +10,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"mainline/internal/domain"
-	"mainline/internal/gitops"
+	"github.com/mainline-org/mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/gitops"
 )
 
 // Store manages .ml-cache and .mainline file I/O.
@@ -95,6 +95,9 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 	}
 	if !explicitlyHasKey(data, "[sync]", "auto_pin_after_sync") {
 		cfg.Sync.AutoPinAfterSync = true
+	}
+	if cfg.Mainline.Remote == "" {
+		cfg.Mainline.Remote = "origin"
 	}
 	return &cfg, nil
 }

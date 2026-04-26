@@ -7,7 +7,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // scorePartialAgainstFingerprint must always land in [0, 1] regardless

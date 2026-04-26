@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // squashMergeNoNote replicates `git merge --squash` followed by a commit
