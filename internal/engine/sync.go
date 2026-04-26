@@ -3,7 +3,9 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
@@ -334,22 +336,65 @@ func (s *Service) syncedMainRef(mainBranch string) string {
 	return mainBranch
 }
 
+// scanMainNotes walks every commit that has a note on the mainline
+// notes ref and applies it to the in-progress IntentView map.
+//
+// Pre-fix history: this function used `git log --oneline -n
+// Check.Lookback` to enumerate candidate commits, then per-commit
+// asked `git notes show`. That meant any commit older than the last
+// Lookback commits on main was invisible — its note still existed
+// on the notes ref, but sync's view-rebuild never saw it. Real
+// failure mode hit during dogfood: int_5c0800d7 (the original mvp
+// intent) silently regressed to `proposed` once main grew past 50
+// commits, even though its pin note was intact and pushed.
+//
+// Post-fix: drive the loop from `git notes --ref=mainline/intents
+// list` — the authoritative set of commits that carry mainline
+// metadata. Lookback is no longer used for the notes scan. We still
+// filter via `merge-base --is-ancestor <commit> <main>` so a
+// hand-written or pin-on-feature-branch note (commit not reachable
+// from main) does not pollute the merged-status view. Commits are
+// sorted chronologically so a later revert correctly overrides an
+// earlier merge for the same intent.
 func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMap map[string]*domain.IntentView) {
-	// rc3: scan main branch commits for git notes (source of truth for merged)
-	entries, err := s.Git.LogOneline(mainRef, cfg.Check.Lookback)
-	if err != nil {
+	notedCommits, err := s.Git.NotesListCommits()
+	if err != nil || len(notedCommits) == 0 {
 		return
 	}
 
-	// LogOneline returns newest-first; replay chronologically so a later
-	// revert commit can correctly overwrite the earlier merge state for the
-	// same intent.
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
+	type dated struct {
+		hash string
+		when time.Time
+	}
+	entries := make([]dated, 0, len(notedCommits))
+	for _, c := range notedCommits {
+		// Reachability filter: drop notes on commits that are not in
+		// main's ancestry — those are notes on stale feature
+		// branches, dangling commits, or someone's WIP. Trusting them
+		// would let a manually-pinned never-merged commit mark an
+		// intent as merged.
+		if _, err := s.Git.Run("merge-base", "--is-ancestor", c, mainRef); err != nil {
+			continue
+		}
+		dateStr, err := s.Git.CommitDate(c)
+		if err != nil {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			continue
+		}
+		entries = append(entries, dated{hash: c, when: t})
 	}
 
+	// Chronological replay so a later revert overrides an earlier
+	// merge for the same intent.
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].when.Before(entries[j].when)
+	})
+
 	for _, entry := range entries {
-		noteContent, err := s.Git.NotesShow(entry.Hash)
+		noteContent, err := s.Git.NotesShow(entry.hash)
 		if err != nil || noteContent == "" {
 			continue
 		}
@@ -367,7 +412,7 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		for _, ref := range note.Intents {
 			if iv, exists := intentMap[ref.IntentID]; exists {
 				iv.Status = domain.StatusMerged
-				iv.StatusEvidence.MergedMainCommit = entry.Hash
+				iv.StatusEvidence.MergedMainCommit = entry.hash
 				iv.StatusEvidence.MergedVia = via
 			} else {
 				intentMap[ref.IntentID] = &domain.IntentView{
@@ -376,7 +421,7 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 					Status:        domain.StatusMerged,
 					ViewRebuiltAt: core.Now(),
 					StatusEvidence: domain.StatusEvidence{
-						MergedMainCommit: entry.Hash,
+						MergedMainCommit: entry.hash,
 						MergedVia:        via,
 					},
 				}
@@ -387,7 +432,7 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		for _, revertedID := range note.Reverts {
 			if iv, exists := intentMap[revertedID]; exists {
 				iv.Status = domain.StatusReverted
-				iv.StatusEvidence.RevertedMainCommit = entry.Hash
+				iv.StatusEvidence.RevertedMainCommit = entry.hash
 			}
 		}
 	}
