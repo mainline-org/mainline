@@ -357,46 +357,50 @@ func (s *Store) ReadActorLogEvents(actorID, prefix string) ([]json.RawMessage, e
 	return s.ReadActorLogEventsFromRef(ref)
 }
 
-// ReadActorLogEventsFromRef reads all events from a concrete actor log ref.
+// ReadActorLogEventsFromRef reads all events from a concrete actor log
+// ref. Walks the entire chain in one `git log` fork, then streams the
+// per-commit event.json blob bodies through one `git cat-file --batch`
+// subprocess — replacing the previous 4 forks per commit (log %T,
+// ls-tree, cat-file -p, log %P) with 2 forks total per actor.
 func (s *Store) ReadActorLogEventsFromRef(ref string) ([]json.RawMessage, error) {
-	head := s.Git.ReadRef(ref)
-	if head == "" {
+	if s.Git.ReadRef(ref) == "" {
 		return nil, nil
 	}
 
-	var events []json.RawMessage
-	commit := head
-	for commit != "" {
-		// Get tree from commit
-		treeOut, err := s.Git.Run("log", "-1", "--format=%T", commit)
-		if err != nil {
-			break
-		}
-		treeHash := strings.TrimSpace(treeOut)
-
-		// List tree entries to find event.json blob
-		entries, err := s.Git.ListTree(treeHash)
-		if err != nil {
-			break
-		}
-		for _, e := range entries {
-			if e.Name == "event.json" {
-				blob, err := s.Git.CatBlob(e.Hash)
-				if err == nil {
-					events = append(events, json.RawMessage(blob))
-				}
-			}
-		}
-
-		// Walk to parent
-		parentOut, err := s.Git.Run("log", "-1", "--format=%P", commit)
-		if err != nil {
-			break
-		}
-		commit = strings.TrimSpace(parentOut)
+	chain, err := s.Git.LogChainTrees(ref)
+	if err != nil {
+		return nil, fmt.Errorf("log chain: %w", err)
+	}
+	if len(chain) == 0 {
+		return nil, nil
 	}
 
-	// Reverse to chronological order
+	batch, err := s.Git.OpenCatFileBatch()
+	if err != nil {
+		return nil, fmt.Errorf("open cat-file batch: %w", err)
+	}
+	defer batch.Close()
+
+	events := make([]json.RawMessage, 0, len(chain))
+	for _, ct := range chain {
+		// `<tree>:event.json` — git resolves the tree-path inside the
+		// long-lived process and streams the blob body directly. A
+		// commit without an event.json (shouldn't happen in our schema
+		// but the old loop tolerated it) yields a missing reply, which
+		// we treat as a skip rather than an error.
+		body, err := batch.Read(ct.Tree + ":event.json")
+		if err != nil {
+			return nil, fmt.Errorf("read event blob: %w", err)
+		}
+		if body == nil {
+			continue
+		}
+		events = append(events, json.RawMessage(body))
+	}
+
+	// LogChainTrees returns newest-first; events on disk are appended
+	// chronologically, so reverse for downstream consumers that rely
+	// on chronological order (intentMap construction in sync, etc.).
 	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
 		events[i], events[j] = events[j], events[i]
 	}
