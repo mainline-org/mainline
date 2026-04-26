@@ -383,81 +383,91 @@ func (s *Service) syncedMainRef(mainBranch string) string {
 // intent) silently regressed to `proposed` once main grew past 50
 // commits, even though its pin note was intact and pushed.
 //
-// Post-fix: drive the loop from `git notes --ref=mainline/intents
-// list` — the authoritative set of commits that carry mainline
-// metadata. Lookback is no longer used for the notes scan. We still
-// filter via `merge-base --is-ancestor <commit> <main>` so a
-// hand-written or pin-on-feature-branch note (commit not reachable
-// from main) does not pollute the merged-status view. Commits are
-// sorted chronologically so a later revert correctly overrides an
-// earlier merge for the same intent.
-// syncWorkers caps how many git child processes we fan out at once.
-// 8 keeps fork pressure low on small machines while still recovering
-// most of the per-commit serialisation cost (measured: ~5x sync
-// speed-up vs. the sequential loop on a 23-noted-commit repo).
+// Implementation: drive the loop from `git notes --ref=mainline/intents
+// list` (the authoritative set of commits that carry mainline
+// metadata). Reachability is enforced by intersecting against a single
+// `git rev-list <main>` set so a hand-written or pin-on-feature-branch
+// note does not pollute the merged-status view. Note bodies stream
+// through one `cat-file --batch` subprocess; commit dates come from a
+// single `log --no-walk` invocation. Total: ~3 forks regardless of
+// note count.
+//
+// syncWorkers caps how many git child processes the actor-log fan-out
+// in collectAllEvents uses concurrently — 8 keeps fork pressure low on
+// small machines while still recovering most of the per-actor
+// serialisation cost.
 const syncWorkers = 8
 
-// notedCommitData carries everything we need per noted commit so the
-// fan-out worker can do filter+date+show in one trip and the apply
-// step stays purely in-memory.
+// notedCommitData carries the per-noted-commit data the apply step
+// needs: commit hash, date (for chronological sort), raw note body.
 type notedCommitData struct {
 	hash string
 	when time.Time
-	raw  string // notes show output, empty if commit was filtered out
+	raw  string
 }
 
 func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMap map[string]*domain.IntentView) {
-	notedCommits, err := s.Git.NotesListCommits()
-	if err != nil || len(notedCommits) == 0 {
+	notes, err := s.Git.NotesListEntries()
+	if err != nil || len(notes) == 0 {
 		return
 	}
 
-	// Fan out the per-commit git ops. Each worker does
-	// merge-base --is-ancestor (reachability) + CommitDate + NotesShow
-	// in one go. Results are written into a slice indexed by the input
-	// position; no shared mutable state under concurrent write.
-	results := make([]notedCommitData, len(notedCommits))
-	sem := make(chan struct{}, syncWorkers)
-	var wg sync.WaitGroup
-	for i, c := range notedCommits {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(i int, c string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			// Reachability filter: drop notes on commits that are not
-			// in main's ancestry — stale feature branches, dangling
-			// commits, hand-pin mistakes. Trusting them would let a
-			// manually-pinned never-merged commit mark an intent as
-			// merged.
-			if _, err := s.Git.Run("merge-base", "--is-ancestor", c, mainRef); err != nil {
-				return
-			}
-			dateStr, err := s.Git.CommitDate(c)
-			if err != nil {
-				return
-			}
-			t, err := time.Parse(time.RFC3339, dateStr)
-			if err != nil {
-				return
-			}
-			raw, err := s.Git.NotesShow(c)
-			if err != nil || raw == "" {
-				return
-			}
-			results[i] = notedCommitData{hash: c, when: t, raw: raw}
-		}(i, c)
+	// O(1) reachability via a single rev-list of main, replacing N
+	// `merge-base --is-ancestor` forks. For a 50k-commit main this is
+	// ~150ms and constant in note count.
+	reachable, err := s.Git.RevListSet(mainRef)
+	if err != nil {
+		return
 	}
-	wg.Wait()
 
-	// Drop the filtered-out entries (zero-value results) and sort
-	// chronologically so a later revert overrides an earlier merge
-	// for the same intent.
-	entries := make([]notedCommitData, 0, len(results))
-	for _, r := range results {
-		if r.hash != "" {
-			entries = append(entries, r)
+	// Fetch all reachable note bodies in one cat-file --batch session.
+	// We address by note-blob hash directly (yielded by `git notes
+	// list`), so git does no per-commit path resolution.
+	batch, err := s.Git.OpenCatFileBatch()
+	if err != nil {
+		return
+	}
+	defer batch.Close()
+
+	type pendingNote struct {
+		commit string
+		raw    string
+	}
+	var pending []pendingNote
+	commitsForDates := make([]string, 0, len(notes))
+	for _, n := range notes {
+		if !reachable[n.CommitHash] {
+			continue
 		}
+		body, err := batch.Read(n.NoteBlob)
+		if err != nil || body == nil {
+			continue
+		}
+		raw := strings.TrimSpace(string(body))
+		if raw == "" {
+			continue
+		}
+		pending = append(pending, pendingNote{commit: n.CommitHash, raw: raw})
+		commitsForDates = append(commitsForDates, n.CommitHash)
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	// One `log --no-walk` invocation for every date.
+	dates, _ := s.Git.CommitDates(commitsForDates)
+
+	entries := make([]notedCommitData, 0, len(pending))
+	for _, p := range pending {
+		dateStr := dates[p.commit]
+		if dateStr == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			continue
+		}
+		entries = append(entries, notedCommitData{hash: p.commit, when: t, raw: p.raw})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].when.Before(entries[j].when)

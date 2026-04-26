@@ -289,14 +289,15 @@ func (s *Service) Pin() (*PinResult, error) {
 
 	entries, _ := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
 
-	// Cache main-commit tree hashes so a sweep over N intents and M commits
-	// only does M tree lookups, not N*M.
-	treeOf := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		t, err := s.Git.CommitTreeHash(entry.Hash)
-		if err == nil {
-			treeOf[entry.Hash] = t
-		}
+	// One `log --no-walk` for every tree hash — replaces N forks with 1
+	// during the auto-pin sweep over recent main commits.
+	hashes := make([]string, 0, len(entries))
+	for _, e := range entries {
+		hashes = append(hashes, e.Hash)
+	}
+	treeOf, _ := s.Git.CommitTreeHashes(hashes)
+	if treeOf == nil {
+		treeOf = map[string]string{}
 	}
 
 	result := &PinResult{}
