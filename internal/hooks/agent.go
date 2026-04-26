@@ -67,6 +67,32 @@ type Agent interface {
 	HookNames() []string
 }
 
+// HookOutputRenderer is an OPTIONAL interface an Agent may implement
+// when its host protocol expects a JSON document on stdout (e.g.
+// cursor's sessionStart hook can carry an `additional_context`
+// markdown blob that gets injected into the agent's system prompt).
+//
+// The CLI calls RenderHookOutput AFTER Dispatcher.Dispatch has run,
+// so the renderer can read cached SessionStart state from the
+// dispatcher (LastSync / LastStatus) and turn it into an
+// agent-protocol envelope. Returning (nil, nil) means "this hook
+// produces no stdout for this agent" — the CLI then writes nothing,
+// which is the correct default for hooks that the agent host treats
+// as fire-and-forget (cursor's stop, sessionEnd, etc.).
+//
+// Errors are surfaced to the CLI but never propagated to the agent
+// host as exit codes — a stdout render failure must not interrupt
+// the user's session.
+//
+// Hooks deliberately do NOT pre-marshal a known shape here: each
+// agent's host JSON contract is different (cursor uses
+// {"continue":bool,"additional_context":string}, claude-code may use
+// something else). The contract for each agent lives in that agent's
+// package, alongside its install logic.
+type HookOutputRenderer interface {
+	RenderHookOutput(hookName string, dispatcher *Dispatcher, ev *Event, dispatchResult any) ([]byte, error)
+}
+
 // InstallOptions controls the host-side install behaviour. New fields
 // are additive; pass an empty value to use defaults.
 type InstallOptions struct {

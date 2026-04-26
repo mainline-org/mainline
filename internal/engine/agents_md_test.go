@@ -79,7 +79,7 @@ func TestUpsertAgentsMD_PreservesUserContentAroundMarkedSection(t *testing.T) {
 		t.Errorf("stale block was not replaced")
 	}
 	// New template content must be present.
-	if !strings.Contains(got, "<!-- mainline-agents-md-version: 6 -->") {
+	if !strings.Contains(got, "<!-- mainline-agents-md-version: 7 -->") {
 		t.Errorf("new template body missing")
 	}
 }
