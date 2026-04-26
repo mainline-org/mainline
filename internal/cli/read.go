@@ -12,6 +12,7 @@ import (
 
 var logLimit int
 var logStatus string
+var logSync bool
 
 var logCmd = &cobra.Command{
 	Use:   "log",
@@ -240,4 +241,5 @@ var canonicalHashCmd = &cobra.Command{
 func init() {
 	logCmd.Flags().IntVar(&logLimit, "limit", 0, "max intents to show (default: from config)")
 	logCmd.Flags().StringVar(&logStatus, "status", "", "filter by status (drafting, sealed_local, proposed, merged, abandoned, superseded, reverted)")
+	logCmd.Flags().BoolVar(&logSync, "sync", false, "sync with team before showing the log")
 }
