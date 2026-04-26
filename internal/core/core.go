@@ -148,10 +148,10 @@ func ValidateSealResult(sr *domain.SealResult) error {
 	if sr.Summary.Why == "" {
 		return fmt.Errorf("seal_result: summary.why is required")
 	}
-	if sr.Fingerprint.Subsystems == nil || len(sr.Fingerprint.Subsystems) == 0 {
+	if len(sr.Fingerprint.Subsystems) == 0 {
 		return fmt.Errorf("seal_result: fingerprint.subsystems must not be empty")
 	}
-	if sr.Fingerprint.FilesTouched == nil || len(sr.Fingerprint.FilesTouched) == 0 {
+	if len(sr.Fingerprint.FilesTouched) == 0 {
 		return fmt.Errorf("seal_result: fingerprint.files_touched must not be empty")
 	}
 	if sr.Confidence.Summary < 0 || sr.Confidence.Summary > 1 {

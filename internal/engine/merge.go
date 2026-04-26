@@ -157,9 +157,8 @@ func (s *Service) Merge(intentID string) (*MergeResult, error) {
 		AddedBy: identity.ActorID,
 		Via:     "merge",
 	}
-	if err := upsertCommitNote(s.Git, mergeCommit, note); err != nil {
-		// Non-fatal: note write failure doesn't block merge
-	}
+	// Non-fatal: note write failure doesn't block merge.
+	_ = upsertCommitNote(s.Git, mergeCommit, note)
 
 	// Update draft status
 	draft.Status = domain.StatusMerged

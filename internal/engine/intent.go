@@ -25,11 +25,11 @@ type StartResult struct {
 
 // StartOptions controls v0.3 backfill behaviour. Pass via StartWithOptions.
 //
-//   BackfillCommits: explicit commits this intent should cover after
-//                    seal. The seal flow records them on the sealed
-//                    event; Sync's auto-pin step pins the intent to
-//                    each one. Used for retroactively covering
-//                    pre-existing main commits ("mainline start --commits").
+//	BackfillCommits: explicit commits this intent should cover after
+//	                 seal. The seal flow records them on the sealed
+//	                 event; Sync's auto-pin step pins the intent to
+//	                 each one. Used for retroactively covering
+//	                 pre-existing main commits ("mainline start --commits").
 type StartOptions struct {
 	BackfillCommits []string
 }
@@ -165,13 +165,13 @@ func (s *Service) Append(description string) (*AppendResult, error) {
 	pid := os.Getpid()
 
 	turn := &domain.Turn{
-		ID:          core.GenerateTurnID(),
-		IntentID:    draft.IntentID,
-		Index:       idx,
-		CreatedAt:   core.Now(),
-		Description: description,
+		ID:           core.GenerateTurnID(),
+		IntentID:     draft.IntentID,
+		Index:        idx,
+		CreatedAt:    core.Now(),
+		Description:  description,
 		FilesChanged: changes,
-		DiffStats:   stats,
+		DiffStats:    stats,
 		Caller: domain.CallerInfo{
 			PID: pid,
 			Cwd: cwd,
@@ -221,7 +221,6 @@ func (s *Service) AppendWithAutoStart(description, goal string) (*AppendAutoResu
 		if err != nil {
 			return nil, err
 		}
-		draft, _ = s.Store.FindActiveDraft(branch)
 		created = true
 	}
 
