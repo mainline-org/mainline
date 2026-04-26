@@ -451,14 +451,15 @@ It is for human reviewers; Mainline does not parse it.
 // -----------------------------------------------------------
 
 type StatusResult struct {
-	Initialized   bool                `json:"initialized"`
-	Branch        string              `json:"branch,omitempty"`
-	ActorID       string              `json:"actor_id,omitempty"`
-	ActiveIntent  *domain.DraftIntent `json:"active_intent,omitempty"`
-	TurnCount     int                 `json:"turn_count"`
-	ProposedCount int                 `json:"proposed_count"`
-	LocalHead     string              `json:"local_head,omitempty"`
-	MainHead      string              `json:"main_head,omitempty"`
+	Initialized        bool                `json:"initialized"`
+	IdentityConfigured bool                `json:"identity_configured"`
+	Branch             string              `json:"branch,omitempty"`
+	ActorID            string              `json:"actor_id,omitempty"`
+	ActiveIntent       *domain.DraftIntent `json:"active_intent,omitempty"`
+	TurnCount          int                 `json:"turn_count"`
+	ProposedCount      int                 `json:"proposed_count"`
+	LocalHead          string              `json:"local_head,omitempty"`
+	MainHead           string              `json:"main_head,omitempty"`
 	// rc5: sync staleness surface. LastSync is the persisted record
 	// of the most recent successful Sync; nil means never synced in
 	// this clone. SyncStaleSeconds and SyncStale are convenience
@@ -496,8 +497,9 @@ func (s *Service) Status() (*StatusResult, error) {
 	result.Branch = branch
 
 	id, err := s.Store.ReadIdentity()
-	if err == nil {
+	if err == nil && id != nil && strings.TrimSpace(id.ActorID) != "" {
 		result.ActorID = id.ActorID
+		result.IdentityConfigured = true
 	}
 
 	draft, _ := s.Store.FindActiveDraft(branch)
@@ -715,6 +717,43 @@ func (s *Service) getIdentity() (*domain.Identity, error) {
 		return nil, domain.NewError(domain.ErrNotInitialized, "identity not found; run 'mainline init'")
 	}
 	return id, nil
+}
+
+// requireIdentity is the gate every write path must pass before mutating
+// state. A fresh `git clone` of a mainline-enabled repo has the team
+// `.mainline/config.toml` (committed) but NOT the local
+// `.ml-cache/identity.json` (per-actor, gitignored). Without this gate
+// the engine would happily create drafts with empty actor_id, write
+// actor-log events with no author, and (worst case) mutate a draft to
+// sealed_local before discovering the identity is missing — leaving
+// orphan state nothing can recover. requireIdentity rejects all of
+// that early with a recoverable error pointing the user at
+// `mainline init --actor-name`.
+func (s *Service) requireIdentity() (*domain.Identity, error) {
+	if err := s.requireInit(); err != nil {
+		return nil, err
+	}
+	id, err := s.Store.ReadIdentity()
+	if err != nil || id == nil || strings.TrimSpace(id.ActorID) == "" {
+		return nil, domain.NewRecoverableError(
+			domain.ErrNotInitialized,
+			"this clone has no Mainline actor identity",
+			"mainline init --actor-name <your name>",
+		)
+	}
+	return id, nil
+}
+
+// IdentityConfigured reports whether the local clone has a usable
+// actor identity. Read surfaces (status/context) use this to surface
+// the missing-identity state explicitly rather than silently emitting
+// actor_id="" when displaying.
+func (s *Service) IdentityConfigured() bool {
+	id, err := s.Store.ReadIdentity()
+	if err != nil || id == nil {
+		return false
+	}
+	return strings.TrimSpace(id.ActorID) != ""
 }
 
 func (s *Service) actorDisplayName(identity *domain.Identity) string {

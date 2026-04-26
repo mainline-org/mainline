@@ -14,7 +14,7 @@ import (
 // -----------------------------------------------------------
 
 func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, error) {
-	if err := s.requireInit(); err != nil {
+	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
 
@@ -214,7 +214,17 @@ func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
 }
 
 func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitOptions) (*SealSubmitResult, error) {
-	if err := s.requireInit(); err != nil {
+	// All validation (identity, JSON, draft state, snapshot contract)
+	// MUST run before any draft mutation. Pre-this-fix the code wrote
+	// `draft.Status = sealed_local` to disk and THEN called
+	// getIdentity, so a fresh-clone-without-identity left the draft
+	// in an unrecoverable sealed_local state with no actor-log event.
+	identity, err := s.requireIdentity()
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := s.getTeamConfig()
+	if err != nil {
 		return nil, err
 	}
 
@@ -257,21 +267,11 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 
 	codeCommit := currentHead
 
-	// Transition to sealed_local
+	// All gates passed. Mutate draft + write actor-log event + push.
 	draft.Status = domain.StatusSealedLocal
 	draft.LastModifiedAt = core.Now()
 	if err := s.Store.WriteDraft(draft); err != nil {
 		return nil, fmt.Errorf("update draft: %w", err)
-	}
-
-	// Write sealed event to actor log
-	identity, err := s.getIdentity()
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := s.getTeamConfig()
-	if err != nil {
-		return nil, err
 	}
 
 	eventID := core.GenerateEventID()
