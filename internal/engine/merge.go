@@ -21,7 +21,7 @@ type PublishResult struct {
 }
 
 func (s *Service) Publish(intentID string) (*PublishResult, error) {
-	if err := s.requireInit(); err != nil {
+	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +102,8 @@ type MergeResult struct {
 }
 
 func (s *Service) Merge(intentID string) (*MergeResult, error) {
-	if err := s.requireInit(); err != nil {
+	identity, err := s.requireIdentity()
+	if err != nil {
 		return nil, err
 	}
 
@@ -144,8 +145,8 @@ func (s *Service) Merge(intentID string) (*MergeResult, error) {
 		return nil, domain.NewError(domain.ErrMergeFailed, mergeErr.Error())
 	}
 
-	// rc3: write git note to the merge commit (not trailer)
-	identity, _ := s.getIdentity()
+	// rc3: write git note to the merge commit (not trailer).
+	// identity already validated up top via requireIdentity.
 	hash, _ := core.CanonicalHash(draft)
 	note := domain.CommitNote{
 		SchemaVersion: 1,
@@ -283,15 +284,11 @@ var pinStrategies = []string{"tree_hash", "commit_hash", "subject", "goal_text"}
 // note's added_by field still records who performed the pin so the
 // audit trail is preserved.
 func (s *Service) Pin() (*PinResult, error) {
-	if err := s.requireInit(); err != nil {
-		return nil, err
-	}
-
-	cfg, _ := s.getTeamConfig()
-	identity, err := s.getIdentity()
+	identity, err := s.requireIdentity()
 	if err != nil {
 		return nil, err
 	}
+	cfg, _ := s.getTeamConfig()
 
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
@@ -465,17 +462,13 @@ func (s *Service) Pin() (*PinResult, error) {
 // must exist; the note's added_by records the calling actor regardless
 // of who owns the intent.
 func (s *Service) PinExplicit(intentID, commitHash string) (*PinnedCommit, error) {
-	if err := s.requireInit(); err != nil {
+	identity, err := s.requireIdentity()
+	if err != nil {
 		return nil, err
 	}
 	if intentID == "" || commitHash == "" {
 		return nil, domain.NewError(domain.ErrInvalidInput,
 			"pin explicit requires both intent and commit")
-	}
-
-	identity, err := s.getIdentity()
-	if err != nil {
-		return nil, err
 	}
 
 	resolved, err := s.Git.Run("rev-parse", "--verify", commitHash+"^{commit}")

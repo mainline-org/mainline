@@ -41,7 +41,7 @@ func (s *Service) Start(goal string, thread string) (*StartResult, error) {
 }
 
 func (s *Service) StartWithOptions(goal string, thread string, opts *StartOptions) (*StartResult, error) {
-	if err := s.requireInit(); err != nil {
+	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
 
@@ -139,7 +139,7 @@ type AppendResult struct {
 }
 
 func (s *Service) Append(description string) (*AppendResult, error) {
-	if err := s.requireInit(); err != nil {
+	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
 
@@ -212,7 +212,7 @@ type AppendAutoResult struct {
 }
 
 func (s *Service) AppendWithAutoStart(description, goal string) (*AppendAutoResult, error) {
-	if err := s.requireInit(); err != nil {
+	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
 
@@ -304,7 +304,7 @@ type AbandonResult struct {
 //     forever — a silent bug pre-v0.3 the CLI surface forced into
 //     the open.
 func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error) {
-	if err := s.requireInit(); err != nil {
+	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
 
