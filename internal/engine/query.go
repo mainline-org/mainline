@@ -282,13 +282,14 @@ func parseLogActivityTime(value string) (time.Time, bool) {
 // -----------------------------------------------------------
 
 type ContextResult struct {
-	RepoRoot        string          `json:"repo_root"`
-	Branch          string          `json:"branch"`
-	MainBranch      string          `json:"main_branch"`
-	ActorID         string          `json:"actor_id"`
-	ActiveIntent    *ContextIntent  `json:"active_intent,omitempty"`
-	ProposedIntents []ContextIntent `json:"proposed_intents"`
-	MergedRecent    []ContextIntent `json:"merged_recent"`
+	RepoRoot           string          `json:"repo_root"`
+	Branch             string          `json:"branch"`
+	MainBranch         string          `json:"main_branch"`
+	ActorID            string          `json:"actor_id"`
+	IdentityConfigured bool            `json:"identity_configured"`
+	ActiveIntent       *ContextIntent  `json:"active_intent,omitempty"`
+	ProposedIntents    []ContextIntent `json:"proposed_intents"`
+	MergedRecent       []ContextIntent `json:"merged_recent"`
 }
 
 type ContextIntent struct {
@@ -313,8 +314,9 @@ func (s *Service) Context() (*ContextResult, error) {
 		Branch:     branch,
 		MainBranch: cfg.Mainline.MainBranch,
 	}
-	if identity != nil {
+	if identity != nil && strings.TrimSpace(identity.ActorID) != "" {
 		result.ActorID = identity.ActorID
+		result.IdentityConfigured = true
 	}
 
 	// Active draft

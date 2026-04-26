@@ -29,8 +29,17 @@ var statusCmd = &cobra.Command{
 				fmt.Println("Mainline not initialized. Run 'mainline init'.")
 				return
 			}
+			if !result.IdentityConfigured {
+				fmt.Println("⚠ This clone has no Mainline actor identity.")
+				fmt.Println("  Run `mainline init --actor-name <your name>` before starting work.")
+				fmt.Println()
+			}
 			fmt.Printf("Branch:    %s\n", result.Branch)
-			fmt.Printf("Actor:     %s\n", result.ActorID)
+			actorDisplay := result.ActorID
+			if actorDisplay == "" {
+				actorDisplay = "(missing — run `mainline init --actor-name <name>`)"
+			}
+			fmt.Printf("Actor:     %s\n", actorDisplay)
 			if result.LocalHead != "" {
 				fmt.Printf("Local:     %s\n", shortHash(result.LocalHead))
 			}

@@ -145,7 +145,8 @@ type CheckSubmitResult struct {
 }
 
 func (s *Service) CheckSubmit(input json.RawMessage) (*CheckSubmitResult, error) {
-	if err := s.requireInit(); err != nil {
+	identity, err := s.requireIdentity()
+	if err != nil {
 		return nil, err
 	}
 
@@ -157,12 +158,6 @@ func (s *Service) CheckSubmit(input json.RawMessage) (*CheckSubmitResult, error)
 
 	if err := core.ValidateCheckJudgmentResult(&cr); err != nil {
 		return nil, domain.NewError(domain.ErrCheckFailed, err.Error())
-	}
-
-	// Write check judgment event to actor log
-	identity, err := s.getIdentity()
-	if err != nil {
-		return nil, err
 	}
 	cfg, err := s.getTeamConfig()
 	if err != nil {
