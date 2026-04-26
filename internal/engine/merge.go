@@ -301,7 +301,13 @@ func (s *Service) Pin() (*PinResult, error) {
 
 	result := &PinResult{}
 	for _, iv := range view.Intents {
-		if iv.Status != domain.StatusProposed {
+		// Only proposed and merged intents go through the auto-pin
+		// path. Proposed → run the strategy cascade to find a primary
+		// commit. Merged → use the recorded MergedMainCommit as the
+		// primary so retroactive same-tree expansion can fix the
+		// canonical merge-commit + squash-content-commit pair where
+		// only one of the pair got the note historically.
+		if iv.Status != domain.StatusProposed && iv.Status != domain.StatusMerged {
 			continue
 		}
 
@@ -347,38 +353,86 @@ func (s *Service) Pin() (*PinResult, error) {
 			continue
 		}
 
-		match, strategy := s.findPinMatch(iv, entries, treeOf)
-		if match == "" {
+		// Two cases share the same expand-and-write tail:
+		//
+		//   proposed → run the strategy cascade to FIND a match,
+		//              then expand to same-tree neighbors.
+		//   merged   → use the existing MergedMainCommit as the
+		//              primary, expand to same-tree neighbors, and
+		//              pin any that don't yet have the note. This
+		//              retroactively covers the canonical
+		//              GitHub merge-commit + squash-content-commit
+		//              pair, where the merge note historically
+		//              landed only on the merge commit.
+		var primary, strategy string
+		switch iv.Status {
+		case domain.StatusProposed:
+			primary, strategy = s.findPinMatch(iv, entries, treeOf)
+			if primary == "" {
+				continue
+			}
+		case domain.StatusMerged:
+			primary = iv.StatusEvidence.MergedMainCommit
+			if primary == "" || treeOf[primary] == "" {
+				// Either no recorded pin commit, or it's outside
+				// the lookback — skip retroactive expansion.
+				continue
+			}
+			strategy = "tree_hash"
+		default:
 			continue
 		}
 
-		if alreadyHasIntent(s.Git, match, iv.IntentID) {
-			continue
+		// expandToSameTreeNeighbors: a merge commit and the squash
+		// content commit it merged share an identical tree (no new
+		// content was added by the merge). Pinning all same-tree
+		// commits in the lookback closes the coverage gap where
+		// only one of the pair gets a note.
+		targets := []string{primary}
+		primaryTree := treeOf[primary]
+		if primaryTree != "" {
+			for _, e := range entries {
+				if e.Hash == primary {
+					continue
+				}
+				if treeOf[e.Hash] == primaryTree {
+					targets = append(targets, e.Hash)
+				}
+			}
 		}
 
 		hash, _ := core.CanonicalHash(iv)
-		note := domain.CommitNote{
-			SchemaVersion: 1,
-			Kind:          "mainline.commit_note",
-			Intents: []domain.IntentReference{
-				{IntentID: iv.IntentID, SealResultHash: "sha256:" + hash},
-			},
-			AddedAt:       core.Now(),
-			AddedBy:       identity.ActorID,
-			Via:           "pin_auto",
-			MatchStrategy: strategy,
-			ReconciledAt:  core.Now(),
-			ReconciledBy:  identity.ActorID,
+		pinnedAny := false
+		for _, target := range targets {
+			if alreadyHasIntent(s.Git, target, iv.IntentID) {
+				continue
+			}
+			note := domain.CommitNote{
+				SchemaVersion: 1,
+				Kind:          "mainline.commit_note",
+				Intents: []domain.IntentReference{
+					{IntentID: iv.IntentID, SealResultHash: "sha256:" + hash},
+				},
+				AddedAt:       core.Now(),
+				AddedBy:       identity.ActorID,
+				Via:           "pin_auto",
+				MatchStrategy: strategy,
+				ReconciledAt:  core.Now(),
+				ReconciledBy:  identity.ActorID,
+			}
+			if err := upsertCommitNote(s.Git, target, note); err != nil {
+				continue
+			}
+			pinnedAny = true
+			result.Links = append(result.Links, PinnedCommit{
+				IntentID:      iv.IntentID,
+				Commit:        target,
+				MatchStrategy: strategy,
+			})
 		}
-		if err := upsertCommitNote(s.Git, match, note); err != nil {
-			continue
+		if pinnedAny {
+			result.IntentIDs = append(result.IntentIDs, iv.IntentID)
 		}
-		result.IntentIDs = append(result.IntentIDs, iv.IntentID)
-		result.Links = append(result.Links, PinnedCommit{
-			IntentID:      iv.IntentID,
-			Commit:        match,
-			MatchStrategy: strategy,
-		})
 	}
 	result.Pinned = len(result.IntentIDs)
 
