@@ -449,6 +449,37 @@ func TestStatusFreshAfterSync(t *testing.T) {
 	}
 }
 
+func TestStatusSeparatesLocalHeadFromSyncedMainHead(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+	syncRes, err := svc.Sync()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gitCmd(t, dir, "checkout", "-b", "feature/status-head")
+	writeFile(t, dir, "feature.txt", "feature\n")
+	gitCmd(t, dir, "add", "feature.txt")
+	gitCmd(t, dir, "commit", "-m", "feature commit")
+	localHead, _ := svc.Git.HeadCommit()
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.LocalHead != localHead {
+		t.Fatalf("expected LocalHead %s, got %s", localHead, res.LocalHead)
+	}
+	if res.MainHead != syncRes.MainHead {
+		t.Fatalf("expected MainHead to stay synced main %s, got %s", syncRes.MainHead, res.MainHead)
+	}
+	if res.MainHead == res.LocalHead {
+		t.Fatal("MainHead should not equal feature branch local head")
+	}
+}
+
 // rc6: sync's auto-check writes the full pair set to
 // .ml-cache/views/phase1-warnings.json, and `mainline log` then
 // renders [check:~] for any intent that appears in the cache.

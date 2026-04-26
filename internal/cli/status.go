@@ -31,6 +31,12 @@ var statusCmd = &cobra.Command{
 			}
 			fmt.Printf("Branch:    %s\n", result.Branch)
 			fmt.Printf("Actor:     %s\n", result.ActorID)
+			if result.LocalHead != "" {
+				fmt.Printf("Local:     %s\n", shortHash(result.LocalHead))
+			}
+			if result.MainHead != "" {
+				fmt.Printf("Synced:    %s\n", shortHash(result.MainHead))
+			}
 			if result.ActiveIntent != nil {
 				fmt.Printf("Intent:    %s (%s)\n", result.ActiveIntent.IntentID, result.ActiveIntent.Status)
 				fmt.Printf("  Goal:    %s\n", result.ActiveIntent.Goal)
@@ -51,6 +57,13 @@ var statusCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+func shortHash(hash string) string {
+	if len(hash) <= 12 {
+		return hash
+	}
+	return hash[:12]
 }
 
 // formatElapsed renders an int64 second count as a short human string
