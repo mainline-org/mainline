@@ -260,7 +260,19 @@ type PinResult struct {
 // tree_hash is first because squash merge preserves the tree exactly,
 // and it is what GitHub's web UI does by default — the case Pin must
 // handle to be useful in practice.
-var pinStrategies = []string{"tree_hash", "commit_hash", "goal_text"}
+//
+// `subject` sits between commit_hash and goal_text to handle the
+// "rebase before merge" case: a feature branch with multiple commits
+// gets rebased on origin/main right before merge, every commit's tree
+// AND hash change, but the subject line stays — `git rebase` does not
+// edit messages by default. Without a subject strategy these intents
+// stay stuck in `proposed` forever (their original code_commit is
+// orphaned, no main commit has matching tree/hash, and the LLM-written
+// goal is not a verbatim substring of the conventional-commit subject
+// the human wrote). Subject is more specific than goal_text (exact
+// match on the first line of code_commit's message vs substring search
+// on the entire intent goal text), so it gets priority.
+var pinStrategies = []string{"tree_hash", "commit_hash", "subject", "goal_text"}
 
 // Pin scans every proposed intent in the materialised view and tries
 // to associate it with a main-branch commit using a cascade of rules
@@ -500,6 +512,28 @@ func (s *Service) findPinMatch(iv domain.IntentView, entries []gitops.LogEntry, 
 			}
 			for _, entry := range entries {
 				if entry.Hash == iv.CodeCommit {
+					return entry.Hash, strategy
+				}
+			}
+		case "subject":
+			if iv.CodeCommit == "" {
+				continue
+			}
+			intentSubject, err := s.Git.CommitSubject(iv.CodeCommit)
+			if err != nil || intentSubject == "" {
+				continue
+			}
+			// Iterate in lookback order; the first main commit
+			// whose subject matches wins. Subjects are typically
+			// unique within a project's recent history (humans
+			// rarely write two commits with the same first line),
+			// so collisions are not a practical concern. When they
+			// DO happen, falling on the most-recent matching commit
+			// is the right call: most-recent is what GitHub's PR
+			// merge UI surfaces and what the user thinks of as
+			// "the" merge commit for that change.
+			for _, entry := range entries {
+				if entry.Subject == intentSubject {
 					return entry.Hash, strategy
 				}
 			}

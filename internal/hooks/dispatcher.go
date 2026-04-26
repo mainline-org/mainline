@@ -31,6 +31,18 @@ type EngineFacade interface {
 	// whether to start / append / seal — exactly as AGENTS.md
 	// instructs it to in the no-hook flow.
 	Status() (any, error)
+
+	// BinaryStaleness returns a hint about whether the running
+	// mainline binary is older than the latest main commit. Pure
+	// mechanical (file mtime vs git commit date) — produces the
+	// data, not the decision. The dispatcher prepends a warning to
+	// session_start additional_context when the hint says stale, so
+	// the agent (which has an LLM) can decide what to do with it.
+	//
+	// Returns (any, error) so the dispatcher does not have to import
+	// the engine package; concrete type is *engine.BinaryStalenessReport,
+	// detected via a structural interface in RenderSessionStartContext.
+	BinaryStaleness() (any, error)
 }
 
 // Logger is a minimal sink for dispatcher diagnostics. Hooks run in
@@ -94,6 +106,7 @@ type Dispatcher struct {
 	lastSync       any
 	lastSyncErr    error
 	lastStatus     any
+	lastStaleness  any
 	lastSessionEv  *Event
 }
 
@@ -230,6 +243,16 @@ func (d *Dispatcher) onSessionStart(_ context.Context, ev *Event) error {
 		d.lastStatus = status
 		d.Bus.Emit(d.envelope("status_snapshot", ev, status))
 	}
+
+	// Cheap mechanical staleness check. Errors here are silently
+	// dropped: a session that starts fine should not be polluted by
+	// "could not stat the binary" warnings — worst case the agent
+	// just doesn't get a stale-binary hint this session and any
+	// genuine staleness becomes visible the next time the user does
+	// something the stale binary mishandles.
+	if rep, err := d.Engine.BinaryStaleness(); err == nil && rep != nil {
+		d.lastStaleness = rep
+	}
 	return nil
 }
 
@@ -247,6 +270,21 @@ func (d *Dispatcher) LastSyncErr() error { return d.lastSyncErr }
 
 // LastStatus returns the cached SessionStart status snapshot.
 func (d *Dispatcher) LastStatus() any { return d.lastStatus }
+
+// LastBinaryStaleness returns the cached SessionStart staleness
+// report. Renderers cast through stalenessHinter to surface a warning
+// without importing the engine package.
+func (d *Dispatcher) LastBinaryStaleness() any { return d.lastStaleness }
+
+// stalenessHinter is the structural interface any staleness report
+// must satisfy to participate in renderer warnings. Defined here in
+// the hooks package so the dispatcher does not need an import-cycle
+// with engine — the actual report type lives in engine and is
+// detected by interface match at runtime.
+type stalenessHinter interface {
+	IsStale() bool
+	StaleReason() string
+}
 
 // RenderSessionStartContext composes a markdown blob the agent can
 // inject as system context at session start. It contains ONLY:
@@ -267,6 +305,19 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 	b.WriteString("Hooks ran `mainline sync` and `mainline status` for you. ")
 	b.WriteString("Use this snapshot to orient yourself. The full agent contract is in AGENTS.md ")
 	b.WriteString("— hooks do not replace any step there; they only save you the two CLI calls below.\n\n")
+
+	// Stale-binary warning sits at the top because if the running
+	// hook process is on stale code, every other section in this
+	// context blob may itself be wrong (the auto-Start regression
+	// that motivated this check produced phantom intents AND a
+	// status snapshot that already reflected those phantom intents).
+	// Surfacing this first lets the agent re-examine subsequent
+	// sections with the appropriate skepticism.
+	if hinter, ok := d.lastStaleness.(stalenessHinter); ok && hinter.IsStale() {
+		b.WriteString("> **stale-binary warning**: ")
+		b.WriteString(strings.ReplaceAll(hinter.StaleReason(), "\n", "\n> "))
+		b.WriteString("\n>\n> If the user reports behaviour you thought was already fixed, this is the most likely cause — ask them to rebuild before debugging deeper.\n\n")
+	}
 
 	b.WriteString("## status snapshot\n\n")
 	if status == nil {
