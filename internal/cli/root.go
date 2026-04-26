@@ -19,7 +19,7 @@ var (
 	noSync     bool
 )
 
-// autoSyncCommands is the rc5 Patch 4 list of commands that auto-trigger
+// autoSyncCommands is the list of commands that auto-trigger
 // a sync (subject to the freshness window) before running. Hardcoded
 // rather than config because it's a product behaviour, not team policy.
 // Any command whose Use line first word appears here is wrapped.
@@ -29,15 +29,18 @@ var (
 //     fresh commit means a proposed intent stays unmatched.
 //   - check: phase1 must compare against the freshest remote intents,
 //     otherwise it under-reports conflicts.
+//   - status / context / list-proposals: these are collaboration
+//     awareness surfaces; stale output hides active team work.
 //
-// Notably absent (rc5 dogfood feedback: 3s ssh handshake felt long):
-//   - context, list-proposals, log: read-only displays. A stale answer
-//     is just slightly out of date, not wrong; users who need fresh
-//     team activity can run `mainline sync` first.
+// log is intentionally opt-in via `mainline log --sync`: full history
+// browsing should stay cheap, while reviewer scans can request freshness.
 var autoSyncCommands = map[string]bool{
-	"check":     true,
-	"pin":       true,
-	"reconcile": true,
+	"check":          true,
+	"context":        true,
+	"list-proposals": true,
+	"pin":            true,
+	"reconcile":      true,
+	"status":         true,
 }
 
 var rootCmd = &cobra.Command{
@@ -61,7 +64,7 @@ func maybeAutoSync(cmd *cobra.Command) {
 	if noSync {
 		return
 	}
-	if !autoSyncCommands[cmd.Name()] {
+	if !shouldAutoSync(cmd) {
 		return
 	}
 	svc, err := getService()
@@ -93,6 +96,13 @@ func maybeAutoSync(cmd *cobra.Command) {
 			fmt.Fprintf(os.Stderr, "⚠ sync failed (%v); using local data\n", err)
 		}
 	}
+}
+
+func shouldAutoSync(cmd *cobra.Command) bool {
+	if autoSyncCommands[cmd.Name()] {
+		return true
+	}
+	return cmd.Name() == "log" && logSync
 }
 
 func Execute() {
