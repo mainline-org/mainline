@@ -374,7 +374,7 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 func (d *Dispatcher) RenderTurnStartContext(status any, proposals any, statusErr error, proposalsErr error) string {
 	var b strings.Builder
 	b.WriteString("# Mainline per-prompt context\n\n")
-	b.WriteString("Codex refreshed lightweight Mainline state before this prompt. ")
+	b.WriteString("Hooks refreshed lightweight Mainline state before this prompt. ")
 	b.WriteString("Use it as a reminder; AGENTS.md remains the workflow authority.\n\n")
 
 	b.WriteString("## status summary\n\n")
