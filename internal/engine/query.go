@@ -63,6 +63,9 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 	result := &LogResult{}
 	seenIntentIDs := make(map[string]bool)
 
+	// Build a single phase1-warning lookup for the whole render pass.
+	phase1Hit := buildPhase1Lookup(s.Store)
+
 	// Collect from mainline view
 	view, _ := s.Store.ReadMainlineView()
 	if view != nil {
@@ -78,7 +81,7 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 				Author:     authorName(iv.ActorName, iv.ActorID),
 				ActorID:    iv.ActorID,
 				ActorName:  iv.ActorName,
-				Check:      checkMarker(iv.LastCheck),
+				Check:      checkMarker(iv.Status, iv.LastCheck, phase1Hit[iv.IntentID]),
 			}
 			if iv.Summary != nil {
 				entry.Title = iv.Summary.Title
@@ -106,6 +109,7 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 				Thread:     d.Thread,
 				ActivityAt: draftActivityAt(d),
 				Author:     draftAuthor,
+				Check:      checkMarker(d.Status, nil, phase1Hit[d.IntentID]),
 			}
 			if identity != nil {
 				entry.ActorID = identity.ActorID
@@ -172,19 +176,66 @@ func logStatusMatches(status domain.IntentStatus, filter domain.IntentStatus) bo
 	return filter == "" || status == filter
 }
 
-// checkMarker turns a CheckSummary into a one-token marker for inline
-// log rendering. The empty string means no check has been recorded.
-func checkMarker(lc *domain.CheckSummary) string {
-	if lc == nil {
-		return ""
+// checkMarker turns the per-intent inputs into a one-token marker for
+// inline log rendering. The intent's lifecycle status, the latest
+// phase2 judgment (LastCheck) and a "phase1 currently warns about
+// this intent" boolean are folded into a small priority cascade.
+//
+// Empty result ("") means "do not render the [check:...] segment at
+// all" — used for intents whose lifecycle has reached a terminal
+// state where the question "should reviewer pay attention?" no longer
+// applies. Reviewers care about pre-merge state, not post-merge.
+//
+// Marker meanings (in priority order):
+//
+//	"!"      phase2 says there's a real conflict — must address
+//	"human?" phase2 says it needs a human eyeball
+//	"ok"     phase2 says no conflict — verified clean
+//	"~"      phase1 currently warns about an unjudged overlap
+//	         (no phase2 judgment yet; reviewer should consider
+//	          running `mainline check --prepare/--submit`)
+//	"?"      no signal yet — proposed/sealed_local intent that
+//	         neither phase1 nor phase2 has flagged
+func checkMarker(status domain.IntentStatus, lc *domain.CheckSummary, hasPhase1Warning bool) string {
+	switch status {
+	case domain.StatusMerged,
+		domain.StatusAbandoned,
+		domain.StatusSuperseded,
+		domain.StatusReverted:
+		return "" // terminal state — column is uninteresting
 	}
-	if lc.NeedsHumanReview {
-		return "?"
+	if lc != nil {
+		if lc.HasConflict {
+			return "!"
+		}
+		if lc.NeedsHumanReview {
+			return "human?"
+		}
+		return "ok"
 	}
-	if lc.HasConflict {
-		return "!"
+	if hasPhase1Warning {
+		return "~"
 	}
-	return "ok"
+	return "?"
+}
+
+// buildPhase1Lookup loads the cached phase1 warnings and folds them
+// into a per-intent boolean: "does any pair currently touch this
+// intent?". Either side of a pair counts. Returns an empty map (not
+// nil) so callers can do unconditional map lookups.
+func buildPhase1Lookup(store interface {
+	ReadPhase1Warnings() (*domain.Phase1WarningsCache, error)
+}) map[string]bool {
+	out := make(map[string]bool)
+	cache, _ := store.ReadPhase1Warnings()
+	if cache == nil {
+		return out
+	}
+	for _, p := range cache.Pairs {
+		out[p.LocalIntent] = true
+		out[p.RemoteIntent] = true
+	}
+	return out
 }
 
 func (s *Service) intentViewActivityAt(iv domain.IntentView) string {

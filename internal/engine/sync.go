@@ -95,15 +95,30 @@ func (s *Service) Sync() (*SyncResult, error) {
 	}
 
 	if cfg.Sync.AutoCheckAfterSync {
-		// On the first sync (no prior view), there is no "delta" —
-		// every intent is new. Warning on every existing pair would
-		// be noise; restrict to nil delta to reuse the all-eligible
-		// path only when the prior view is genuinely empty.
-		var delta map[string]bool
-		if len(priorIDs) > 0 {
-			delta = deltaIDs
+		// One scoring pass produces the FULL active conflict set;
+		// the cached snapshot lets `mainline log` answer "does this
+		// intent currently have any phase1 warning?" without
+		// re-running the scorer. The CLI surface (NewConflicts) is
+		// then the delta — we only print pairs where the remote side
+		// is brand-new this sync, so users do not re-see warnings
+		// they already acknowledged on a previous sync.
+		all := s.detectSyncConflicts(view, cfg.Check.Phase1Threshold, nil)
+		s.Store.WritePhase1Warnings(&domain.Phase1WarningsCache{
+			SchemaVersion: 1,
+			UpdatedAt:     core.Now(),
+			Pairs:         all,
+		})
+		if len(priorIDs) == 0 {
+			// First sync: every intent is "new"; warning on every
+			// existing pair would be noise.
+			result.NewConflicts = nil
+		} else {
+			for _, p := range all {
+				if deltaIDs[p.RemoteIntent] {
+					result.NewConflicts = append(result.NewConflicts, p)
+				}
+			}
 		}
-		result.NewConflicts = s.detectSyncConflicts(view, cfg.Check.Phase1Threshold, delta)
 	}
 
 	// Persist last-sync record for the freshness-window CLI wrapper
