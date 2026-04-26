@@ -134,13 +134,15 @@ func init() {
 
 	rootCmd.AddGroup(groupDaily, groupSetup, groupAdvanced)
 
-	// Daily — what every flow uses. Mixed write (start/append/seal),
-	// read (status/log/show/list-proposals/context/gaps), and team
-	// (sync/check) commands. Humans and agents both run all of these.
+	// Daily — what every flow uses. Mixed write (start/append/seal/
+	// abandon), read (status/log/show/list-proposals/context/gaps),
+	// and team (sync/check) commands. Humans and agents both run all
+	// of these.
 	statusCmd.GroupID = groupDaily.ID
 	startCmd.GroupID = groupDaily.ID
 	appendCmd.GroupID = groupDaily.ID
 	sealCmd.GroupID = groupDaily.ID
+	abandonCmd.GroupID = groupDaily.ID
 	logCmd.GroupID = groupDaily.ID
 	showCmd.GroupID = groupDaily.ID
 	syncCmd.GroupID = groupDaily.ID
@@ -170,7 +172,7 @@ func init() {
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, pinCmd, contextCmd,
-		listProposalsCmd, canonicalHashCmd, gapsCmd,
+		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
 	)
 }
 
