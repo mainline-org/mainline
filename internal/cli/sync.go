@@ -28,7 +28,26 @@ var syncCmd = &cobra.Command{
 			if result.Fetched {
 				fmt.Println("Fetched from origin")
 			}
-			fmt.Printf("View rebuilt: %d intents, %d proposed\n", result.IntentsInView, result.ProposedCount)
+			fmt.Printf("View rebuilt: %d intents, %d proposed", result.IntentsInView, result.ProposedCount)
+			if result.NewSealedSeen > 0 {
+				fmt.Printf(" (+%d new since last sync)", result.NewSealedSeen)
+			}
+			fmt.Println()
+			if len(result.NewConflicts) == 0 {
+				if result.NewSealedSeen > 0 {
+					fmt.Println("No new conflicts detected.")
+				}
+			} else {
+				fmt.Printf("\n⚠ %d potential conflict(s) detected:\n\n", len(result.NewConflicts))
+				for _, c := range result.NewConflicts {
+					fmt.Printf("  %s ↔ %s  score=%.2f confidence=%s\n",
+						c.LocalIntent, c.RemoteIntent, c.OverlapScore, c.Confidence)
+					fmt.Printf("    %s (local: %s, remote: %s)\n",
+						c.Reason, c.LocalSource, c.RemoteStatus)
+				}
+				fmt.Println()
+				fmt.Println("Run `mainline check <local_intent>` for full phase2 analysis.")
+			}
 		}
 	},
 }

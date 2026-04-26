@@ -7,11 +7,14 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"mainline/internal/engine"
 )
 
 var sealPrepare bool
 var sealSubmit bool
 var sealIntentID string
+var sealOffline bool
 
 var sealCmd = &cobra.Command{
 	Use:   "seal",
@@ -41,7 +44,8 @@ var sealCmd = &cobra.Command{
 				outputError(fmt.Errorf("read stdin: %w", err))
 				return
 			}
-			result, err := svc.SealSubmit(json.RawMessage(data))
+			result, err := svc.SealSubmitWithOptions(json.RawMessage(data),
+				&engine.SealSubmitOptions{Offline: sealOffline})
 			if err != nil {
 				outputError(err)
 				return
@@ -55,8 +59,20 @@ var sealCmd = &cobra.Command{
 				fmt.Printf("  Code commit: %s\n", result.CodeCommit)
 				fmt.Printf("  Event ID:   %s\n", result.EventID)
 				fmt.Printf("  Hash:       %s\n", result.Hash)
+				if result.SyncRan && result.SyncError != "" {
+					fmt.Printf("  Sync warn:  %s\n", result.SyncError)
+				}
 				if result.Warning != "" {
 					fmt.Printf("  Warning:    %s\n", result.Warning)
+				}
+				if len(result.Conflicts) > 0 {
+					fmt.Printf("\n⚠ %d potential conflict(s) detected (intent is sealed; review when convenient):\n",
+						len(result.Conflicts))
+					for _, c := range result.Conflicts {
+						fmt.Printf("  ↔ %s  score=%.2f confidence=%s (%s)\n",
+							c.RemoteIntent, c.OverlapScore, c.Confidence, c.RemoteStatus)
+						fmt.Printf("    %s\n", c.Reason)
+					}
 				}
 			}
 			return
@@ -71,4 +87,5 @@ func init() {
 	sealCmd.Flags().BoolVar(&sealPrepare, "prepare", false, "output seal prepare package (JSON)")
 	sealCmd.Flags().BoolVar(&sealSubmit, "submit", false, "submit seal result from stdin (JSON)")
 	sealCmd.Flags().StringVar(&sealIntentID, "intent", "", "intent ID (default: active intent on current branch)")
+	sealCmd.Flags().BoolVar(&sealOffline, "offline", false, "skip the auto sync+check inside --submit (sealed_local only)")
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"mainline/internal/core"
 	"mainline/internal/domain"
@@ -239,29 +240,67 @@ func (s *Service) writeAgentsMD() {
 	}
 	content := `## Mainline
 
-<!-- mainline-agents-md-version: 1 -->
+<!-- mainline-agents-md-version: 3 -->
 
 This project uses Mainline to record the intent behind AI-assisted code changes.
-You are expected to use Mainline while modifying code.
 
 ### Before changing code
 
     mainline status --json
+
+If there is no active intent, start one:
+
     mainline start "<short description of the user's goal>" --json
-    mainline context --json
+
+For unfamiliar subsystems, query history (auto-syncs with the team):
+
+    mainline context <keyword> --json
 
 ### While working
+
+After each meaningful logical change, record a turn:
 
     mainline append "<specific description of what changed>" --json
 
 ### When the task is complete
 
-    mainline seal --prepare --json
-    mainline seal --submit - --json
+1. Make sure all code changes are committed:
 
-### Do not run unless explicitly asked by the user
+       git add <files> && git commit -m "<message>"
+
+2. Prepare a seal package:
+
+       mainline seal --prepare --json
+
+3. Generate JSON matching the returned schema. Include rich tags in
+   the fingerprint (primary subsystem, synonyms, parent concepts,
+   related technologies):
+
+       "tags": ["auth", "authentication", "security", "jwt", "session"]
+
+4. Submit it:
+
+       mainline seal --submit --json < seal.json
+
+   Mainline syncs with the team and runs phase1 conflict checks
+   automatically inside --submit. If the JSON response includes a
+   "conflicts" array, surface those conflicts to the user clearly
+   before continuing.
+
+### Semantic conflict checks
+
+When asked to check semantic conflicts (auto-syncs first):
+
+    mainline check --prepare --intent <id> --json
+
+Generate a CheckJudgmentResult JSON matching the schema, then submit:
+
+    mainline check --submit --json < judgment.json
+
+### Do not run unless explicitly asked
 
     mainline merge
+    mainline pin <intent> <commit>
     mainline revert
 `
 	os.WriteFile(path, []byte(content), 0o644)
@@ -303,6 +342,13 @@ type StatusResult struct {
 	TurnCount     int                 `json:"turn_count"`
 	ProposedCount int                 `json:"proposed_count"`
 	MainHead      string              `json:"main_head,omitempty"`
+	// rc5: sync staleness surface. LastSync is the persisted record
+	// of the most recent successful Sync; nil means never synced in
+	// this clone. SyncStaleSeconds and SyncStale are convenience
+	// fields so the CLI does not need to do the math.
+	LastSync         *domain.LastSync `json:"last_sync,omitempty"`
+	SyncStaleSeconds int64            `json:"sync_stale_seconds,omitempty"`
+	SyncStale        bool             `json:"sync_stale"`
 }
 
 func (s *Service) Status() (*StatusResult, error) {
@@ -336,7 +382,37 @@ func (s *Service) Status() (*StatusResult, error) {
 	head, _ := s.Git.HeadCommit()
 	result.MainHead = head
 
+	if ls, _ := s.Store.ReadLastSync(); ls != nil {
+		result.LastSync = ls
+		cfg, _ := s.getTeamConfig()
+		threshold := int64(86400)
+		if cfg != nil && cfg.Sync.StaleThresholdSeconds > 0 {
+			threshold = cfg.Sync.StaleThresholdSeconds
+		}
+		if t, err := time.Parse(time.RFC3339, ls.At); err == nil {
+			elapsed := int64(time.Since(t).Seconds())
+			result.SyncStaleSeconds = elapsed
+			result.SyncStale = elapsed > threshold
+		}
+	} else {
+		// Never synced — treat as stale so the CLI can prompt.
+		result.SyncStale = true
+	}
+
 	return result, nil
+}
+
+// GetTeamConfigForCLI is a thin re-export of the package-private
+// getTeamConfig so the cli package can read freshness window settings
+// from the same source the rest of the engine does.
+func (s *Service) GetTeamConfigForCLI() (*domain.TeamConfig, error) {
+	return s.getTeamConfig()
+}
+
+// GetLastSyncForCLI returns the last-sync record (or nil if none),
+// re-exported for the auto-before-command wrapper.
+func (s *Service) GetLastSyncForCLI() (*domain.LastSync, error) {
+	return s.Store.ReadLastSync()
 }
 
 func (s *Service) requireInit() error {
