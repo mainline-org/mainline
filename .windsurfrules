@@ -1,0 +1,29 @@
+<!-- mainline:begin -->
+## Mainline
+
+<!-- mainline-agents-md-version: 5 -->
+
+This project uses **Mainline** for AI-driven intent tracking and
+conflict detection. The full agent workflow lives in `AGENTS.md` at
+the repo root — read that file for the complete contract.
+
+Quick reference:
+
+```
+mainline status                                      # see your state
+
+# Read team intents for context (do this aggressively):
+mainline log --json --limit 30                       # recent intents
+mainline show <intent_id> --json                     # full why/decisions/risks
+mainline list-proposals --json                       # what's in flight
+
+# Write your own intent:
+mainline start "<goal>"                              # claim work
+mainline append "<what changed>"                     # after each turn
+git add ... && git commit -m ...                     # commit code
+mainline seal --prepare > seal.json                  # then fill seal.json
+mainline seal --submit < seal.json                   # auto syncs + checks
+```
+
+Sync, pin, merge are automatic — do not invoke them.
+<!-- mainline:end -->
