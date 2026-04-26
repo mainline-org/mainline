@@ -170,28 +170,28 @@ func TestPropertyReconcileIdempotent(t *testing.T) {
 		}
 		svc.Sync()
 
-		first, err := svc.Reconcile()
+		first, err := svc.Pin()
 		if err != nil {
 			rt.Fatalf("first reconcile: %v", err)
 		}
-		if first.Reconciled != nMerged {
+		if first.Pinned != nMerged {
 			rt.Errorf("first reconcile expected %d, got %d (ids=%v)",
-				nMerged, first.Reconciled, first.IntentIDs)
+				nMerged, first.Pinned, first.IntentIDs)
 		}
 
-		second, err := svc.Reconcile()
+		second, err := svc.Pin()
 		if err != nil {
 			rt.Fatalf("second reconcile: %v", err)
 		}
-		if second.Reconciled != 0 {
+		if second.Pinned != 0 {
 			rt.Errorf("second reconcile must be no-op, got %d (ids=%v)",
-				second.Reconciled, second.IntentIDs)
+				second.Pinned, second.IntentIDs)
 		}
 
 		// And a third call still no-op.
-		third, _ := svc.Reconcile()
-		if third.Reconciled != 0 {
-			rt.Errorf("third reconcile must also be no-op, got %d", third.Reconciled)
+		third, _ := svc.Pin()
+		if third.Pinned != 0 {
+			rt.Errorf("third reconcile must also be no-op, got %d", third.Pinned)
 		}
 	})
 }
