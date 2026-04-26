@@ -17,6 +17,26 @@ import (
 type Service struct {
 	Git   *gitops.Git
 	Store *storage.Store
+
+	// Bus is the optional domain-event sink. When non-nil, the
+	// engine emits events at the end of each successful state
+	// transition (intent_started, turn_appended, intent_sealed,
+	// sync_completed, conflict_detected, check_judged) for the
+	// webhook fan-out / hooks Dispatcher to forward.
+	//
+	// The interface is intentionally tiny (one Emit method) and
+	// nil-safe — production code wires a webhook bus, tests leave
+	// it nil. We never block on Emit; the bus implementation is
+	// expected to enqueue and return.
+	Bus EventBus
+}
+
+// EventBus is the engine's view of the domain-event sink. Mirrors
+// hooks.EventEmitter but lives here so the engine package does not
+// import internal/hooks (one-way: hooks depends on engine via the
+// EngineFacade interface, not the other way around).
+type EventBus interface {
+	Emit(name string, data any)
 }
 
 // NewService creates a Service by auto-detecting the repo root from cwd.
@@ -33,6 +53,29 @@ func NewService(dir string) (*Service, error) {
 func NewServiceFromRoot(root string) *Service {
 	g := gitops.NewFromRoot(root)
 	return &Service{Git: g, Store: storage.New(root, g)}
+}
+
+// SetBus wires the optional domain-event sink. Safe to leave unset
+// when the cli has no webhooks configured — the engine treats nil
+// as "drop events on the floor".
+func (s *Service) SetBus(bus EventBus) { s.Bus = bus }
+
+// emit is the engine-internal nil-safe wrapper. Centralized so adding
+// a new domain event is one Service method that ends with `s.emit(...)`,
+// and the nil check + panic guard live in exactly one place.
+func (s *Service) emit(name string, data any) {
+	if s == nil || s.Bus == nil || name == "" {
+		return
+	}
+	defer func() {
+		// A misbehaving bus implementation must never crash the
+		// CLI. Recover and swallow — the user's command already
+		// succeeded by the time we reach emit; we will not turn
+		// success into failure because the observability sink
+		// blew up.
+		_ = recover()
+	}()
+	s.Bus.Emit(name, data)
 }
 
 // -----------------------------------------------------------

@@ -1,4 +1,10 @@
 .ml-cache/
+# .ml-cache/ holds local-only working state. Subdirectories include:
+#   drafts/         — in-flight intent state pre-seal
+#   views/          — rebuilt MainlineView snapshots
+#   sessions/       — agent session traces (legacy)
+#   webhook-queue/  — outbound webhook envelopes awaiting delivery
+#   hooks/          — agent-hooks dispatcher bookkeeping
 .mainline/local.toml
 ./mainline
 mainline

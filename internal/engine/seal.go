@@ -379,5 +379,15 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		_ = syncResult // reserved for future surface (unused for now)
 	}
 
+	// Domain-event fan-out. intent_sealed is the headline event
+	// most webhook subscribers care about; conflict_detected fires
+	// for each phase1 hit so a notification center can page on
+	// fresh conflicts at the moment they appear (the user just
+	// promised the team they're doing this work).
+	s.emit("intent_sealed", result)
+	for _, p := range result.Conflicts {
+		s.emit("conflict_detected", p)
+	}
+
 	return result, nil
 }
