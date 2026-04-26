@@ -1,7 +1,8 @@
 # Mainline · v0.3 Patch — Coverage Model + Seal Snapshot Contract
 
-> **状态**: 设计稿,**尚未实现**。基于 mainline-watch 朋友 dogfood 反馈合并两份独立 issue
-> 写成的统一 spec patch。本文件是 v0.3 实现的设计基线;落地时按"实施步骤"推进。
+> **状态**: **已实现** (v0.3)。基于 mainline-watch 朋友 dogfood 反馈合并两份独立
+> issue 写成的统一 spec patch。所有 7 个 patch (A–G) 已落地,见 §10 实施步骤的对应
+> 代码位置。
 >
 > **应用对象**: v0.2(已合并的 fan-out + cat-file batch + auto-pin-on-sync)
 >

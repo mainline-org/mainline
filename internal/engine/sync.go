@@ -196,23 +196,42 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 			if err := json.Unmarshal(raw, &evt); err != nil {
 				continue
 			}
+			// v0.3 audit fields default to "clean / complete" for events
+			// written before the schema bump (legacy compat).
+			worktreeStatus := evt.WorktreeStatus
+			if worktreeStatus == "" {
+				worktreeStatus = "clean"
+			}
+			sealedBranch := evt.SealedAtBranch
+			if sealedBranch == "" {
+				sealedBranch = evt.GitBranch
+			}
+			evidenceComplete := evt.EvidenceComplete
+			if evt.WorktreeStatus == "" {
+				// Legacy event: field absent → assume complete.
+				evidenceComplete = true
+			}
 			iv := &domain.IntentView{
-				IntentID:      evt.IntentID,
-				SchemaVersion: 1,
-				Status:        domain.StatusProposed,
-				ActorID:       evt.ActorID,
-				ActorName:     evt.ActorName,
-				Thread:        evt.Thread,
-				GitBranch:     evt.GitBranch,
-				Goal:          evt.Goal,
-				SealedAt:      evt.SealedAt,
-				BaseCommit:    evt.BaseCommit,
-				CodeCommit:    evt.CodeCommit,
-				Summary:       &evt.Summary,
-				Fingerprint:   &evt.Fingerprint,
-				ViewRebuiltAt: core.Now(),
+				IntentID:        evt.IntentID,
+				SchemaVersion:   1,
+				Status:          domain.StatusProposed,
+				ActorID:         evt.ActorID,
+				ActorName:       evt.ActorName,
+				Thread:          evt.Thread,
+				GitBranch:       evt.GitBranch,
+				Goal:            evt.Goal,
+				SealedAt:        evt.SealedAt,
+				BaseCommit:      evt.BaseCommit,
+				CodeCommit:      evt.CodeCommit,
+				BackfillCommits: evt.BackfillCommits,
+				Summary:         &evt.Summary,
+				Fingerprint:     &evt.Fingerprint,
+				ViewRebuiltAt:   core.Now(),
 				StatusEvidence: domain.StatusEvidence{
-					SealedEventID: evt.EventID,
+					SealedEventID:    evt.EventID,
+					EvidenceComplete: evidenceComplete,
+					WorktreeStatus:   worktreeStatus,
+					SealedAtBranch:   sealedBranch,
 				},
 				Publication: "published",
 			}

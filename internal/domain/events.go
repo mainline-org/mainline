@@ -23,6 +23,13 @@ type BaseEvent struct {
 
 // IntentSealedEvent records the sealing of an intent – the point at which
 // its code, summary, and fingerprint are frozen.
+//
+// v0.3 fields (EvidenceComplete / WorktreeStatus / SealedAtBranch /
+// DirtyFiles) make the seal-time worktree state permanently auditable:
+// reviewers can tell from the audit trail whether an intent was sealed
+// against a clean, committed-only worktree or with `--allow-dirty`.
+// Legacy events without these fields default to clean / complete /
+// branch=GitBranch via view-rebuild compatibility.
 type IntentSealedEvent struct {
 	BaseEvent
 	IntentID    string              `json:"intent_id"`
@@ -36,6 +43,19 @@ type IntentSealedEvent struct {
 	Fingerprint SemanticFingerprint `json:"fingerprint"`
 	TurnCount   int                 `json:"turn_count"`
 	SealedAt    string              `json:"sealed_at"`
+
+	// v0.3 audit-trail additions:
+	EvidenceComplete bool     `json:"evidence_complete,omitempty"`
+	WorktreeStatus   string   `json:"worktree_status,omitempty"`
+	SealedAtBranch   string   `json:"sealed_at_branch,omitempty"`
+	DirtyFiles       []string `json:"dirty_files,omitempty"`
+
+	// v0.3 backfill: explicit list of commits this sealed intent
+	// claims to cover. When set, auto-pin pins this intent to each
+	// listed commit instead of running the strategy cascade. Used
+	// by `mainline start --commits` for retroactive coverage of
+	// commits that landed without an intent.
+	BackfillCommits []string `json:"backfill_commits,omitempty"`
 }
 
 // IntentSupersededEvent records that an intent was replaced by a new one.
