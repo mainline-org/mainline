@@ -13,38 +13,24 @@ import (
 // without depending on the engine implementation, and so engine can
 // import hooks (for EventBus wiring) without an import cycle.
 //
-// Methods are intentionally narrow: the Dispatcher only ever runs the
-// "auto-flow" subset of operations. Anything that requires agent
-// semantic judgment (seal --submit fingerprint, check verdict) stays
-// out of scope and remains a manual CLI call by the agent.
+// Methods are deliberately tiny: hooks run as a child process WITHOUT
+// LLM intelligence, so they must never produce semantic content
+// (intent goal, append description, fingerprint). All the dispatcher
+// can do is execute mechanical, deterministic operations and surface
+// state for the agent to read. Sync and Status are the only two such
+// operations on this contract; everything else (start, append, seal
+// prepare/submit, check) is an agent decision and stays a manual CLI
+// call described in AGENTS.md.
 type EngineFacade interface {
 	// Sync runs the auto-flow team-state refresh. Used by SessionStart.
 	Sync() (any, error)
 
-	// Status returns a marshallable status report. Used to surface
-	// in-flight prepare snapshots and active intent at SessionStart.
+	// Status returns a marshallable status report. Used at SessionStart
+	// to give the agent a snapshot of in-flight work (active draft,
+	// proposed intents, synced head) so it can decide on its own
+	// whether to start / append / seal — exactly as AGENTS.md
+	// instructs it to in the no-hook flow.
 	Status() (any, error)
-
-	// Start opens an intent for the given goal on the current
-	// branch. The dispatcher passes the user's first prompt as the
-	// goal. Idempotent — starting a second intent on a branch with
-	// an active draft is a no-op in the engine.
-	Start(goal, thread string) (any, error)
-
-	// Append records a turn against the current active intent.
-	// Returns ErrNoActiveIntent if none exists; the dispatcher
-	// treats that as a non-fatal skip.
-	Append(description string) (any, error)
-
-	// SealPrepare snapshots the current draft into a SealResult
-	// template the agent can fill. The dispatcher does NOT call
-	// SealSubmit — that needs semantic fingerprint generation.
-	SealPrepare(intentID string) (any, error)
-
-	// ActiveDraftIntentID returns the intent id of the active draft
-	// on the current branch, or "" if none. Lets the dispatcher
-	// decide whether TurnStart should call Start.
-	ActiveDraftIntentID() (string, error)
 }
 
 // Logger is a minimal sink for dispatcher diagnostics. Hooks run in
@@ -68,9 +54,9 @@ func (nopLogger) Warnf(string, ...any)  {}
 
 // Notifier sinks human-facing one-line messages. The CLI binds this
 // to stderr when not in --json mode; tests bind it to a buffer.
-// Intentionally separate from Logger because most hook fires should
-// be silent, but a "auto-started intent X" notification IS something
-// the user wants to see.
+// Kept separate from Logger because most hook fires should be silent,
+// but a "sync surfaced N new merges" notification IS something the
+// user wants to see.
 type Notifier interface {
 	Notify(line string)
 }
@@ -83,12 +69,32 @@ func (nopNotifier) Notify(string) {}
 // hook invocation; constructed by the cli, fed an Event by the
 // agent's ParseEvent, and produces engine state changes + emits
 // domain events on the configured EventBus.
+//
+// Hooks dispatch is split into two halves:
+//
+//   - SessionStart does mechanical work (sync + status) and caches
+//     the result on the dispatcher. The agent-specific renderer
+//     reads the cached result via RenderSessionStartContext and
+//     turns it into agent-protocol stdout (e.g. cursor's
+//     additional_context).
+//   - All other event types are pure observer signals on the webhook
+//     bus. The dispatcher does NOT call Start / Append / SealPrepare
+//     because those require semantic judgment that hooks cannot
+//     perform without an LLM.
 type Dispatcher struct {
 	Engine   EngineFacade
 	Bus      EventEmitter
 	Log      Logger
 	Notify   Notifier
 	Settings DispatchSettings
+
+	// Cached SessionStart results so the agent renderer can build
+	// additional_context without re-running sync/status. Set by
+	// onSessionStart, consumed by RenderSessionStartContext.
+	lastSync       any
+	lastSyncErr    error
+	lastStatus     any
+	lastSessionEv  *Event
 }
 
 // DispatchSettings mirror the [hooks] section of .mainline/config.toml.
@@ -101,33 +107,17 @@ type DispatchSettings struct {
 	// without touching every agent's config file.
 	Enabled bool
 
-	// AutoStartIntent controls TurnStart → mainline start. Off if
-	// the team prefers explicit intent creation but still wants
-	// auto-append / auto-seal-prepare.
-	AutoStartIntent bool
-
-	// AutoAppendTurn controls TurnEnd / SubagentEnd → mainline append.
-	AutoAppendTurn bool
-
-	// AutoSealPrepare controls SessionEnd → mainline seal --prepare.
-	AutoSealPrepare bool
-
 	// AutoSyncOnSessionStart controls SessionStart → mainline sync.
 	// Defaults true; can be disabled on slow networks or for users
 	// who prefer to run sync manually.
 	AutoSyncOnSessionStart bool
 }
 
-// DefaultDispatchSettings are the "hook-package-installs-everything"
-// defaults. Each toggle exists so users can opt out of one piece
-// while keeping the rest. The product position is: when hooks are
-// installed, mainline takes over — all four are on.
+// DefaultDispatchSettings: hooks installed implies sync-on-start. No
+// other auto-flow toggles exist — start/append/seal are agent jobs.
 func DefaultDispatchSettings() DispatchSettings {
 	return DispatchSettings{
 		Enabled:                true,
-		AutoStartIntent:        true,
-		AutoAppendTurn:         true,
-		AutoSealPrepare:        true,
 		AutoSyncOnSessionStart: true,
 	}
 }
@@ -149,10 +139,10 @@ func NewDispatcher(eng EngineFacade, bus EventEmitter, settings DispatchSettings
 	return d
 }
 
-// Dispatch routes a normalized Event to the appropriate auto-flow
-// handler. Errors are surfaced to the caller so the cli can decide
-// whether to print them; the dispatcher does NOT write to stderr
-// itself (that is the CLI's job, gated on log level).
+// Dispatch routes a normalized Event to the appropriate handler.
+// Errors are surfaced to the caller so the cli can decide whether to
+// print them; the dispatcher does NOT write to stderr itself (that
+// is the CLI's job, gated on log level).
 //
 // nil event is a valid input — agents return nil for native hooks
 // that have no normalized mapping (preToolUse etc). Dispatch returns
@@ -167,9 +157,8 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev *Event) error {
 	}
 	if d.Engine == nil {
 		// No engine wired — cli builds dispatcher without engine
-		// when --no-engine is set (e.g. for `mainline hooks <agent>
-		// <event>` in a non-mainline repo, where we still want the
-		// hook to exit cleanly).
+		// when the hook fires in a non-mainline repo. We still
+		// want it to exit cleanly.
 		return nil
 	}
 
@@ -177,16 +166,27 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev *Event) error {
 	case SessionStart:
 		return d.onSessionStart(ctx, ev)
 	case TurnStart:
-		return d.onTurnStart(ctx, ev)
+		// Webhook-only signal. Hooks cannot judge whether the
+		// prompt is a goal or a procedural ask — that's the
+		// agent's job per AGENTS.md.
+		d.Bus.Emit(d.envelope("turn_started", ev, nil))
+		return nil
 	case TurnEnd, SubagentEnd:
-		return d.onTurnEnd(ctx, ev)
+		// Webhook-only signal. Hooks cannot judge whether the
+		// turn warrants a mainline append — that's the agent's
+		// job per AGENTS.md ("after each meaningful logical
+		// change … record one turn").
+		d.Bus.Emit(d.envelope("turn_ended", ev, nil))
+		return nil
 	case SessionEnd:
-		return d.onSessionEnd(ctx, ev)
+		// Webhook-only signal. Seal --prepare requires a goal-aware
+		// view of the draft and seal --submit requires a semantic
+		// fingerprint — both agent jobs.
+		d.Bus.Emit(d.envelope("session_ended", ev, nil))
+		return nil
 	case Compaction, SubagentStart:
-		// Reserved for future use (compaction = flush; subagent_start
-		// = informational). No automation today, but having the
-		// branches present means new behaviour can land without a
-		// taxonomy change.
+		// Reserved for future use. Having the branches present
+		// means new behaviour can land without a taxonomy change.
 		d.Log.Debugf("event %s noop", ev.Type)
 		return nil
 	default:
@@ -196,126 +196,116 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev *Event) error {
 }
 
 // -----------------------------------------------------------
-// SessionStart: refresh team state + surface in-flight work
+// SessionStart: refresh team state + cache snapshot for renderer
 // -----------------------------------------------------------
 
 func (d *Dispatcher) onSessionStart(_ context.Context, ev *Event) error {
 	d.Bus.Emit(d.envelope("session_started", ev, nil))
+	d.lastSessionEv = ev
+
 	if !d.Settings.AutoSyncOnSessionStart {
+		// Even without sync we still want a status snapshot so the
+		// agent renderer has something to inject — consistent UX
+		// regardless of network state.
+		if status, err := d.Engine.Status(); err == nil && status != nil {
+			d.lastStatus = status
+			d.Bus.Emit(d.envelope("status_snapshot", ev, status))
+		}
 		return nil
 	}
+
 	syncResult, err := d.Engine.Sync()
 	if err != nil {
 		// Network being down on session start should NEVER block
-		// the agent. Log + emit and continue.
+		// the agent. Log + emit and continue with status only.
 		d.Log.Warnf("auto-sync on session start: %v", err)
+		d.lastSyncErr = err
 		d.Bus.Emit(d.envelope("sync_failed", ev, map[string]any{"error": err.Error()}))
-		return nil
+	} else {
+		d.lastSync = syncResult
+		d.Bus.Emit(d.envelope("sync_completed", ev, syncResult))
 	}
-	d.Bus.Emit(d.envelope("sync_completed", ev, syncResult))
 
-	// Surface "you have a stale prepare from last session" — that's
-	// the only way the agent learns it should seal --submit before
-	// starting new work. Without this nudge the workflow falls back
-	// to relying on the agent's memory, which is exactly the
-	// problem we set out to solve.
 	if status, err := d.Engine.Status(); err == nil && status != nil {
-		// Status returns a marshallable struct; we don't model it
-		// directly here to keep the facade narrow. Just route it
-		// through a webhook event for observers.
+		d.lastStatus = status
 		d.Bus.Emit(d.envelope("status_snapshot", ev, status))
 	}
 	return nil
 }
 
 // -----------------------------------------------------------
-// TurnStart: auto-start an intent using the user prompt as goal
+// SessionStart context renderer — agent-protocol-agnostic
 // -----------------------------------------------------------
 
-func (d *Dispatcher) onTurnStart(_ context.Context, ev *Event) error {
-	d.Bus.Emit(d.envelope("turn_started", ev, nil))
-	if !d.Settings.AutoStartIntent {
-		return nil
-	}
-	if strings.TrimSpace(ev.Prompt) == "" {
-		// Headless mode (cursor -p) doesn't fire beforeSubmitPrompt
-		// at all, so we typically never reach here without a prompt.
-		// Belt-and-suspenders: if the prompt is empty for any other
-		// reason, skip auto-start. We will not invent a goal.
-		d.Log.Debugf("turn_start without prompt; skipping auto-start")
-		return nil
-	}
-	if id, _ := d.Engine.ActiveDraftIntentID(); id != "" {
-		// Already drafting on this branch; the user is iterating on
-		// an existing intent. Auto-append in onTurnEnd will record
-		// this turn against that intent.
-		d.Log.Debugf("active intent %s already exists; not starting new", id)
-		return nil
-	}
-	goal := summarizePromptAsGoal(ev.Prompt)
-	res, err := d.Engine.Start(goal, "")
-	if err != nil {
-		d.Log.Warnf("auto-start: %v", err)
-		return nil
-	}
-	d.Notify.Notify(fmt.Sprintf("mainline: auto-started intent for goal %q", goal))
-	d.Bus.Emit(d.envelope("intent_started", ev, res))
-	return nil
-}
+// LastSync returns the cached SessionStart sync result (nil if sync
+// was disabled or failed). Renderers use it to compose context.
+func (d *Dispatcher) LastSync() any { return d.lastSync }
 
-// -----------------------------------------------------------
-// TurnEnd / SubagentEnd: auto-append a turn description
-// -----------------------------------------------------------
+// LastSyncErr returns the cached SessionStart sync error (nil if
+// sync succeeded or was disabled).
+func (d *Dispatcher) LastSyncErr() error { return d.lastSyncErr }
 
-func (d *Dispatcher) onTurnEnd(_ context.Context, ev *Event) error {
-	d.Bus.Emit(d.envelope("turn_ended", ev, nil))
-	if !d.Settings.AutoAppendTurn {
-		return nil
-	}
-	desc := turnDescription(ev)
-	if desc == "" {
-		// Nothing concrete to record. Skip rather than write a
-		// turn that says "(no description)" — that pollutes the
-		// intent's narrative.
-		return nil
-	}
-	res, err := d.Engine.Append(desc)
-	if err != nil {
-		// Most common cause: no active intent (user disabled
-		// AutoStartIntent or a turn fired before session_start
-		// resolved). Log and emit so observers see it.
-		d.Log.Debugf("auto-append: %v", err)
-		d.Bus.Emit(d.envelope("turn_append_skipped", ev, map[string]any{"error": err.Error()}))
-		return nil
-	}
-	d.Bus.Emit(d.envelope("turn_appended", ev, res))
-	return nil
-}
+// LastStatus returns the cached SessionStart status snapshot.
+func (d *Dispatcher) LastStatus() any { return d.lastStatus }
 
-// -----------------------------------------------------------
-// SessionEnd: snapshot the draft for the agent to seal next session
-// -----------------------------------------------------------
+// RenderSessionStartContext composes a markdown blob the agent can
+// inject as system context at session start. It contains ONLY:
+//
+//   - the deterministic state snapshot the agent would otherwise have
+//     to fetch by running `mainline status --json`;
+//   - the deterministic sync summary (or sync error);
+//   - a scenario hint that points the agent at AGENTS.md and the
+//     two CLI commands it should run before deciding (`mainline log`
+//     and `mainline show`).
+//
+// It does NOT make decisions for the agent: no goal text, no append
+// description, no fingerprint. Those are LLM jobs and the markdown
+// stays neutral so the agent's reasoning is the source of truth.
+func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) string {
+	var b strings.Builder
+	b.WriteString("# Mainline session-start context\n\n")
+	b.WriteString("Hooks ran `mainline sync` and `mainline status` for you. ")
+	b.WriteString("Use this snapshot to orient yourself. The full agent contract is in AGENTS.md ")
+	b.WriteString("— hooks do not replace any step there; they only save you the two CLI calls below.\n\n")
 
-func (d *Dispatcher) onSessionEnd(_ context.Context, ev *Event) error {
-	d.Bus.Emit(d.envelope("session_ended", ev, nil))
-	if !d.Settings.AutoSealPrepare {
-		return nil
+	b.WriteString("## status snapshot\n\n")
+	if status == nil {
+		b.WriteString("_status unavailable_\n\n")
+	} else if raw, err := json.MarshalIndent(status, "", "  "); err == nil {
+		b.WriteString("```json\n")
+		b.Write(raw)
+		b.WriteString("\n```\n\n")
+	} else {
+		b.WriteString("_status unmarshallable: ")
+		b.WriteString(err.Error())
+		b.WriteString("_\n\n")
 	}
-	id, err := d.Engine.ActiveDraftIntentID()
-	if err != nil || id == "" {
-		// No draft to prepare — nothing to do. Common case for
-		// sessions that didn't end up auto-starting (user opened
-		// agent for a quick chat, no edits).
-		return nil
+
+	b.WriteString("## sync summary\n\n")
+	if d.lastSyncErr != nil {
+		b.WriteString("Sync FAILED: `")
+		b.WriteString(d.lastSyncErr.Error())
+		b.WriteString("`. Treat this snapshot as potentially stale and re-run `mainline sync` once your network is healthy.\n\n")
+	} else if syncResult == nil {
+		b.WriteString("_sync was disabled or skipped_\n\n")
+	} else if raw, err := json.MarshalIndent(syncResult, "", "  "); err == nil {
+		b.WriteString("```json\n")
+		b.Write(raw)
+		b.WriteString("\n```\n\n")
+	} else {
+		b.WriteString("_sync result unmarshallable: ")
+		b.WriteString(err.Error())
+		b.WriteString("_\n\n")
 	}
-	pkg, err := d.Engine.SealPrepare(id)
-	if err != nil {
-		d.Log.Warnf("auto seal --prepare: %v", err)
-		return nil
-	}
-	d.Notify.Notify(fmt.Sprintf("mainline: prepared seal snapshot for %s; agent should run `mainline seal --submit` next session", id))
-	d.Bus.Emit(d.envelope("seal_prepared", ev, pkg))
-	return nil
+
+	b.WriteString("## what to do next\n\n")
+	b.WriteString("Follow AGENTS.md exactly — hooks change nothing about the workflow:\n\n")
+	b.WriteString("- Before non-trivial work, run `mainline log --json --limit 30` and `mainline show <intent_id> --json` for any prior intents that touch your area. Do this even when the prompt looks small; the cost is two CLI calls and the payoff is not duplicating someone else's just-finished work.\n")
+	b.WriteString("- If `active_intent` above is empty and your turn is real work (not a one-off question or procedural ask), run `mainline start \"<goal>\"`. If it is non-empty, append against it instead.\n")
+	b.WriteString("- After each meaningful logical change, run `mainline append \"<what changed>\"`. The hooks DO NOT do this for you — only your judgment can decide what counts as a meaningful change.\n")
+	b.WriteString("- When the task is complete, commit code, then `mainline seal --prepare --json`, fill the SealResult (fingerprint generously), then `mainline seal --submit --json < seal.json`. If the response carries a `conflicts` array, surface it to the user verbatim.\n")
+	b.WriteString("- Re-run `mainline status` whenever you are about to make an architectural decision; sessionStart context is a one-shot snapshot, not a live view.\n")
+	return b.String()
 }
 
 // -----------------------------------------------------------
@@ -333,47 +323,6 @@ func (d *Dispatcher) envelope(name string, ev *Event, data any) DomainEvent {
 		SessionID:  ev.SessionID,
 		Data:       toJSON(data),
 	}
-}
-
-// summarizePromptAsGoal trims the prompt down to a one-line goal
-// string. mainline goals are short — humans skim `mainline log`
-// titles first. We keep the first non-empty line of the prompt and
-// cap it at 200 chars; the full prompt is preserved in the turn
-// description on TurnEnd.
-func summarizePromptAsGoal(prompt string) string {
-	for _, line := range strings.Split(prompt, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if len(line) > 200 {
-			return strings.TrimSpace(line[:200]) + "…"
-		}
-		return line
-	}
-	if len(prompt) > 200 {
-		return strings.TrimSpace(prompt[:200]) + "…"
-	}
-	return strings.TrimSpace(prompt)
-}
-
-// turnDescription synthesizes the text we record on a turn. Cursor's
-// subagentStop carries a structured Summary + ModifiedFiles list; the
-// regular `stop` hook does not, so we fall back to the agent-supplied
-// status. The dispatcher does NOT shell out to `git status` here —
-// that's already what engine.Service.Append computes (DiffStatAgainst)
-// and we'd just be double-counting.
-func turnDescription(ev *Event) string {
-	if s := strings.TrimSpace(ev.Summary); s != "" {
-		return s
-	}
-	if len(ev.ModifiedFiles) > 0 {
-		return fmt.Sprintf("agent turn modified %d file(s)", len(ev.ModifiedFiles))
-	}
-	if s := strings.TrimSpace(ev.Status); s != "" {
-		return fmt.Sprintf("agent turn (%s)", s)
-	}
-	return ""
 }
 
 func toJSON(v any) json.RawMessage {

@@ -228,36 +228,42 @@ You usually don't need these. Documented for completeness.
 ## Agent hooks (opt-in)
 
 Agents like Cursor (today; Codex / Claude Code reserved) expose
-session/turn lifecycle hooks. `mainline hooks` plugs into those so
-the mainline flow runs **without the agent having to remember**:
+session/turn lifecycle hooks. `mainline hooks` plugs into those as a
+**context provider** — it runs the two mechanical operations the
+agent would otherwise have to remember (`sync` + `status`) and
+injects the snapshot into the agent's system context. It does **not**
+drive the rest of the workflow.
 
 ```bash
 mainline hooks list-agents             # what's supported
-mainline hooks install cursor          # writes .cursor/hooks.json
-mainline hooks status                  # show installed agents + auto-flow toggles
-mainline hooks uninstall cursor        # cleanly remove mainline-managed hooks
+mainline hooks install --agent cursor  # writes .cursor/hooks.json
+mainline hooks status                  # show installed agents + dispatcher toggles
+mainline hooks uninstall --agent cursor
 mainline hooks disable                 # soft-disable without uninstalling
 mainline hooks enable
 ```
 
-Once installed, the agent runtime invokes mainline at four boundaries:
+What hooks DO at each event (cursor today, others reserved):
 
-| Hook event | mainline action | Notes |
-|---|---|---|
-| `session_start` | `mainline sync` | Surfaces conflicts on stderr before the first turn |
-| `turn_start`    | `mainline start "<goal>"` | Only if no draft is active |
-| `turn_end`      | `mainline append "<summary>"` | Auto-records each turn |
-| `session_end`   | `mainline seal --prepare` | Stages `seal.json` for the agent to fill in |
+| Hook event | mainline action |
+|---|---|
+| `session_start` | `mainline sync` + `mainline status`; cursor receives the snapshot as `additional_context` so the agent starts every session knowing the team state without an extra CLI call |
+| `before_submit_prompt` / `stop` / `subagent_stop` / `session_end` | webhook fan-out only; the dispatcher does NOT touch the engine |
 
-`seal --submit` remains an explicit step — the seal payload requires
-human / agent judgment (fingerprint, risks, follow-ups) that the hook
-layer can't generate. Per-toggle controls live in `.mainline/config.toml`
-under `[hooks]`; everything is fail-soft (a missing `mainline` binary
-never breaks the agent).
+What hooks deliberately do NOT do: deciding when to `mainline start`,
+what the goal text should be, when to `mainline append`, what to
+write in the append, building the seal fingerprint, or judging
+phase-2 conflicts. Those are LLM judgments and the agent stays the
+sole source of truth for them — exactly as `AGENTS.md` specifies in
+the no-hooks flow. Hooks installed or not, the contract above never
+changes.
 
-Read-modify-write into `.cursor/hooks.json` preserves any user-managed
-entries: only the entries Mainline owns are added / removed, never the
-whole file.
+Per-toggle controls live in `.mainline/config.toml` under `[hooks]`
+(`enabled`, `auto_sync_on_session_start`); everything is fail-soft
+(a missing `mainline` binary never breaks the agent). Read-modify-
+write into `.cursor/hooks.json` preserves any user-managed entries —
+only the entries Mainline owns are added / removed, never the whole
+file.
 
 ## Webhook subscriptions
 

@@ -11,6 +11,8 @@
 package cursor
 
 import (
+	"encoding/json"
+
 	"github.com/mainline-org/mainline/internal/hooks"
 )
 
@@ -81,6 +83,36 @@ func (Agent) HookNames() []string {
 		HookStop,
 		HookSubagentStop,
 	}
+}
+
+// RenderHookOutput implements hooks.HookOutputRenderer. It produces
+// cursor-protocol JSON for the events where cursor accepts host
+// output:
+//
+//   - session-start: cursor lets a hook return
+//     {"continue": true, "additional_context": "<markdown>"}
+//     and injects the markdown into the agent's system context. This
+//     is the ONLY cursor hook that can push state into the agent; we
+//     use it to deliver a status snapshot + sync summary + scenario
+//     hint, so the agent does not need to remember to call `mainline
+//     status` before reasoning.
+//
+// Other hooks (before-submit-prompt, stop, subagent-stop, session-end)
+// either don't accept output or have no use for one in the
+// "context provider" model (the agent drives all semantic decisions
+// per AGENTS.md), so we return (nil, nil) and the CLI writes nothing.
+func (Agent) RenderHookOutput(hookName string, d *hooks.Dispatcher, _ *hooks.Event, _ any) ([]byte, error) {
+	if hookName != HookSessionStart || d == nil {
+		return nil, nil
+	}
+	md := d.RenderSessionStartContext(d.LastSync(), d.LastStatus())
+	if md == "" {
+		return nil, nil
+	}
+	return json.Marshal(map[string]any{
+		"continue":           true,
+		"additional_context": md,
+	})
 }
 
 func init() {

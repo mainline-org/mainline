@@ -133,7 +133,9 @@ var hooksInstallCmd = &cobra.Command{
 			}
 		}
 		fmt.Println()
-		fmt.Println("Hooks are enabled. The agent will auto-run mainline at lifecycle points.")
+		fmt.Println("Hooks are enabled. At sessionStart the dispatcher will run `mainline sync`")
+		fmt.Println("and inject a status snapshot as agent context. All other workflow steps")
+		fmt.Println("(start, append, seal --prepare/--submit, check) remain agent-driven per AGENTS.md.")
 		fmt.Println("Run `mainline hooks disable` to pause without uninstalling.")
 		return nil
 	},
@@ -252,9 +254,6 @@ var hooksStatusCmd = &cobra.Command{
 		}
 		fmt.Println("Dispatcher (.mainline/config.toml [hooks]):")
 		fmt.Printf("  enabled                       = %v\n", section.Enabled)
-		fmt.Printf("  auto_start_intent             = %v\n", section.AutoStartIntent)
-		fmt.Printf("  auto_append_turn              = %v\n", section.AutoAppendTurn)
-		fmt.Printf("  auto_seal_prepare             = %v\n", section.AutoSealPrepare)
 		fmt.Printf("  auto_sync_on_session_start    = %v\n", section.AutoSyncOnSessionStart)
 		return nil
 	},
@@ -376,9 +375,6 @@ func runAgentHook(agent hooks.Agent, hookName string) error {
 	if cfg != nil {
 		settings = hooks.DispatchSettings{
 			Enabled:                cfg.Hooks.Enabled,
-			AutoStartIntent:        cfg.Hooks.AutoStartIntent,
-			AutoAppendTurn:         cfg.Hooks.AutoAppendTurn,
-			AutoSealPrepare:        cfg.Hooks.AutoSealPrepare,
 			AutoSyncOnSessionStart: cfg.Hooks.AutoSyncOnSessionStart,
 		}
 	}
@@ -393,6 +389,24 @@ func runAgentHook(agent hooks.Agent, hookName string) error {
 
 	if err := dispatcher.Dispatch(context.Background(), ev); err != nil {
 		warnHook("dispatch %s/%s: %v", agent.Name(), hookName, err)
+	}
+
+	// If the agent implements HookOutputRenderer, give it a chance
+	// to write agent-protocol stdout (e.g. cursor's
+	// {"continue":true,"additional_context":"..."}). The renderer
+	// reads cached state from dispatcher (LastSync / LastStatus) so
+	// no second sync round-trip happens. Errors here are warnings,
+	// not fatal — a hook that crashes its own session would be
+	// worse than one that silently skips its context injection.
+	if r, ok := agent.(hooks.HookOutputRenderer); ok {
+		out, err := r.RenderHookOutput(hookName, dispatcher, ev, nil)
+		if err != nil {
+			warnHook("render %s/%s: %v", agent.Name(), hookName, err)
+		} else if len(out) > 0 {
+			if _, werr := os.Stdout.Write(out); werr != nil {
+				warnHook("stdout %s/%s: %v", agent.Name(), hookName, werr)
+			}
+		}
 	}
 	return nil
 }
@@ -485,9 +499,9 @@ func setHooksEnabled(enabled bool) error {
 	}
 	// First-time write: section is zero values, populate full
 	// defaults THEN flip enabled. Without this, setHooksEnabled(true)
-	// on a never-installed repo would leave AutoStartIntent etc all
-	// false, which is the dispatcher's "do nothing" state.
-	if !cfg.Hooks.Enabled && !cfg.Hooks.AutoStartIntent && !cfg.Hooks.AutoAppendTurn && !cfg.Hooks.AutoSealPrepare && !cfg.Hooks.AutoSyncOnSessionStart {
+	// on a never-installed repo would leave AutoSyncOnSessionStart
+	// false, defeating the only mechanical auto-flow toggle.
+	if !cfg.Hooks.Enabled && !cfg.Hooks.AutoSyncOnSessionStart {
 		cfg.Hooks = domain.DefaultHooksSection()
 	}
 	cfg.Hooks.Enabled = enabled

@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 6 -->
+<!-- mainline-agents-md-version: 7 -->
 
 This project uses **Mainline** to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
@@ -129,23 +129,39 @@ mainline check --submit --json < judgment.json
 
 The verdict surfaces in `mainline log`'s `[check:X]` column.
 
-### Optional: agent hooks (opt-in automation)
+### Optional: agent hooks (opt-in context provider)
 
 If `mainline hooks install <agent>` has been run for your agent
 runtime (Cursor today; Codex / Claude Code reserved), the hook layer
-will automatically invoke mainline at session and turn boundaries:
+runs **two mechanical operations** at session start and injects a
+**status snapshot** into your system context — nothing more:
 
-- `session_start` → `mainline sync` (surfaces any conflicts in stderr).
-- `turn_start`    → `mainline start "<goal>"` if no draft exists.
-- `turn_end`      → `mainline append "<turn summary>"`.
-- `session_end`   → `mainline seal --prepare` (writes `seal.json` for
-  you to fill in fingerprint/risks/followups; `seal --submit` is
-  still a deliberate human-or-agent action).
+- At `sessionStart` the hook runs `mainline sync` (refreshes the team
+  view) and `mainline status` (active intent, proposed count, synced
+  head). It feeds that snapshot back to you as system-prompt context
+  along with a pointer to this document. You no longer need to run
+  `mainline status` as the very first call of a session — it has
+  already run.
+- At every other lifecycle event (turn start, turn end, subagent
+  end, session end) the hook is a **no-op** for your reasoning. It
+  fires webhook notifications for external observers (CI dashboards,
+  pager integrations) and exits. It does NOT call `mainline start`,
+  `mainline append`, `mainline seal --prepare`, or any other command
+  that requires deciding what counts as a goal / a meaningful change /
+  a fingerprint — those are LLM judgments and you remain the only
+  party qualified to make them.
 
-Run `mainline hooks status` to confirm whether hooks are wired for
-your agent and which auto-flow toggles are enabled. Hooks are a
-convenience layer — the contract above (read intents, append turns,
-seal honestly) still applies whether they are installed or not.
+Concretely: every step described above (start when there is real
+work, append after each meaningful logical change, commit, seal
+--prepare, fill SealResult, seal --submit, surface conflicts) you do
+yourself, hooks installed or not. The hook layer is a **context
+provider**, not a workflow driver.
+
+Run `mainline hooks status` to confirm whether hooks are wired and
+whether `auto_sync_on_session_start` is on (the only mechanical
+toggle). Disable it with `mainline hooks disable` if your network
+makes the session-start sync painful — you can still drive the rest
+of the workflow by hand.
 
 ### What you do NOT need to run
 

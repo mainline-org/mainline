@@ -101,26 +101,22 @@ type LogSection struct {
 // keep them in domain so config parsing has a single home; the hooks
 // package consumes them via a plain DispatchSettings struct (no
 // import dependency back into domain).
+//
+// The section is deliberately tiny because hooks DO NOT make semantic
+// decisions for the agent. They run mechanical operations (sync) and
+// inject context for the agent to read at session start; everything
+// else (intent start / append / seal-prepare / seal-submit / check
+// verdicts) is the agent's job per AGENTS.md, regardless of whether
+// hooks are installed.
 type HooksSection struct {
 	// Enabled is the soft kill-switch. When false, the on-disk hook
 	// commands still fire but the dispatcher exits immediately. Lets
 	// users pause automation without uninstalling.
 	Enabled bool `toml:"enabled" json:"enabled"`
 
-	// AutoStartIntent: TurnStart -> mainline start using the user
-	// prompt as goal when no active intent exists.
-	AutoStartIntent bool `toml:"auto_start_intent" json:"auto_start_intent"`
-
-	// AutoAppendTurn: TurnEnd / SubagentEnd -> mainline append using
-	// the agent-supplied summary or modified-file count.
-	AutoAppendTurn bool `toml:"auto_append_turn" json:"auto_append_turn"`
-
-	// AutoSealPrepare: SessionEnd -> mainline seal --prepare so the
-	// next session has a snapshot waiting for the agent to fill in
-	// fingerprint and submit.
-	AutoSealPrepare bool `toml:"auto_seal_prepare" json:"auto_seal_prepare"`
-
-	// AutoSyncOnSessionStart: SessionStart -> mainline sync.
+	// AutoSyncOnSessionStart: SessionStart -> mainline sync. The
+	// only mechanical auto-flow toggle that survives, because sync
+	// is deterministic — no semantic judgment involved.
 	AutoSyncOnSessionStart bool `toml:"auto_sync_on_session_start" json:"auto_sync_on_session_start"`
 }
 
@@ -155,15 +151,13 @@ type WebhookSubscription struct {
 	TimeoutSeconds int `toml:"timeout_seconds" json:"timeout_seconds,omitempty"`
 }
 
-// DefaultHooksSection returns the "everything on" defaults that ship
-// the first time `mainline hooks install` writes the section. Users
-// can later flip individual fields off without losing the rest.
+// DefaultHooksSection returns the defaults that ship the first time
+// `mainline hooks install` writes the section. Users can flip
+// AutoSyncOnSessionStart off (slow networks etc.) without disabling
+// the whole subsystem.
 func DefaultHooksSection() HooksSection {
 	return HooksSection{
 		Enabled:                true,
-		AutoStartIntent:        true,
-		AutoAppendTurn:         true,
-		AutoSealPrepare:        true,
 		AutoSyncOnSessionStart: true,
 	}
 }
