@@ -135,8 +135,12 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 		return nil, fmt.Errorf("write local config: %w", err)
 	}
 
-	// Ensure .ml-cache in .gitignore
-	if err := s.Git.EnsureGitignore([]string{".ml-cache/"}); err != nil {
+	// Gitignore: .ml-cache/ for the local view cache, and
+	// .mainline/local.toml since it carries per-actor identity that
+	// shouldn't ride into shared history. Without local.toml here,
+	// fresh-init repos would have an untracked file and the v0.3
+	// snapshot contract would refuse subsequent seals.
+	if err := s.Git.EnsureGitignore([]string{".ml-cache/", ".mainline/local.toml"}); err != nil {
 		return nil, fmt.Errorf("update .gitignore: %w", err)
 	}
 
@@ -152,10 +156,30 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	// Configure git log to show mainline notes by default
 	s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 
-	// Commit .mainline/ config + tracked files
-	if err := s.Git.WriteAndCommitFile(".mainline/config.toml", mustReadFile(s.Store, cfg), "mainline: init"); err != nil {
-		// Non-fatal: maybe there are no changes or index is locked
+	// Commit .mainline/config.toml plus everything else Init created
+	// (.gitignore, AGENTS.md, PR template) in one commit so a fresh-init
+	// repo lands with a clean worktree. Without this, the v0.3
+	// snapshot contract would refuse the very first seal because Init's
+	// own files would show as untracked.
+	if err := s.Store.WriteTeamConfig(&cfg); err != nil {
+		return nil, fmt.Errorf("write team config: %w", err)
 	}
+	addPaths := []string{
+		".mainline/config.toml",
+		".gitignore",
+		"AGENTS.md",
+		"CLAUDE.md",
+		".cursor/rules/mainline.md",
+		".windsurfrules",
+		".github/PULL_REQUEST_TEMPLATE.md",
+		".github/copilot-instructions.md",
+	}
+	for _, p := range addPaths {
+		// Errors here are non-fatal: file may not exist or path may
+		// already be staged.
+		s.Git.Run("add", p)
+	}
+	s.Git.Run("commit", "-m", "mainline: init")
 
 	s.ensureLocalViews(&cfg)
 
@@ -399,6 +423,22 @@ type StatusResult struct {
 	LastSync         *domain.LastSync `json:"last_sync,omitempty"`
 	SyncStaleSeconds int64            `json:"sync_stale_seconds,omitempty"`
 	SyncStale        bool             `json:"sync_stale"`
+
+	// v0.3 coverage summary over the last CoverageWindowSize commits
+	// on main. Surfaced by default in `mainline status`. Detail view
+	// is the separate `mainline gaps` command.
+	Coverage *StatusCoverageSummary `json:"coverage,omitempty"`
+}
+
+// StatusCoverageSummary is the compact coverage rollup carried in
+// StatusResult. Counts plus the actionable list (uncovered commits)
+// inline; covered/skipped detail goes to `mainline gaps`.
+type StatusCoverageSummary struct {
+	WindowSize     int              `json:"window_size"`
+	CoveredCount   int              `json:"covered_count"`
+	SkippedCount   int              `json:"skipped_count"`
+	UncoveredCount int              `json:"uncovered_count"`
+	Uncovered      []CommitCoverage `json:"uncovered,omitempty"`
 }
 
 func (s *Service) Status() (*StatusResult, error) {
@@ -453,7 +493,139 @@ func (s *Service) Status() (*StatusResult, error) {
 		result.SyncStale = true
 	}
 
+	// v0.3 coverage summary. Computed from the existing view + git
+	// facts (notes ref, commit messages); cheap thanks to cat-file
+	// --batch (already shipped). Errors are non-fatal — coverage is
+	// nice-to-have, not load-bearing for status.
+	if view, _ := s.Store.ReadMainlineView(); view != nil {
+		cfg, _ := s.getTeamConfig()
+		if cfg != nil {
+			window := CoverageWindowSize
+			cov, err := s.CoverageWindow(window, view, cfg)
+			if err == nil && len(cov) > 0 {
+				summary := &StatusCoverageSummary{WindowSize: window}
+				for _, c := range cov {
+					switch c.State {
+					case CoverageCovered:
+						summary.CoveredCount++
+					case CoverageSkipped:
+						summary.SkippedCount++
+					case CoverageUncovered:
+						summary.UncoveredCount++
+						summary.Uncovered = append(summary.Uncovered, c)
+					}
+				}
+				result.Coverage = summary
+			}
+		}
+	}
+
 	return result, nil
+}
+
+// CoverageWindowSize controls how many recent commits on main `mainline
+// status` and `mainline gaps` examine for coverage classification.
+// 30 keeps status output snappy and the human's mental window
+// reasonable (last day or two on an active repo).
+const CoverageWindowSize = 30
+
+// GapsResult is what `mainline gaps` returns. Lists every commit in
+// the coverage window with its classification + per-commit suggestion
+// list (only populated for uncovered commits — covered/skipped need
+// no action).
+type GapsResult struct {
+	WindowSize int                `json:"window_size"`
+	MainHead   string             `json:"main_head,omitempty"`
+	Uncovered  []GapsEntry        `json:"uncovered,omitempty"`
+	Skipped    []CommitCoverage   `json:"skipped,omitempty"`
+	Covered    int                `json:"covered_count"`
+}
+
+// GapsEntry is the per-uncovered-commit detail block.
+type GapsEntry struct {
+	Commit      string             `json:"commit"`
+	Subject     string             `json:"subject"`
+	Author      string             `json:"author"`
+	CommittedAt string             `json:"committed_at"`
+	Suggestions []GapsSuggestion   `json:"suggestions"`
+}
+
+// GapsSuggestion is a single rescue path. Ordered by reversibility
+// (cheapest first) — see spec §9.
+type GapsSuggestion struct {
+	Action     string `json:"action"`     // "reset" | "backfill" | "skip"
+	Applicable string `json:"applicable"` // human-readable applicability
+	Command    string `json:"command"`    // ready-to-paste command
+}
+
+// Gaps returns the coverage window plus rescue suggestions. The
+// suggestions are static per commit (we cannot know if it is pushed
+// without round-tripping the remote), so we list all three options
+// ordered by reversibility and let the user pick.
+func (s *Service) Gaps() (*GapsResult, error) {
+	if err := s.requireInit(); err != nil {
+		return nil, err
+	}
+	view, _ := s.Store.ReadMainlineView()
+	cfg, _ := s.getTeamConfig()
+	if view == nil || cfg == nil {
+		return &GapsResult{WindowSize: CoverageWindowSize}, nil
+	}
+	cov, err := s.CoverageWindow(CoverageWindowSize, view, cfg)
+	if err != nil {
+		return nil, err
+	}
+	out := &GapsResult{
+		WindowSize: CoverageWindowSize,
+		MainHead:   view.MainHead,
+	}
+	for _, c := range cov {
+		switch c.State {
+		case CoverageCovered:
+			out.Covered++
+		case CoverageSkipped:
+			out.Skipped = append(out.Skipped, c)
+		case CoverageUncovered:
+			out.Uncovered = append(out.Uncovered, GapsEntry{
+				Commit:      c.Commit,
+				Subject:     c.Subject,
+				Author:      c.Author,
+				CommittedAt: c.CommittedAt,
+				Suggestions: rescueSuggestions(c.Commit),
+			})
+		}
+	}
+	return out, nil
+}
+
+// rescueSuggestions builds the three-option rescue list per spec §9.
+// Order is reversibility-first: reset (zero info loss), backfill
+// (works post-push), skip (last-resort if commit is routine).
+func rescueSuggestions(commit string) []GapsSuggestion {
+	return []GapsSuggestion{
+		{
+			Action:     "reset",
+			Applicable: "if the commit is not yet pushed",
+			Command:    "git reset --soft HEAD^   # then `mainline start ...` for the proper flow",
+		},
+		{
+			Action:     "backfill",
+			Applicable: "if the commit is already pushed",
+			Command:    fmt.Sprintf("mainline start --commits %s \"<your why>\"", short8(commit)),
+		},
+		{
+			Action:     "skip",
+			Applicable: "if the commit is genuinely routine (chore/format/version bump)",
+			Command:    "git commit --amend  # add `Mainline-Skip: <reason>` trailer  (or add a [mainline.skip] pattern)",
+		},
+	}
+}
+
+func short8(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 // GetTeamConfigForCLI is a thin re-export of the package-private

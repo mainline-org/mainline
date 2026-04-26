@@ -99,6 +99,16 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 	if cfg.Mainline.Remote == "" {
 		cfg.Mainline.Remote = "origin"
 	}
+	// v0.3 backfill: pre-v0.3 configs have no [mainline.skip] section.
+	// Without the defaults, every Merge pull request commit shows up
+	// as uncovered, drowning the gaps surface in noise.
+	if !explicitlyHasKey(data, "[mainline.skip]", "patterns") && len(cfg.Mainline.Skip.Patterns) == 0 {
+		cfg.Mainline.Skip.Patterns = []string{
+			"^Merge pull request ",
+			"^Merge branch ",
+			"^chore: bump version",
+		}
+	}
 	return &cfg, nil
 }
 
@@ -223,7 +233,53 @@ func (s *Store) WriteDraft(draft *domain.DraftIntent) error {
 func (s *Store) DeleteDraft(intentID string) error {
 	os.Remove(s.draftPath(intentID))
 	os.Remove(s.turnsPath(intentID))
+	os.Remove(s.preparePath(intentID))
 	return nil
+}
+
+// preparePath is where the v0.3 seal-snapshot is persisted between
+// `seal --prepare` and `seal --submit`. The file lets submit validate
+// HEAD / branch / worktree state against what prepare actually claimed.
+func (s *Store) preparePath(intentID string) string {
+	return filepath.Join(s.draftsDir(), intentID+".prepare.json")
+}
+
+// WritePrepareSnapshot persists the prepare-time snapshot so the
+// subsequent SealSubmit can enforce the contract. Overwrites any prior
+// snapshot for the same intent (re-running --prepare is idempotent).
+func (s *Store) WritePrepareSnapshot(intentID string, pkg *domain.SealPreparePackage) error {
+	if err := os.MkdirAll(s.draftsDir(), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.preparePath(intentID), data, 0o644)
+}
+
+// ReadPrepareSnapshot returns the persisted snapshot, or (nil, nil) if
+// none exists (legacy submits that did not run prepare first, or after
+// successful submit which deletes the snapshot).
+func (s *Store) ReadPrepareSnapshot(intentID string) (*domain.SealPreparePackage, error) {
+	data, err := os.ReadFile(s.preparePath(intentID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var pkg domain.SealPreparePackage
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return nil, err
+	}
+	return &pkg, nil
+}
+
+// DeletePrepareSnapshot removes the persisted snapshot — called after
+// successful SealSubmit so a re-submit cannot reuse a stale snapshot.
+func (s *Store) DeletePrepareSnapshot(intentID string) {
+	os.Remove(s.preparePath(intentID))
 }
 
 // ListDrafts returns all draft intent IDs.

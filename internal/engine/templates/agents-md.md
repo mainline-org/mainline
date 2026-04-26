@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 5 -->
+<!-- mainline-agents-md-version: 6 -->
 
 This project uses **Mainline** to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
@@ -8,6 +8,12 @@ review. The agent is expected to both **read** team intents (for context)
 and **write** its own intent (for the work it's doing). Both halves
 matter — intents capture *why* changes were made, which is information
 the diff alone cannot give you.
+
+> **v0.3 invariant**: every commit on `main` is in exactly one of three
+> states — `covered` (sealed intent claims it), `skipped` (`Mainline-Skip:`
+> trailer or matched config pattern), or `uncovered` (neither). Run
+> `mainline status` to see the rollup; `mainline gaps` to see uncovered
+> commits with rescue suggestions.
 
 ### At the start of a task
 
@@ -141,3 +147,61 @@ mainline merge --intent <id>        # non-PR pipeline only
 mainline init --rewire              # repo setup repair
 mainline doctor --setup --fix       # repo setup repair
 ```
+
+### Encountering an uncovered commit (v0.3 rescue)
+
+If `mainline status` or `mainline gaps` flags an uncovered commit (one
+that landed on main with no intent), pick the **best** path you still
+can — ordered by reversibility, cheapest first:
+
+1. **Unpushed** — undo and redo via the proper flow:
+
+   ```
+   git reset --soft HEAD^         # un-commit, keep changes
+   mainline start "<goal>"
+   <continue normal flow>
+   ```
+
+2. **Pushed** — backfill an intent that retroactively claims the commit:
+
+   ```
+   mainline start "<why this commit was made>" --commits <sha>
+   mainline append "<turn-by-turn description, post-hoc>"
+   mainline seal --prepare > seal.json
+   <fill seal.json>
+   mainline seal --submit < seal.json
+   ```
+
+   The seal flow auto-pins the new intent to the listed commit on next
+   `mainline sync`.
+
+3. **Routine** (chore / format / version bump) — mark as deliberately
+   skipped:
+
+   ```
+   git commit --amend             # add `Mainline-Skip: <reason>` trailer
+   ```
+
+   Or add a pattern in `.mainline/config.toml` under `[mainline.skip]`
+   so future similar commits classify automatically:
+
+   ```toml
+   [mainline.skip]
+   patterns = ["^chore: format", "^bump:"]
+   ```
+
+4. **Already distributed, regrettably** — accept uncovered. The
+   mainline log is a record of reality, not aspiration.
+
+### Seal snapshot contract (v0.3)
+
+`mainline seal --prepare` snapshots the worktree state (HEAD, branch,
+clean/dirty/untracked) and persists it. `mainline seal --submit`
+validates the live repo against that snapshot — HEAD drift, branch
+drift, or dirty worktree all fail by default with a typed error. The
+escape hatch is the explicit CLI flag `--allow-dirty`; even then, the
+sealed event permanently records `worktree_status` so reviewers see
+the audit trail.
+
+Always commit your code BEFORE `mainline seal --prepare`. Untracked
+files (planning docs, scratch notes) do **not** enter sealed evidence.
