@@ -158,6 +158,19 @@ func (s *Service) Sync() (*SyncResult, error) {
 		NewSealedSeen: newSealedSeen,
 	})
 
+	// Domain-event fan-out. Two events:
+	//   sync_completed: always, summary stats observers can chart.
+	//   conflict_detected: per delta pair, paged into the webhook
+	//     queue separately so a notification system can route it
+	//     to a different channel from routine sync activity.
+	// Skipping prompt / turn content per the team-data privacy
+	// commitment — only structural facts (counts, ids, fingerprints)
+	// ride out on the wire.
+	s.emit("sync_completed", result)
+	for _, p := range result.NewConflicts {
+		s.emit("conflict_detected", p)
+	}
+
 	return result, nil
 }
 

@@ -26,6 +26,8 @@ int_298b4476 [merged]              23:30 bob      Sync all actor logs
 - [Concepts](#concepts)
 - [Daily commands](#daily-commands)
 - [Advanced commands](#advanced-commands)
+- [Agent hooks (opt-in)](#agent-hooks-opt-in)
+- [Webhook subscriptions](#webhook-subscriptions)
 - [Configuration](#configuration)
 - [FAQ](#faq)
 - [Storage layout](#storage-layout)
@@ -222,6 +224,74 @@ You usually don't need these. Documented for completeness.
 | `mainline publish --intent <id>` | Push actor log explicitly (usually automatic in seal) |
 | `mainline thread {new,list,close}` | Group multiple intents into a named thread |
 | `mainline canonical-hash <id>` | Debug: compute the canonical hash of an intent |
+
+## Agent hooks (opt-in)
+
+Agents like Cursor (today; Codex / Claude Code reserved) expose
+session/turn lifecycle hooks. `mainline hooks` plugs into those as a
+**context provider** — it runs the two mechanical operations the
+agent would otherwise have to remember (`sync` + `status`) and
+injects the snapshot into the agent's system context. It does **not**
+drive the rest of the workflow.
+
+```bash
+mainline hooks list-agents             # what's supported
+mainline hooks install --agent cursor  # writes .cursor/hooks.json
+mainline hooks status                  # show installed agents + dispatcher toggles
+mainline hooks uninstall --agent cursor
+mainline hooks disable                 # soft-disable without uninstalling
+mainline hooks enable
+```
+
+What hooks DO at each event (cursor today, others reserved):
+
+| Hook event | mainline action |
+|---|---|
+| `session_start` | `mainline sync` + `mainline status`; cursor receives the snapshot as `additional_context` so the agent starts every session knowing the team state without an extra CLI call |
+| `before_submit_prompt` / `stop` / `subagent_stop` / `session_end` | webhook fan-out only; the dispatcher does NOT touch the engine |
+
+What hooks deliberately do NOT do: deciding when to `mainline start`,
+what the goal text should be, when to `mainline append`, what to
+write in the append, building the seal fingerprint, or judging
+phase-2 conflicts. Those are LLM judgments and the agent stays the
+sole source of truth for them — exactly as `AGENTS.md` specifies in
+the no-hooks flow. Hooks installed or not, the contract above never
+changes.
+
+Per-toggle controls live in `.mainline/config.toml` under `[hooks]`
+(`enabled`, `auto_sync_on_session_start`); everything is fail-soft
+(a missing `mainline` binary never breaks the agent). Read-modify-
+write into `.cursor/hooks.json` preserves any user-managed entries —
+only the entries Mainline owns are added / removed, never the whole
+file.
+
+## Webhook subscriptions
+
+When an intent is sealed, a sync surfaces a conflict, or a phase-2
+check is judged, mainline emits a typed domain event. `mainline
+webhook` lets external services (notification centers, dashboards,
+auditing pipelines) subscribe:
+
+```bash
+mainline webhook add https://hooks.example.com/mainline \
+  --events intent_sealed,conflict_detected,sync_completed \
+  --secret "$WEBHOOK_SECRET"
+mainline webhook list
+mainline webhook test <id>             # send a synthetic event
+mainline webhook retry                 # re-queue past failures
+mainline webhook remove <id>
+```
+
+Delivery is fire-and-forget: each event is serialized into
+`.ml-cache/webhook-queue/`, then a detached subprocess (`mainline
+__webhook-dispatch`) does the actual HTTP POST so the foreground CLI
+never blocks on network. Failures retry with exponential backoff and
+are persisted as `*.failed.json` for `mainline webhook retry`.
+
+Privacy: only domain events are emitted. Prompt content from the
+agent is intentionally **never** included in webhook payloads.
+Payloads are HMAC-SHA256-signed using the per-subscription secret
+(header: `X-Mainline-Signature: sha256=<hex>`).
 
 ## Configuration
 
