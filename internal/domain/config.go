@@ -33,6 +33,11 @@ type SyncSection struct {
 	// fetched proposed intents at the end of every sync. The list
 	// of warnings is added to the SyncResult and printed.
 	AutoCheckAfterSync bool `toml:"auto_check_after_sync"`
+	// AutoPinAfterSync runs the Pin strategy cascade after the view
+	// is rebuilt. Default true as of v0.2 — sync becomes the single
+	// command users need for the GitHub PR + auto-pin workflow,
+	// removing the need to invoke `mainline pin` separately.
+	AutoPinAfterSync bool `toml:"auto_pin_after_sync"`
 }
 
 type CheckSection struct {
@@ -85,6 +90,7 @@ func DefaultTeamConfig() TeamConfig {
 			FreshnessSeconds:      300,   // 5 min — cheap commands may chain in quick succession
 			StaleThresholdSeconds: 86400, // 24h — flag in `mainline status`
 			AutoCheckAfterSync:    true,
+			AutoPinAfterSync:      true,
 		},
 		Check: CheckSection{
 			AutoCheck: true,

@@ -93,6 +93,9 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 	if !explicitlyHasKey(data, "[sync]", "auto_check_after_sync") {
 		cfg.Sync.AutoCheckAfterSync = true
 	}
+	if !explicitlyHasKey(data, "[sync]", "auto_pin_after_sync") {
+		cfg.Sync.AutoPinAfterSync = true
+	}
 	return &cfg, nil
 }
 

@@ -33,6 +33,12 @@ var syncCmd = &cobra.Command{
 				fmt.Printf(" (+%d new since last sync)", result.NewSealedSeen)
 			}
 			fmt.Println()
+			if len(result.AutoPinned) > 0 {
+				fmt.Printf("Auto-pinned %d intent(s):\n", len(result.AutoPinned))
+				for _, p := range result.AutoPinned {
+					fmt.Printf("  %s -> %s (%s)\n", p.IntentID, p.Commit, p.MatchStrategy)
+				}
+			}
 			if len(result.NewConflicts) == 0 {
 				if result.NewSealedSeen > 0 {
 					fmt.Println("No new conflicts detected.")

@@ -25,22 +25,20 @@ var (
 // Any command whose Use line first word appears here is wrapped.
 //
 // Membership criterion: a stale answer would be functionally wrong.
-//   - pin / reconcile: pinning needs the latest main commits; missing a
-//     fresh commit means a proposed intent stays unmatched.
 //   - check: phase1 must compare against the freshest remote intents,
 //     otherwise it under-reports conflicts.
 //   - status / context / list-proposals: these are collaboration
 //     awareness surfaces; stale output hides active team work.
 //
-// log is intentionally opt-in via `mainline log --sync`: full history
-// browsing should stay cheap, while reviewer scans can request freshness.
+// Notably absent:
+//   - context, list-proposals, log: read-only displays. A stale answer
+//     is just slightly out of date, not wrong; users who need fresh
+//     team activity can run `mainline sync` first.
+//   - pin (v0.2): the user-surface is now the manual-fallback variant
+//     `pin <intent> <commit>` only. The user already knows which commit
+//     they want — auto-syncing would not change the answer.
 var autoSyncCommands = map[string]bool{
-	"check":          true,
-	"context":        true,
-	"list-proposals": true,
-	"pin":            true,
-	"reconcile":      true,
-	"status":         true,
+	"check": true,
 }
 
 var rootCmd = &cobra.Command{
@@ -133,8 +131,6 @@ func init() {
 	// rc3: pr-trailer removed, metadata goes via git notes
 	rootCmd.AddCommand(prDescriptionCmd)
 	rootCmd.AddCommand(pinCmd)
-	// reconcile is kept as a hidden deprecated alias of pin.
-	rootCmd.AddCommand(reconcileCmd)
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(listProposalsCmd)
 	rootCmd.AddCommand(canonicalHashCmd)

@@ -199,22 +199,27 @@ func TestReconcileDoesNotEvictExistingIntent(t *testing.T) {
 
 	srB := validSealResult(startB.IntentID)
 	dataB, _ := json.Marshal(srB)
-	if _, err := svc.SealSubmit(json.RawMessage(dataB)); err != nil {
+	// Use --offline so SealSubmit's internal sync does NOT auto-pin
+	// — we want the explicit Sync below to be the one that triggers
+	// the upsert path we are testing.
+	if _, err := svc.SealSubmitWithOptions(json.RawMessage(dataB),
+		&SealSubmitOptions{Offline: true}); err != nil {
 		t.Fatalf("seal B: %v", err)
 	}
 
 	gitCmd(t, dir, "checkout", "main")
-	if _, err := svc.Sync(); err != nil {
+	// v0.2: Sync auto-pins via the strategy cascade and uses
+	// upsertCommitNote so the existing intent on the matched commit
+	// is preserved instead of overwritten.
+	syncRes, err := svc.Sync()
+	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	res, err := svc.Reconcile()
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
+	if len(syncRes.AutoPinned) != 1 {
+		t.Fatalf("expected sync to auto-pin 1 link, got %d (%+v)",
+			len(syncRes.AutoPinned), syncRes.AutoPinned)
 	}
-	if res.Reconciled != 1 {
-		t.Fatalf("expected reconcile to write 1 link, got %d (%+v)", res.Reconciled, res.Links)
-	}
-	target := res.Links[0].Commit
+	target := syncRes.AutoPinned[0].Commit
 
 	// The commit's note must now carry BOTH intents.
 	raw, _ := svc.Git.NotesShow(target)

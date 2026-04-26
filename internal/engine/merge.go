@@ -251,28 +251,10 @@ type PinnedCommit struct {
 	MatchStrategy string `json:"match_strategy"`
 }
 
-// ReconciledLink is the deprecated pre-rc4 spelling of PinnedCommit;
-// kept as a Go type alias so external packages and old test names
-// keep compiling.
-//
-// Deprecated: use PinnedCommit.
-type ReconciledLink = PinnedCommit
-
 type PinResult struct {
 	Pinned    int            `json:"pinned"`
 	IntentIDs []string       `json:"intent_ids"`
 	Links     []PinnedCommit `json:"links,omitempty"`
-}
-
-// ReconcileResult is the deprecated pre-rc4 spelling of PinResult.
-//
-// Deprecated: use PinResult. The JSON `reconciled` key remains in
-// emitted payloads for one release via the legacy Reconcile/ReconcileManual
-// wrappers; new code should consume `pinned` instead.
-type ReconcileResult struct {
-	Reconciled int            `json:"reconciled"`
-	IntentIDs  []string       `json:"intent_ids"`
-	Links      []PinnedCommit `json:"links,omitempty"`
 }
 
 // pinStrategies is the priority-ordered list of rules tried by Pin.
@@ -449,28 +431,6 @@ func (s *Service) PinExplicit(intentID, commitHash string) (*PinnedCommit, error
 		Commit:        resolved,
 		MatchStrategy: "manual",
 	}, nil
-}
-
-// Reconcile is the deprecated alias for Pin.
-//
-// Deprecated: use Service.Pin.
-func (s *Service) Reconcile() (*ReconcileResult, error) {
-	res, err := s.Pin()
-	if err != nil || res == nil {
-		return nil, err
-	}
-	return &ReconcileResult{
-		Reconciled: res.Pinned,
-		IntentIDs:  res.IntentIDs,
-		Links:      res.Links,
-	}, nil
-}
-
-// ReconcileManual is the deprecated alias for PinExplicit.
-//
-// Deprecated: use Service.PinExplicit.
-func (s *Service) ReconcileManual(intentID, commitHash string) (*PinnedCommit, error) {
-	return s.PinExplicit(intentID, commitHash)
 }
 
 // findPinMatch walks pinStrategies in order and returns the first
