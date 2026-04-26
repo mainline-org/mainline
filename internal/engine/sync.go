@@ -431,12 +431,19 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		return
 	}
 
-	// O(1) reachability via a single rev-list of main, replacing N
-	// `merge-base --is-ancestor` forks. For a 50k-commit main this is
-	// ~150ms and constant in note count.
-	reachable, err := s.Git.RevListSet(mainRef)
+	// One rev-list serves two purposes: reachability filter (O(1) vs
+	// N merge-base --is-ancestor forks) AND a topological-order index
+	// for the chronological-replay sort below. Built from the same
+	// fork so no extra cost.
+	mainOrder, err := s.Git.RevListOrder(mainRef)
 	if err != nil {
 		return
+	}
+	reachable := make(map[string]bool, len(mainOrder))
+	mainIndex := make(map[string]int, len(mainOrder))
+	for i, c := range mainOrder {
+		reachable[c] = true
+		mainIndex[c] = i // 0 = HEAD (newest); larger = older
 	}
 
 	// Fetch all reachable note bodies in one cat-file --batch session.
@@ -488,8 +495,32 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		}
 		entries = append(entries, notedCommitData{hash: p.commit, when: t, raw: p.raw})
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].when.Before(entries[j].when)
+	// Chronological-replay sort. Author dates from `git log %aI` are
+	// second-precision: when a test (or a fast human) lands two
+	// commits in the same second, time.Before returns false for both
+	// pairings and unstable sort can produce either ordering. That
+	// loses the revert-after-merge invariant non-deterministically.
+	//
+	// Tiebreak by topological order on main: the further-from-HEAD
+	// commit (higher RevListOrder index) is "older" and must apply
+	// FIRST. Use SliceStable so input order is preserved when both
+	// the date AND the topo index tie (e.g. two commits not on main).
+	sort.SliceStable(entries, func(i, j int) bool {
+		if !entries[i].when.Equal(entries[j].when) {
+			return entries[i].when.Before(entries[j].when)
+		}
+		// Same second → use main topology. Higher index = older =
+		// applies first. Missing-from-main commits get index = +∞
+		// (a sentinel) so they fall to the end deterministically.
+		ii, iOK := mainIndex[entries[i].hash]
+		jj, jOK := mainIndex[entries[j].hash]
+		if !iOK {
+			ii = len(mainOrder) + 1
+		}
+		if !jOK {
+			jj = len(mainOrder) + 1
+		}
+		return ii > jj
 	})
 
 	// Apply sequentially so the chronological replay invariant holds

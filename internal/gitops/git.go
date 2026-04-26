@@ -784,18 +784,35 @@ func (g *Git) LogChainTrees(ref string) ([]CommitTree, error) {
 // fork replaces N `merge-base --is-ancestor` calls when the caller has
 // many commits to test against the same ref.
 func (g *Git) RevListSet(ref string) (map[string]bool, error) {
+	order, err := g.RevListOrder(ref)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(order))
+	for _, c := range order {
+		set[c] = true
+	}
+	return set, nil
+}
+
+// RevListOrder returns every commit reachable from ref in newest-first
+// order (the default `git rev-list` ordering). Index 0 is the tip;
+// higher indices are older. Callers that need both reachability AND a
+// deterministic tiebreaker between same-timestamp commits use this
+// variant — same fork, more information.
+func (g *Git) RevListOrder(ref string) ([]string, error) {
 	out, err := g.run("rev-list", ref)
 	if err != nil {
 		return nil, err
 	}
-	set := make(map[string]bool)
+	var order []string
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			set[line] = true
+			order = append(order, line)
 		}
 	}
-	return set, nil
+	return order, nil
 }
 
 // NoteEntry pairs a note blob hash with the commit it annotates.

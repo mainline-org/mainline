@@ -133,15 +133,23 @@ func TestPropertySyncIdempotent(t *testing.T) {
 // Reconcile idempotency
 // -----------------------------------------------------------
 
-// Reconcile is allowed to mutate state on the first call (writing a
-// catch-up note for any merged-but-undeclared intent), but a second call with
-// no new commits must be a no-op. Otherwise we risk piling up duplicate notes
-// every time `mainline sync` runs.
+// Auto-pin (the v0.2 successor to the rc4 reconcile concept) is
+// allowed to mutate state on the first sync after a note goes missing
+// — it writes a catch-up note for any merged-but-undeclared intent
+// — but every subsequent sync with no new commits must be a no-op.
+// Otherwise we risk piling up duplicate notes every time
+// `mainline sync` runs.
 //
-// To exercise the catch-up path, we deliberately wipe the merge note that
-// Service.Merge writes, demoting the intents from "merged" back to "proposed"
-// in the rebuilt view; reconcile must then re-attach a note on the first call
-// and stay quiet thereafter.
+// To exercise the catch-up path, we deliberately wipe the merge note
+// that Service.Merge writes, demoting the intents from "merged" back
+// to "proposed" in the rebuilt view; the next sync's auto-pin must
+// re-attach a note on the first call and stay quiet thereafter.
+//
+// Pre-v0.2 this test called svc.Pin() explicitly, but Pin now runs
+// automatically inside Sync (via cfg.Sync.AutoPinAfterSync). Asserting
+// against the explicit Pin() return value would always read 0 because
+// Sync already pinned everything before Pin's loop runs. Read
+// SyncResult.AutoPinned instead — that IS what users observe.
 func TestPropertyReconcileIdempotent(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		nMerged := rapid.IntRange(1, 3).Draw(rt, "nMerged")
@@ -162,36 +170,37 @@ func TestPropertyReconcileIdempotent(t *testing.T) {
 		}
 		gitCmd(rt, dir, "checkout", "main")
 
-		// Strip the merge notes so reconcile actually has work to do.
+		// Strip the merge notes so auto-pin actually has work to do.
 		for _, mc := range mergeCommits {
 			if _, err := svc.Git.Run("notes", "--ref=mainline/intents", "remove", mc); err != nil {
 				rt.Fatalf("remove note %s: %v", mc, err)
 			}
 		}
-		svc.Sync()
 
-		first, err := svc.Pin()
+		// First sync: auto-pin must re-attach all nMerged notes.
+		first, err := svc.Sync()
 		if err != nil {
-			rt.Fatalf("first reconcile: %v", err)
+			rt.Fatalf("first sync: %v", err)
 		}
-		if first.Pinned != nMerged {
-			rt.Errorf("first reconcile expected %d, got %d (ids=%v)",
-				nMerged, first.Pinned, first.IntentIDs)
+		if len(first.AutoPinned) != nMerged {
+			rt.Errorf("first sync auto-pin expected %d, got %d (links=%v)",
+				nMerged, len(first.AutoPinned), first.AutoPinned)
 		}
 
-		second, err := svc.Pin()
+		// Second sync: nothing more to pin.
+		second, err := svc.Sync()
 		if err != nil {
-			rt.Fatalf("second reconcile: %v", err)
+			rt.Fatalf("second sync: %v", err)
 		}
-		if second.Pinned != 0 {
-			rt.Errorf("second reconcile must be no-op, got %d (ids=%v)",
-				second.Pinned, second.IntentIDs)
+		if len(second.AutoPinned) != 0 {
+			rt.Errorf("second sync must be no-op, got %d auto-pinned (links=%v)",
+				len(second.AutoPinned), second.AutoPinned)
 		}
 
-		// And a third call still no-op.
-		third, _ := svc.Pin()
-		if third.Pinned != 0 {
-			rt.Errorf("third reconcile must also be no-op, got %d", third.Pinned)
+		// Third sync: still 0.
+		third, _ := svc.Sync()
+		if len(third.AutoPinned) != 0 {
+			rt.Errorf("third sync must also be no-op, got %d", len(third.AutoPinned))
 		}
 	})
 }
