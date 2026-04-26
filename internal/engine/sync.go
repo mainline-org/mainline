@@ -58,12 +58,26 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// status). A single `git fetch` shares one ssh handshake with
 		// the remote — three separate fetches cost three round-trips
 		// (~3s each on github), which dominated sync wall time.
-		actorRefspec := fmt.Sprintf("refs/heads/%s/*:refs/remotes/origin/%s/*",
+		//
+		// Actor logs and notes ref are FORCE-fetched (`+refspec`).
+		// Both have a single source-of-truth — the owning actor for
+		// actor logs, the latest pin/merge writer for notes — and a
+		// third party (this client) does not have local write
+		// authority. Without `+`, an upstream non-fast-forward
+		// rewrite (force-push, doctor-rebuild, rebase of the actor
+		// log) silently leaves the local mirror stale; scanMainNotes
+		// then sees notes referencing intent ids whose sealed events
+		// are absent and synthesises empty IntentView stubs —
+		// "phantom intents" with status=merged but no goal/actor/
+		// turns. Main branch is intentionally NOT force-fetched
+		// because rewrites to main are a separate safety concern
+		// the user resolves explicitly via git.
+		actorRefspec := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/origin/%s/*",
 			cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
 		s.Git.Fetch(s.remoteName(),
 			cfg.Mainline.MainBranch,
 			actorRefspec,
-			"refs/notes/mainline/*:refs/notes/mainline/*",
+			"+refs/notes/mainline/*:refs/notes/mainline/*",
 		)
 		fetched = true
 	}
