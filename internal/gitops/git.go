@@ -1,13 +1,16 @@
 package gitops
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mainline-org/mainline/internal/domain"
 )
@@ -551,6 +554,248 @@ func (g *Git) NotesListCommits() ([]string, error) {
 func (g *Git) ConfigAdd(key, value string) error {
 	_, err := g.run("config", "--add", key, value)
 	return err
+}
+
+// -----------------------------------------------------------
+// cat-file --batch: long-lived subprocess for piped object reads
+// -----------------------------------------------------------
+//
+// Why this exists. Walking actor logs and fetching note bodies would
+// otherwise spawn one git process per object; at ~20ms fork cost, that
+// dominated sync wall time once the per-event ops were already
+// parallelised across actors. One long-lived process answering N piped
+// queries is the canonical git-CLI pattern (used by git-lfs,
+// git-filter-repo, git-machete) and cuts per-object cost to ~50µs.
+
+// CatFileBatch wraps a `git cat-file --batch` subprocess. Each Read
+// sends one object spec on stdin and consumes one response from
+// stdout; concurrent Read calls serialise through the internal mutex.
+type CatFileBatch struct {
+	mu     sync.Mutex
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout *bufio.Reader
+	closed bool
+}
+
+// OpenCatFileBatch starts a long-lived `git cat-file --batch`
+// subprocess. Caller MUST call Close.
+func (g *Git) OpenCatFileBatch() (*CatFileBatch, error) {
+	cmd := exec.Command("git", "cat-file", "--batch")
+	cmd.Dir = g.RepoRoot
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("cat-file batch stdin: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("cat-file batch stdout: %w", err)
+	}
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("cat-file batch start: %w", err)
+	}
+	return &CatFileBatch{
+		cmd:    cmd,
+		stdin:  stdin,
+		stdout: bufio.NewReader(stdout),
+	}, nil
+}
+
+// Read returns the byte content of the object identified by spec
+// (a sha, ref, or tree-ish:path). Returns nil for "missing" responses
+// — the documented `<spec> missing` protocol reply — so callers can
+// treat absence as a non-error.
+func (b *CatFileBatch) Read(spec string) ([]byte, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return nil, fmt.Errorf("cat-file batch: closed")
+	}
+
+	if _, err := fmt.Fprintf(b.stdin, "%s\n", spec); err != nil {
+		return nil, fmt.Errorf("cat-file batch write: %w", err)
+	}
+
+	header, err := b.stdout.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("cat-file batch header: %w", err)
+	}
+	header = strings.TrimRight(header, "\n")
+
+	// Missing-object form: "<spec> missing" with no body following.
+	if strings.HasSuffix(header, " missing") {
+		return nil, nil
+	}
+
+	// Present-object form: "<sha> <type> <size>\n<size bytes>\n"
+	parts := strings.Fields(header)
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("cat-file batch: unexpected header %q", header)
+	}
+	size, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("cat-file batch: bad size in %q", header)
+	}
+
+	body := make([]byte, size)
+	if _, err := io.ReadFull(b.stdout, body); err != nil {
+		return nil, fmt.Errorf("cat-file batch body: %w", err)
+	}
+	// Protocol terminates each object with a trailing newline.
+	if _, err := b.stdout.ReadByte(); err != nil {
+		return nil, fmt.Errorf("cat-file batch trailing: %w", err)
+	}
+	return body, nil
+}
+
+// Close shuts the subprocess down cleanly. Safe to call multiple times.
+func (b *CatFileBatch) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return nil
+	}
+	b.closed = true
+	if b.stdin != nil {
+		b.stdin.Close()
+	}
+	if b.cmd != nil {
+		return b.cmd.Wait()
+	}
+	return nil
+}
+
+// -----------------------------------------------------------
+// Bulk helpers that fold N forks into 1
+// -----------------------------------------------------------
+
+// CommitTree pairs a commit hash with its tree hash.
+type CommitTree struct {
+	Commit string
+	Tree   string
+}
+
+// LogChainTrees walks ref's first-parent chain (newest first) and
+// returns every (commit, tree) pair. One fork replaces the per-commit
+// `log %T` + `log %P` pair callers used to do while walking themselves.
+func (g *Git) LogChainTrees(ref string) ([]CommitTree, error) {
+	out, err := g.run("log", "--first-parent", "--format=%H %T", ref)
+	if err != nil {
+		return nil, err
+	}
+	var entries []CommitTree
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 2 {
+			entries = append(entries, CommitTree{Commit: parts[0], Tree: parts[1]})
+		}
+	}
+	return entries, nil
+}
+
+// RevListSet returns every commit reachable from ref as a set. One
+// fork replaces N `merge-base --is-ancestor` calls when the caller has
+// many commits to test against the same ref.
+func (g *Git) RevListSet(ref string) (map[string]bool, error) {
+	out, err := g.run("rev-list", ref)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			set[line] = true
+		}
+	}
+	return set, nil
+}
+
+// NoteEntry pairs a note blob hash with the commit it annotates.
+type NoteEntry struct {
+	NoteBlob   string
+	CommitHash string
+}
+
+// NotesListEntries returns every entry on the mainline notes ref as a
+// (note-blob, target-commit) pair. Callers that only need the note
+// content should fetch by note-blob via cat-file --batch — much
+// cheaper than running `git notes show` per commit, which re-resolves
+// the path each time.
+func (g *Git) NotesListEntries() ([]NoteEntry, error) {
+	out, err := g.run("notes", "--ref=mainline/intents", "list")
+	if err != nil {
+		return nil, nil // no notes ref yet — same semantics as NotesListCommits
+	}
+	var entries []NoteEntry
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			entries = append(entries, NoteEntry{
+				NoteBlob:   parts[0],
+				CommitHash: parts[1],
+			})
+		}
+	}
+	return entries, nil
+}
+
+// CommitTreeHashes returns tree hashes keyed by commit hash. One
+// `log --no-walk` invocation regardless of N; replaces per-commit
+// CommitTreeHash when callers know the full set up-front (e.g. the
+// auto-pin sweep that needs the tree of every recent main commit).
+func (g *Git) CommitTreeHashes(commits []string) (map[string]string, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	args := append([]string{"log", "--no-walk", "--format=%H %T"}, commits...)
+	out, err := g.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	trees := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 2 {
+			trees[parts[0]] = parts[1]
+		}
+	}
+	return trees, nil
+}
+
+// CommitDates returns ISO 8601 author dates keyed by commit hash. One
+// `log --no-walk` invocation regardless of N; replaces per-commit
+// CommitDate when callers know the full set up-front.
+func (g *Git) CommitDates(commits []string) (map[string]string, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	args := append([]string{"log", "--no-walk", "--format=%H %aI"}, commits...)
+	out, err := g.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	dates := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 2 {
+			dates[parts[0]] = parts[1]
+		}
+	}
+	return dates, nil
 }
 
 // ConfigGet returns the value of a git config key, empty if not set.
