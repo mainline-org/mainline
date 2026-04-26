@@ -444,6 +444,22 @@ func (g *Git) FullCommitMessage(commitHash string) (string, error) {
 	return out, nil
 }
 
+// CommitSubject returns the first line of a commit's message (git's %s
+// format specifier). The subject is what survives a clean rebase even
+// when the tree and parent change — `git commit --amend` without
+// editing the message keeps the same subject, and `git rebase --onto`
+// preserves subjects unless the user explicitly reworded them. That
+// makes the subject the single most reliable signal for "is this main
+// commit the rebased form of my code_commit?" when tree_hash and
+// commit_hash both fail.
+func (g *Git) CommitSubject(commitHash string) (string, error) {
+	out, err := g.run("log", "-1", "--format=%s", commitHash)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // CommitDate returns a commit's author date as an ISO 8601 string.
 func (g *Git) CommitDate(commitHash string) (string, error) {
 	out, err := g.run("log", "-1", "--format=%aI", commitHash)
