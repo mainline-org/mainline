@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
@@ -17,9 +18,29 @@ type StartResult struct {
 	Thread    string `json:"thread"`
 	GitBranch string `json:"git_branch"`
 	Goal      string `json:"goal"`
+	// v0.3 backfill: when the user passed --commits or --range, the
+	// list of commits this intent will retroactively cover.
+	BackfillCommits []string `json:"backfill_commits,omitempty"`
 }
 
+// StartOptions controls v0.3 backfill behaviour. Pass via StartWithOptions.
+//
+//   BackfillCommits: explicit commits this intent should cover after
+//                    seal. The seal flow records them on the sealed
+//                    event; Sync's auto-pin step pins the intent to
+//                    each one. Used for retroactively covering
+//                    pre-existing main commits ("mainline start --commits").
+type StartOptions struct {
+	BackfillCommits []string
+}
+
+// Start retains the original signature; new callers wanting the v0.3
+// backfill flow use StartWithOptions.
 func (s *Service) Start(goal string, thread string) (*StartResult, error) {
+	return s.StartWithOptions(goal, thread, nil)
+}
+
+func (s *Service) StartWithOptions(goal string, thread string, opts *StartOptions) (*StartResult, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
 	}
@@ -33,10 +54,11 @@ func (s *Service) Start(goal string, thread string) (*StartResult, error) {
 	existing, _ := s.Store.FindActiveDraft(branch)
 	if existing != nil {
 		return &StartResult{
-			IntentID:  existing.IntentID,
-			Thread:    existing.Thread,
-			GitBranch: existing.GitBranch,
-			Goal:      existing.Goal,
+			IntentID:        existing.IntentID,
+			Thread:          existing.Thread,
+			GitBranch:       existing.GitBranch,
+			Goal:            existing.Goal,
+			BackfillCommits: existing.BackfillCommits,
 		}, nil
 	}
 
@@ -45,20 +67,33 @@ func (s *Service) Start(goal string, thread string) (*StartResult, error) {
 	}
 
 	base, _ := s.Git.HeadCommit()
+	var backfill []string
+	if opts != nil && len(opts.BackfillCommits) > 0 {
+		// Backfill flow: base_commit is best-set to the parent of the
+		// earliest listed commit so diff-stat semantics still make sense
+		// to humans reading the seal output. Errors are tolerated —
+		// downstream code does not require base for backfill intents.
+		backfill = append([]string{}, opts.BackfillCommits...)
+		if parent, err := s.Git.Run("rev-parse", backfill[0]+"^"); err == nil {
+			base = strings.TrimSpace(parent)
+		}
+	}
+
 	intentID := core.GenerateIntentID()
 	now := core.Now()
 
 	draft := &domain.DraftIntent{
-		IntentID:       intentID,
-		SchemaVersion:  1,
-		Status:         domain.StatusDrafting,
-		Thread:         thread,
-		GitBranch:      branch,
-		BaseCommit:     base,
-		Goal:           goal,
-		Turns:          nil,
-		CreatedAt:      now,
-		LastModifiedAt: now,
+		IntentID:        intentID,
+		SchemaVersion:   1,
+		Status:          domain.StatusDrafting,
+		Thread:          thread,
+		GitBranch:       branch,
+		BaseCommit:      base,
+		Goal:            goal,
+		Turns:           nil,
+		CreatedAt:       now,
+		LastModifiedAt:  now,
+		BackfillCommits: backfill,
 	}
 
 	if err := s.Store.WriteDraft(draft); err != nil {
@@ -83,10 +118,11 @@ func (s *Service) Start(goal string, thread string) (*StartResult, error) {
 	}
 
 	return &StartResult{
-		IntentID:  intentID,
-		Thread:    thread,
-		GitBranch: branch,
-		Goal:      goal,
+		IntentID:        intentID,
+		Thread:          thread,
+		GitBranch:       branch,
+		Goal:            goal,
+		BackfillCommits: backfill,
 	}, nil
 }
 

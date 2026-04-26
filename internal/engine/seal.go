@@ -6,6 +6,7 @@ import (
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/gitops"
 )
 
 // -----------------------------------------------------------
@@ -39,6 +40,7 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	}
 
 	head, _ := s.Git.HeadCommit()
+	currentBranch, _ := s.Git.CurrentBranch()
 	stats, changes, _ := s.Git.DiffStatAgainst(draft.BaseCommit, head)
 	changedFiles, _ := s.Git.DiffFilesAgainst(draft.BaseCommit, head)
 
@@ -56,11 +58,29 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 		})
 	}
 
+	// v0.3 snapshot block: capture worktree state at prepare time so
+	// SealSubmit can validate against drift and the audit trail has a
+	// permanent record of whether evidence was complete.
+	wt, _ := s.Git.WorktreeStatus()
+	if wt == nil {
+		wt = &gitops.WorktreeStatusReport{Status: "clean"}
+	}
+	dirty := append([]string{}, wt.DirtyFiles...)
+	dirty = append(dirty, wt.Untracked...)
+	snapshot := &domain.SealSnapshot{
+		PreparedAt:        core.Now(),
+		ChangedFiles:      changes,
+		WorktreeStatus:    wt.Status,
+		WorktreeDirtyFiles: dirty,
+		EvidenceComplete:  wt.Status == "clean",
+	}
+
 	pkg := &domain.SealPreparePackage{
 		Kind:          "mainline.seal.prepare",
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		Turns:         turnSummaries,
 		ChangedFiles:  changes,
+		Snapshot:      snapshot,
 		Instruction:   sealInstruction(),
 	}
 	pkg.Intent.ID = draft.IntentID
@@ -69,13 +89,83 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	pkg.Intent.GitBranch = draft.GitBranch
 	pkg.Intent.BaseCommit = draft.BaseCommit
 	pkg.Intent.CurrentHead = head
+	pkg.Intent.CurrentBranch = currentBranch
 
 	pkg.DiffSummary.Files = stats.Files
 	pkg.DiffSummary.Added = stats.Added
 	pkg.DiffSummary.Removed = stats.Removed
 	pkg.DiffSummary.FilesChanged = changedFiles
 
+	// Persist the snapshot so SealSubmit can validate the live repo
+	// against what prepare claimed. Overwrite-safe: re-running --prepare
+	// updates the snapshot (intentional — agent may iterate).
+	if err := s.Store.WritePrepareSnapshot(draft.IntentID, pkg); err != nil {
+		// Persistence failure is not fatal — submit will treat the
+		// snapshot as absent and skip the contract checks (degraded
+		// safety, but the seal still works).
+		_ = err
+	}
+
 	return pkg, nil
+}
+
+// validateSealSnapshot enforces the v0.3 seal-snapshot contract. Caller
+// (SealSubmit) supplies the live repo state; this function compares it
+// to the persisted prepare snapshot (if any) and returns a typed
+// recoverable error on mismatch.
+func validateSealSnapshot(
+	prepare *domain.SealPreparePackage,
+	currentHead, currentBranch string,
+	wt *gitops.WorktreeStatusReport,
+	allowDirty bool,
+) error {
+	// No prepare snapshot persisted → legacy path. Submit proceeds
+	// without contract checks. This preserves the pre-v0.3 behaviour
+	// for callers that skip --prepare (test fixtures, automation that
+	// constructs SealResult directly). The recommended flow is
+	// always prepare → submit, which IS contract-checked below.
+	if prepare == nil {
+		return nil
+	}
+
+	// HEAD must match what prepare recorded. Drift = stale prepare;
+	// agent must re-run --prepare to refresh.
+	if prepare.Intent.CurrentHead != "" && prepare.Intent.CurrentHead != currentHead {
+		return domain.NewRecoverableError(
+			domain.ErrInvalidStatus,
+			fmt.Sprintf("STALE_PREPARE: HEAD moved since prepare (was %s, now %s)",
+				short(prepare.Intent.CurrentHead), short(currentHead)),
+			"re-run `mainline seal --prepare > seal.json` to refresh the snapshot",
+		)
+	}
+
+	// Branch must match. Switching branches between prepare and submit
+	// would silently change what `base..HEAD` means.
+	if prepare.Intent.CurrentBranch != "" && prepare.Intent.CurrentBranch != currentBranch {
+		return domain.NewRecoverableError(
+			domain.ErrInvalidStatus,
+			fmt.Sprintf("BRANCH_DRIFT: branch changed since prepare (was %s, now %s)",
+				prepare.Intent.CurrentBranch, currentBranch),
+			fmt.Sprintf("`git checkout %s` and try again, or re-run --prepare on the new branch", prepare.Intent.CurrentBranch),
+		)
+	}
+
+	// Worktree must be clean unless --allow-dirty was passed.
+	if !allowDirty && wt.Status != "clean" {
+		return domain.NewRecoverableError(
+			domain.ErrInvalidStatus,
+			fmt.Sprintf("worktree is %s; refusing to seal with incomplete evidence", wt.Status),
+			"commit or stash the changes, or pass --allow-dirty to proceed and record dirty status in the audit trail",
+		)
+	}
+	return nil
+}
+
+func short(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 func sealInstruction() string {
@@ -105,13 +195,16 @@ type SealSubmitResult struct {
 	Conflicts  []domain.ConflictPair `json:"conflicts,omitempty"`
 }
 
-// SealSubmitOptions controls the rc5 seal-submit augmentations.
-// Pass &SealSubmitOptions{Offline: true} via SealSubmitWithOptions to
-// skip the auto-sync-and-check step (typically used by tests or by
-// the explicit `--offline` CLI flag when the user knows they cannot
-// reach the remote and wants to seal locally).
+// SealSubmitOptions controls the rc5+ seal-submit augmentations.
+//
+//   Offline    skips the post-seal sync + phase1 check (CLI --offline)
+//   AllowDirty bypasses the v0.3 snapshot-contract worktree check
+//              (CLI --allow-dirty). Dirty seals still proceed but the
+//              IntentSealedEvent permanently records the worktree state
+//              so reviewers see the audit trail.
 type SealSubmitOptions struct {
-	Offline bool
+	Offline    bool
+	AllowDirty bool
 }
 
 // SealSubmit retains the original signature and runs with default
@@ -146,8 +239,23 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 			fmt.Sprintf("intent is in status %s, expected drafting", draft.Status))
 	}
 
-	head, _ := s.Git.HeadCommit()
-	codeCommit := head
+	// v0.3 snapshot-contract invariants: HEAD + branch + worktree state.
+	// Validated against the live repo; failures abort BEFORE any state
+	// mutation so retrying after `mainline seal --prepare` works cleanly.
+	wt, _ := s.Git.WorktreeStatus()
+	if wt == nil {
+		wt = &gitops.WorktreeStatusReport{Status: "clean"}
+	}
+	currentBranch, _ := s.Git.CurrentBranch()
+	currentHead, _ := s.Git.HeadCommit()
+	allowDirty := opts != nil && opts.AllowDirty
+
+	prepare, _ := s.Store.ReadPrepareSnapshot(sr.IntentID)
+	if err := validateSealSnapshot(prepare, currentHead, currentBranch, wt, allowDirty); err != nil {
+		return nil, err
+	}
+
+	codeCommit := currentHead
 
 	// Transition to sealed_local
 	draft.Status = domain.StatusSealedLocal
@@ -167,6 +275,8 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 	}
 
 	eventID := core.GenerateEventID()
+	dirty := append([]string{}, wt.DirtyFiles...)
+	dirty = append(dirty, wt.Untracked...)
 	event := domain.IntentSealedEvent{
 		BaseEvent: domain.BaseEvent{
 			EventID:       eventID,
@@ -186,11 +296,29 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		Fingerprint: sr.Fingerprint,
 		TurnCount:   len(draft.Turns),
 		SealedAt:    core.Now(),
+
+		// v0.3 audit-trail fields. evidence_complete is the seal-time
+		// truth that reviewers can trust forever; --allow-dirty seals
+		// permanently carry worktree_status="dirty" or "untracked".
+		EvidenceComplete: wt.Status == "clean",
+		WorktreeStatus:   wt.Status,
+		SealedAtBranch:   currentBranch,
+		DirtyFiles:       dirty,
+
+		// v0.3 backfill: carry through the explicit commit list set
+		// at start time so cross-actor sync sees it and Pin can pin
+		// to those exact commits.
+		BackfillCommits: draft.BackfillCommits,
 	}
 
 	if err := s.Store.AppendActorLogEvent(identity.ActorID, cfg.Mainline.ActorLogPrefix, event); err != nil {
 		return nil, fmt.Errorf("write actor log event: %w", err)
 	}
+
+	// Snapshot consumed; remove it so a stale prepare cannot ride
+	// through a future submit. Re-running seal on the same intent
+	// requires a fresh --prepare.
+	s.Store.DeletePrepareSnapshot(sr.IntentID)
 
 	// Compute canonical hash
 	hash, _ := core.CanonicalHash(sr)

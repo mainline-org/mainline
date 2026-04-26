@@ -369,6 +369,45 @@ type LogEntry struct {
 	Date    string
 }
 
+// LogWindowEntry is the per-commit summary returned by LogWindow. Adds
+// Author on top of LogEntry so coverage / status surfaces can show
+// "who made this commit" without a second log invocation.
+type LogWindowEntry struct {
+	Hash    string
+	Subject string
+	Author  string
+	Date    string
+}
+
+// LogWindow returns the last n commits on ref, newest first, with
+// hash + subject + author + ISO date in one git invocation. Used by
+// the coverage scanner.
+func (g *Git) LogWindow(ref string, n int) ([]LogWindowEntry, error) {
+	if n <= 0 {
+		n = 30
+	}
+	out, err := g.run("log", "--format=%H%x09%s%x09%an%x09%aI", "-n", strconv.Itoa(n), ref)
+	if err != nil {
+		return nil, err
+	}
+	var entries []LogWindowEntry
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 4)
+		if len(parts) == 4 {
+			entries = append(entries, LogWindowEntry{
+				Hash:    parts[0],
+				Subject: parts[1],
+				Author:  parts[2],
+				Date:    parts[3],
+			})
+		}
+	}
+	return entries, nil
+}
+
 // CommitTrailers returns the trailers from a commit message.
 func (g *Git) CommitTrailers(commitHash string) (map[string]string, error) {
 	out, err := g.run("log", "-1", "--format=%(trailers:key,valueonly)", commitHash)
@@ -460,6 +499,50 @@ func (g *Git) IsTreeClean() bool {
 		return false
 	}
 	return strings.TrimSpace(out) == ""
+}
+
+// WorktreeStatusReport classifies the worktree as clean, dirty, or
+// untracked, with the offending file paths in DirtyFiles. Used by
+// seal --prepare/--submit to enforce the v0.3 snapshot contract.
+type WorktreeStatusReport struct {
+	Status     string   // "clean" | "dirty" | "untracked"
+	DirtyFiles []string // tracked-but-modified paths (when Status == "dirty")
+	Untracked  []string // untracked paths (when Status == "untracked")
+}
+
+// WorktreeStatus reports whether the worktree is clean, has tracked
+// modifications, or has untracked files. "Untracked" wins over "dirty"
+// when both are present — the more surprising case to a reader, so we
+// surface it.
+func (g *Git) WorktreeStatus() (*WorktreeStatusReport, error) {
+	out, err := g.run("status", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	rep := &WorktreeStatusReport{Status: "clean"}
+	for _, line := range strings.Split(out, "\n") {
+		if len(line) < 3 {
+			continue
+		}
+		// porcelain v1: "XY <path>" where XY is two status chars.
+		code := line[:2]
+		path := strings.TrimSpace(line[3:])
+		if path == "" {
+			continue
+		}
+		if code == "??" {
+			rep.Untracked = append(rep.Untracked, path)
+		} else {
+			rep.DirtyFiles = append(rep.DirtyFiles, path)
+		}
+	}
+	switch {
+	case len(rep.Untracked) > 0:
+		rep.Status = "untracked"
+	case len(rep.DirtyFiles) > 0:
+		rep.Status = "dirty"
+	}
+	return rep, nil
 }
 
 // WriteAndCommitFile stages and commits a single file (used for .mainline config).

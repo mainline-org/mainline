@@ -306,6 +306,48 @@ func (s *Service) Pin() (*PinResult, error) {
 			continue
 		}
 
+		// v0.3 backfill: when the intent was started with --commits,
+		// pin to each listed commit explicitly. Bypasses the
+		// tree_hash/commit_hash/goal_text cascade — backfill IS the
+		// claim, not a heuristic match. Each commit gets the same
+		// intent ref via upsertCommitNote (multi-intent shared notes
+		// already supported).
+		if len(iv.BackfillCommits) > 0 {
+			pinnedAny := false
+			for _, target := range iv.BackfillCommits {
+				if alreadyHasIntent(s.Git, target, iv.IntentID) {
+					continue
+				}
+				hash, _ := core.CanonicalHash(iv)
+				note := domain.CommitNote{
+					SchemaVersion: 1,
+					Kind:          "mainline.commit_note",
+					Intents: []domain.IntentReference{
+						{IntentID: iv.IntentID, SealResultHash: "sha256:" + hash},
+					},
+					AddedAt:       core.Now(),
+					AddedBy:       identity.ActorID,
+					Via:           "pin_backfill",
+					MatchStrategy: "backfill_explicit",
+					ReconciledAt:  core.Now(),
+					ReconciledBy:  identity.ActorID,
+				}
+				if err := upsertCommitNote(s.Git, target, note); err != nil {
+					continue
+				}
+				pinnedAny = true
+				result.Links = append(result.Links, PinnedCommit{
+					IntentID:      iv.IntentID,
+					Commit:        target,
+					MatchStrategy: "backfill_explicit",
+				})
+			}
+			if pinnedAny {
+				result.IntentIDs = append(result.IntentIDs, iv.IntentID)
+			}
+			continue
+		}
+
 		match, strategy := s.findPinMatch(iv, entries, treeOf)
 		if match == "" {
 			continue

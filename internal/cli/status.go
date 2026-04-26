@@ -55,8 +55,31 @@ var statusCmd = &cobra.Command{
 				fmt.Printf("Sync:      %s ago%s\n",
 					formatElapsed(result.SyncStaleSeconds), marker)
 			}
+
+			if result.Coverage != nil {
+				c := result.Coverage
+				fmt.Printf("\nCoverage (last %d commits on main):\n", c.WindowSize)
+				fmt.Printf("  ✓ Covered:    %d\n", c.CoveredCount)
+				if c.SkippedCount > 0 {
+					fmt.Printf("  ⏭ Skipped:    %d\n", c.SkippedCount)
+				}
+				if c.UncoveredCount > 0 {
+					fmt.Printf("  ⚠ Uncovered:  %d\n", c.UncoveredCount)
+					for _, uc := range c.Uncovered {
+						fmt.Printf("    %s  %s\n", shortHash(uc.Commit), truncate(uc.Subject, 60))
+					}
+					fmt.Println("\n  Run `mainline gaps` for details + rescue options.")
+				}
+			}
 		}
 	},
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func shortHash(hash string) string {
