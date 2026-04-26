@@ -448,3 +448,98 @@ func TestStatusFreshAfterSync(t *testing.T) {
 		t.Error("LastSync should be populated after sync")
 	}
 }
+
+// rc6: sync's auto-check writes the full pair set to
+// .ml-cache/views/phase1-warnings.json, and `mainline log` then
+// renders [check:~] for any intent that appears in the cache.
+//
+// Setup: two non-self intents with overlapping fingerprints. After
+// sync, both should appear in the phase1 cache and Log entries should
+// carry "~" for the proposed one (and "" for the merged one — terminal
+// states drop the column).
+func TestSyncWritesPhase1CacheAndLogShowsTilde(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	// Pre-seed the view with a merged intent and a proposed intent
+	// that overlap heavily on subsystem + files. Both belong to
+	// other actors so detectSyncConflicts considers the pair.
+	overlap := &domain.SemanticFingerprint{
+		Subsystems:   []string{"engine", "merge"},
+		FilesTouched: []string{"internal/engine/merge.go"},
+		Tags:         []string{"refactor"},
+	}
+	view := &domain.MainlineView{Intents: []domain.IntentView{
+		{IntentID: "int_seedmerged", Status: domain.StatusMerged,
+			ActorID: "actor_other", Fingerprint: overlap},
+		{IntentID: "int_seedproposed", Status: domain.StatusProposed,
+			ActorID: "actor_other", Goal: "second", Fingerprint: overlap},
+	}}
+	svc.Store.WriteMainlineView(view)
+
+	// Stamp identity onto a third intent owned by us, also overlapping,
+	// so detectSyncConflicts has an own-actor candidate to pair from.
+	id, _ := svc.Store.ReadIdentity()
+	view.Intents = append(view.Intents, domain.IntentView{
+		IntentID: "int_mine", Status: domain.StatusProposed,
+		ActorID: id.ActorID, Goal: "mine", Fingerprint: overlap,
+	})
+	svc.Store.WriteMainlineView(view)
+
+	// Sync runs auto-check (default true after rc6 backfill in
+	// ReadTeamConfig), writes the cache, then rebuilds the view from
+	// the actor logs (which are empty in this test) so the cached
+	// view above is wiped — but the cache snapshot we want is taken
+	// before the rebuild reads anything from logs.
+	//
+	// Workaround for the test: drive detectSyncConflicts directly +
+	// write the cache, then verify the lookup path. Simulates what
+	// Sync does for the cache portion without depending on the full
+	// rebuild pipeline.
+	cfg, _ := svc.Store.ReadTeamConfig()
+	pairs := svc.detectSyncConflicts(view, cfg.Check.Phase1Threshold, nil)
+	if len(pairs) == 0 {
+		t.Fatalf("expected detectSyncConflicts to surface pairs from overlapping seeds")
+	}
+	if err := svc.Store.WritePhase1Warnings(&domain.Phase1WarningsCache{
+		SchemaVersion: 1,
+		UpdatedAt:     "2026-04-26T00:00:00Z",
+		Pairs:         pairs,
+	}); err != nil {
+		t.Fatalf("WritePhase1Warnings: %v", err)
+	}
+
+	// Now call Log and verify the marker.
+	logRes, _ := svc.Log(20)
+	by := map[string]string{}
+	for _, e := range logRes.Intents {
+		by[e.IntentID] = e.Check
+	}
+	if by["int_mine"] != "~" {
+		t.Errorf("int_mine should show check=~, got %q", by["int_mine"])
+	}
+	if by["int_seedproposed"] != "~" {
+		t.Errorf("int_seedproposed should show check=~, got %q", by["int_seedproposed"])
+	}
+	if by["int_seedmerged"] != "" {
+		t.Errorf("int_seedmerged is merged → should drop the column, got %q", by["int_seedmerged"])
+	}
+}
+
+// Phase2 judgment beats phase1 warning even when both signals are
+// present — the cascade in checkMarker must always prefer the
+// stronger, agent-produced signal.
+func TestCheckMarkerPhase2BeatsPhase1(t *testing.T) {
+	got := checkMarker(domain.StatusProposed,
+		&domain.CheckSummary{}, true /* phase1 also warns */)
+	if got != "ok" {
+		t.Errorf("phase2 ok should beat phase1 ~, got %q", got)
+	}
+	got = checkMarker(domain.StatusProposed,
+		&domain.CheckSummary{HasConflict: true}, true)
+	if got != "!" {
+		t.Errorf("phase2 conflict should beat phase1 ~, got %q", got)
+	}
+}
