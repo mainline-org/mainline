@@ -46,12 +46,16 @@ var logCmd = &cobra.Command{
 				if author == "" {
 					author = entry.ActorID
 				}
-				check := entry.Check
-				if check == "" {
-					check = "-"
+				// rc6: terminal-state intents drop the [check:...] segment
+				// entirely (checkMarker returns "" for merged / abandoned
+				// / superseded / reverted). Pre-merge intents always show
+				// a marker in {?, ~, ok, !, human?}.
+				checkSegment := ""
+				if entry.Check != "" {
+					checkSegment = " [check:" + entry.Check + "]"
 				}
-				fmt.Printf("%-12s [%s] [check:%s] %s %s  %s",
-					entry.IntentID, status, check,
+				fmt.Printf("%-12s [%s]%s %s %s  %s",
+					entry.IntentID, status, checkSegment,
 					formatLogTime(entry.ActivityAt), author, title)
 				if entry.Thread != "" {
 					fmt.Printf(" (%s)", entry.Thread)
