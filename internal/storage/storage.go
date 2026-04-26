@@ -373,6 +373,36 @@ func (s *Store) ReadActorLogEventsFromRef(ref string) ([]json.RawMessage, error)
 
 func (s *Store) mainlineViewPath() string  { return filepath.Join(s.viewsDir(), "mainline.json") }
 func (s *Store) proposedIndexPath() string { return filepath.Join(s.viewsDir(), "proposed-index.json") }
+func (s *Store) lastSyncPath() string      { return filepath.Join(s.viewsDir(), "last-sync.json") }
+
+// ReadLastSync returns the persisted record of the most recent
+// successful sync, or nil if none exists. Errors other than "not
+// found" propagate.
+func (s *Store) ReadLastSync() (*domain.LastSync, error) {
+	data, err := os.ReadFile(s.lastSyncPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var ls domain.LastSync
+	if err := json.Unmarshal(data, &ls); err != nil {
+		return nil, err
+	}
+	return &ls, nil
+}
+
+func (s *Store) WriteLastSync(ls *domain.LastSync) error {
+	if err := os.MkdirAll(s.viewsDir(), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(ls, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.lastSyncPath(), data, 0o644)
+}
 
 func (s *Store) ReadMainlineView() (*domain.MainlineView, error) {
 	data, err := os.ReadFile(s.mainlineViewPath())
