@@ -12,3 +12,5 @@ mainline
 internal/engine/testdata/rapid/
 # Local agent scratch:
 assets/
+.cursor/
+.tmp-bin/

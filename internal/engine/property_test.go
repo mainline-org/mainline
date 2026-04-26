@@ -168,6 +168,11 @@ func TestPropertyReconcileIdempotent(t *testing.T) {
 				rt.Fatalf("remove note %s: %v", mc, err)
 			}
 		}
+		cfg, _ := svc.Store.ReadTeamConfig()
+		cfg.Sync.AutoPinAfterSync = false
+		if err := svc.Store.WriteTeamConfig(cfg); err != nil {
+			rt.Fatalf("disable auto-pin: %v", err)
+		}
 		svc.Sync()
 
 		first, err := svc.Pin()
