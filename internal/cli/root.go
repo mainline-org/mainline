@@ -124,6 +124,7 @@ func init() {
 	rootCmd.AddCommand(sealCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(publishCmd)
+	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(mergeCmd)
 	rootCmd.AddCommand(logCmd)
