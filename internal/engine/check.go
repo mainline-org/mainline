@@ -188,14 +188,16 @@ func (s *Service) CheckSubmit(input json.RawMessage) (*CheckSubmitResult, error)
 		return nil, fmt.Errorf("write check event: %w", err)
 	}
 
-	return &CheckSubmitResult{
+	res := &CheckSubmitResult{
 		CandidateIntent:  cr.CandidateIntent,
 		HasConflict:      cr.Overall.HasConflict,
 		HighestSeverity:  cr.Overall.HighestSeverity,
 		NeedsHumanReview: cr.Overall.NeedsHumanReview,
 		JudgmentCount:    len(cr.Judgments),
 		EventID:          eventID,
-	}, nil
+	}
+	s.emit("check_judged", res)
+	return res, nil
 }
 
 // -----------------------------------------------------------

@@ -10,6 +10,7 @@ import (
 
 	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/engine"
+	"github.com/mainline-org/mainline/internal/webhook"
 )
 
 var (
@@ -168,11 +169,17 @@ func init() {
 	// Hidden — debug utility, not in the user mental model.
 	canonicalHashCmd.Hidden = true
 
+	// Setup group for the hooks integration: rare per-repo install,
+	// then forgotten about.
+	hooksCmd.GroupID = groupSetup.ID
+	webhookCmd.GroupID = groupSetup.ID
+
 	rootCmd.AddCommand(
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
+		hooksCmd, webhookCmd, webhookDispatchCmd,
 	)
 }
 
@@ -181,7 +188,37 @@ func getService() (*engine.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getwd: %w", err)
 	}
-	return engine.NewService(cwd)
+	svc, err := engine.NewService(cwd)
+	if err != nil {
+		return nil, err
+	}
+	attachWebhookBus(svc, "engine")
+	return svc, nil
+}
+
+// attachWebhookBus wires the production webhook event bus when the
+// team config carries any [[webhook]] subscriptions. No-op otherwise:
+// the engine treats nil Bus as "drop events on the floor", and the
+// CLI never pays the cost of writing to .ml-cache/webhook-queue/ when
+// no one is listening.
+//
+// source is "engine" for normal CLI commands and "hook" for events
+// originating from the hooks Dispatcher; the value rides through the
+// envelope and is exposed to subscribers as the X-Mainline-Source
+// header in the sender.
+func attachWebhookBus(svc *engine.Service, source string) {
+	cfg, err := svc.Store.ReadTeamConfig()
+	if err != nil || cfg == nil || len(cfg.Webhooks) == 0 {
+		return
+	}
+	binary, _ := os.Executable()
+	bus := webhook.New(
+		svc.Store.WebhookQueueDir(),
+		cfg.Webhooks,
+		binary,
+		source,
+	)
+	svc.SetBus(bus)
 }
 
 func outputJSON(data interface{}) {

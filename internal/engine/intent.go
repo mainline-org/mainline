@@ -117,13 +117,15 @@ func (s *Service) StartWithOptions(goal string, thread string, opts *StartOption
 		s.Store.WriteThread(t)
 	}
 
-	return &StartResult{
+	res := &StartResult{
 		IntentID:        intentID,
 		Thread:          thread,
 		GitBranch:       branch,
 		Goal:            goal,
 		BackfillCommits: backfill,
-	}, nil
+	}
+	s.emit("intent_started", res)
+	return res, nil
 }
 
 // -----------------------------------------------------------
@@ -189,11 +191,13 @@ func (s *Service) Append(description string) (*AppendResult, error) {
 		return nil, fmt.Errorf("update draft: %w", err)
 	}
 
-	return &AppendResult{
+	res := &AppendResult{
 		TurnID:   turn.ID,
 		IntentID: draft.IntentID,
 		Index:    idx,
-	}, nil
+	}
+	s.emit("turn_appended", res)
+	return res, nil
 }
 
 // -----------------------------------------------------------
