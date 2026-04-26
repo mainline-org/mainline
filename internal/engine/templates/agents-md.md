@@ -1,10 +1,13 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 4 -->
+<!-- mainline-agents-md-version: 5 -->
 
 This project uses **Mainline** to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
-review. The agent is expected to follow the workflow below.
+review. The agent is expected to both **read** team intents (for context)
+and **write** its own intent (for the work it's doing). Both halves
+matter — intents capture *why* changes were made, which is information
+the diff alone cannot give you.
 
 ### At the start of a task
 
@@ -19,13 +22,41 @@ when possible — it becomes the headline in `mainline log`):
 mainline start "<short description of the user's goal>" --json
 ```
 
-Need orientation in an unfamiliar subsystem first? `mainline context`
-returns a JSON snapshot of merged + proposed intents you can grep for
-prior work:
+### Read team intents for context (do this aggressively)
+
+Before working on anything non-trivial, scan recent intents for prior
+work in the area you're about to touch. Each intent's `summary`
+(what / why / decisions / risks / followups) plus `fingerprint`
+(subsystems, files_touched, tags) is **strictly richer than the diff** —
+it tells you *why* the code looks the way it does, which decisions
+were considered and rejected, and what the author flagged as a risk
+or follow-up.
 
 ```
-mainline context --json
+mainline log --json --limit 30
 ```
+
+Filter by goal/title keywords matching the user's task. For each
+relevant hit, pull the full record:
+
+```
+mainline show <intent_id> --json
+```
+
+Before designing a change, also see what is currently in flight so
+your work does not collide with someone else's proposed intent:
+
+```
+mainline list-proposals --json
+```
+
+`mainline context --json` is a quick agent-consumption snapshot of
+the same data (current actor, active intent, recent merged) — useful
+for orientation but does not replace the targeted log/show calls.
+
+Use this aggressively. The cost is one or two CLI calls; the payoff
+is correct architectural decisions and not duplicating someone's
+just-finished work.
 
 ### While working
 
