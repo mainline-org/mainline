@@ -3,7 +3,10 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
@@ -293,36 +296,70 @@ func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 		fmt.Sprintf("refs/remotes/origin/%s", prefix),
 	}
 
+	// Phase 1: gather the unique actor-log refs in the same order
+	// the pre-fan-out code did (local-first, then origin-mirror).
+	// Order matters for downstream dedup: when the same event blob
+	// appears in both prefixes, the local-first rule keeps it from
+	// the local ref, not the remote-mirror ref.
 	seenRefs := make(map[string]bool)
-	seenEvents := make(map[string]bool)
-	var events []json.RawMessage
-
+	var refs []string
 	for _, refPrefix := range refPrefixes {
-		refs, err := s.Git.ListRefs(refPrefix)
+		rs, err := s.Git.ListRefs(refPrefix)
 		if err != nil {
 			return nil, err
 		}
-		for _, ref := range refs {
-			if seenRefs[ref] {
+		for _, r := range rs {
+			if seenRefs[r] {
 				continue
 			}
-			seenRefs[ref] = true
+			seenRefs[r] = true
+			refs = append(refs, r)
+		}
+	}
+	if len(refs) == 0 {
+		return nil, nil
+	}
 
-			refEvents, err := s.Store.ReadActorLogEventsFromRef(ref)
-			if err != nil {
-				return nil, err
-			}
-			for _, event := range refEvents {
-				key := string(event)
-				if seenEvents[key] {
-					continue
-				}
-				seenEvents[key] = true
-				events = append(events, event)
-			}
+	// Phase 2: read each actor log in parallel. ReadActorLogEventsFromRef
+	// walks a chain of single-blob commits — a fresh git invocation
+	// per event in the chain. Multiple actors are independent reads
+	// against the same .git, which git supports concurrently for
+	// read-only operations. Worker pool bounds child-process pressure.
+	results := make([][]json.RawMessage, len(refs))
+	errs := make([]error, len(refs))
+	sem := make(chan struct{}, syncWorkers)
+	var wg sync.WaitGroup
+	for i, ref := range refs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, ref string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[i], errs[i] = s.Store.ReadActorLogEventsFromRef(ref)
+		}(i, ref)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
 		}
 	}
 
+	// Phase 3: combine in deterministic order matching the pre-fan-out
+	// behaviour. Sequential dedup keeps the rule "first ref wins for
+	// any duplicate event blob".
+	seenEvents := make(map[string]bool)
+	var events []json.RawMessage
+	for _, refEvents := range results {
+		for _, event := range refEvents {
+			key := string(event)
+			if seenEvents[key] {
+				continue
+			}
+			seenEvents[key] = true
+			events = append(events, event)
+		}
+	}
 	return events, nil
 }
 
@@ -334,28 +371,103 @@ func (s *Service) syncedMainRef(mainBranch string) string {
 	return mainBranch
 }
 
+// scanMainNotes walks every commit that has a note on the mainline
+// notes ref and applies it to the in-progress IntentView map.
+//
+// Pre-fix history: this function used `git log --oneline -n
+// Check.Lookback` to enumerate candidate commits, then per-commit
+// asked `git notes show`. That meant any commit older than the last
+// Lookback commits on main was invisible — its note still existed
+// on the notes ref, but sync's view-rebuild never saw it. Real
+// failure mode hit during dogfood: int_5c0800d7 (the original mvp
+// intent) silently regressed to `proposed` once main grew past 50
+// commits, even though its pin note was intact and pushed.
+//
+// Post-fix: drive the loop from `git notes --ref=mainline/intents
+// list` — the authoritative set of commits that carry mainline
+// metadata. Lookback is no longer used for the notes scan. We still
+// filter via `merge-base --is-ancestor <commit> <main>` so a
+// hand-written or pin-on-feature-branch note (commit not reachable
+// from main) does not pollute the merged-status view. Commits are
+// sorted chronologically so a later revert correctly overrides an
+// earlier merge for the same intent.
+// syncWorkers caps how many git child processes we fan out at once.
+// 8 keeps fork pressure low on small machines while still recovering
+// most of the per-commit serialisation cost (measured: ~5x sync
+// speed-up vs. the sequential loop on a 23-noted-commit repo).
+const syncWorkers = 8
+
+// notedCommitData carries everything we need per noted commit so the
+// fan-out worker can do filter+date+show in one trip and the apply
+// step stays purely in-memory.
+type notedCommitData struct {
+	hash string
+	when time.Time
+	raw  string // notes show output, empty if commit was filtered out
+}
+
 func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMap map[string]*domain.IntentView) {
-	// rc3: scan main branch commits for git notes (source of truth for merged)
-	entries, err := s.Git.LogOneline(mainRef, cfg.Check.Lookback)
-	if err != nil {
+	notedCommits, err := s.Git.NotesListCommits()
+	if err != nil || len(notedCommits) == 0 {
 		return
 	}
 
-	// LogOneline returns newest-first; replay chronologically so a later
-	// revert commit can correctly overwrite the earlier merge state for the
-	// same intent.
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
+	// Fan out the per-commit git ops. Each worker does
+	// merge-base --is-ancestor (reachability) + CommitDate + NotesShow
+	// in one go. Results are written into a slice indexed by the input
+	// position; no shared mutable state under concurrent write.
+	results := make([]notedCommitData, len(notedCommits))
+	sem := make(chan struct{}, syncWorkers)
+	var wg sync.WaitGroup
+	for i, c := range notedCommits {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, c string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			// Reachability filter: drop notes on commits that are not
+			// in main's ancestry — stale feature branches, dangling
+			// commits, hand-pin mistakes. Trusting them would let a
+			// manually-pinned never-merged commit mark an intent as
+			// merged.
+			if _, err := s.Git.Run("merge-base", "--is-ancestor", c, mainRef); err != nil {
+				return
+			}
+			dateStr, err := s.Git.CommitDate(c)
+			if err != nil {
+				return
+			}
+			t, err := time.Parse(time.RFC3339, dateStr)
+			if err != nil {
+				return
+			}
+			raw, err := s.Git.NotesShow(c)
+			if err != nil || raw == "" {
+				return
+			}
+			results[i] = notedCommitData{hash: c, when: t, raw: raw}
+		}(i, c)
 	}
+	wg.Wait()
 
-	for _, entry := range entries {
-		noteContent, err := s.Git.NotesShow(entry.Hash)
-		if err != nil || noteContent == "" {
-			continue
+	// Drop the filtered-out entries (zero-value results) and sort
+	// chronologically so a later revert overrides an earlier merge
+	// for the same intent.
+	entries := make([]notedCommitData, 0, len(results))
+	for _, r := range results {
+		if r.hash != "" {
+			entries = append(entries, r)
 		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].when.Before(entries[j].when)
+	})
 
+	// Apply sequentially so the chronological replay invariant holds
+	// and intentMap stays single-writer.
+	for _, entry := range entries {
 		var note domain.CommitNote
-		if err := json.Unmarshal([]byte(noteContent), &note); err != nil {
+		if err := json.Unmarshal([]byte(entry.raw), &note); err != nil {
 			continue
 		}
 		if note.Kind != "mainline.commit_note" {
@@ -367,7 +479,7 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		for _, ref := range note.Intents {
 			if iv, exists := intentMap[ref.IntentID]; exists {
 				iv.Status = domain.StatusMerged
-				iv.StatusEvidence.MergedMainCommit = entry.Hash
+				iv.StatusEvidence.MergedMainCommit = entry.hash
 				iv.StatusEvidence.MergedVia = via
 			} else {
 				intentMap[ref.IntentID] = &domain.IntentView{
@@ -376,7 +488,7 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 					Status:        domain.StatusMerged,
 					ViewRebuiltAt: core.Now(),
 					StatusEvidence: domain.StatusEvidence{
-						MergedMainCommit: entry.Hash,
+						MergedMainCommit: entry.hash,
 						MergedVia:        via,
 					},
 				}
@@ -387,7 +499,7 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		for _, revertedID := range note.Reverts {
 			if iv, exists := intentMap[revertedID]; exists {
 				iv.Status = domain.StatusReverted
-				iv.StatusEvidence.RevertedMainCommit = entry.Hash
+				iv.StatusEvidence.RevertedMainCommit = entry.hash
 			}
 		}
 	}
