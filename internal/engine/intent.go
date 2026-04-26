@@ -276,21 +276,112 @@ func (s *Service) Show(intentID string) (*ShowResult, error) {
 // Abandon
 // -----------------------------------------------------------
 
-func (s *Service) Abandon(intentID string, reason string) error {
+// AbandonResult is what the CLI / agents need to display after an
+// abandon: the prior state matters (drafting was local-only;
+// sealed/proposed wrote an event), and Published tells the user
+// whether other actors will see this on their next sync.
+type AbandonResult struct {
+	IntentID    string `json:"intent_id"`
+	PriorStatus string `json:"prior_status"`
+	Reason      string `json:"reason,omitempty"`
+	EventID     string `json:"event_id,omitempty"`
+	Published   bool   `json:"published"`
+	Warning     string `json:"warning,omitempty"`
+}
+
+// Abandon transitions an intent to the abandoned terminal state.
+//
+// State-dependent behaviour:
+//   - drafting: local-only; nothing was published, so we just delete
+//     the local draft and return. No event written.
+//   - sealed_local / proposed: writes an IntentAbandonedEvent to the
+//     actor log and auto-publishes. Without this, sync's view-rebuild
+//     in OTHER clones would keep showing the intent as proposed
+//     forever — a silent bug pre-v0.3 the CLI surface forced into
+//     the open.
+func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error) {
 	if err := s.requireInit(); err != nil {
-		return err
+		return nil, err
 	}
 
 	draft, err := s.Store.ReadDraft(intentID)
 	if err != nil {
-		return domain.NewError(domain.ErrNoActiveIntent, fmt.Sprintf("intent %s not found", intentID))
+		return nil, domain.NewError(domain.ErrNoActiveIntent, fmt.Sprintf("intent %s not found", intentID))
 	}
 
 	if err := core.ValidateStateTransition(draft.Status, domain.StatusAbandoned); err != nil {
-		return domain.NewError(domain.ErrInvalidStatus, err.Error())
+		return nil, domain.NewError(domain.ErrInvalidStatus, err.Error())
 	}
 
+	res := &AbandonResult{
+		IntentID:    intentID,
+		PriorStatus: string(draft.Status),
+		Reason:      reason,
+	}
+
+	// Drafting → fully local. No event needed; the draft files are
+	// the entire footprint. Delete them (DeleteDraft also wipes the
+	// turns + prepare snapshot if any).
+	if draft.Status == domain.StatusDrafting {
+		if err := s.Store.DeleteDraft(intentID); err != nil {
+			return nil, fmt.Errorf("delete draft: %w", err)
+		}
+		return res, nil
+	}
+
+	// Sealed/proposed → write an actor-log event so cross-actor sync
+	// rebuilds the view with status=abandoned for everyone, not just
+	// this clone.
+	identity, err := s.getIdentity()
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := s.getTeamConfig()
+	if err != nil {
+		return nil, err
+	}
+	eventID := core.GenerateEventID()
+	event := domain.IntentAbandonedEvent{
+		BaseEvent: domain.BaseEvent{
+			EventID:       eventID,
+			SchemaVersion: 1,
+			EventType:     domain.EventIntentAbandoned,
+			ActorID:       identity.ActorID,
+			ActorName:     s.actorDisplayName(identity),
+			Timestamp:     core.Now(),
+		},
+		IntentID: intentID,
+		Reason:   reason,
+	}
+	if err := s.Store.AppendActorLogEvent(identity.ActorID, cfg.Mainline.ActorLogPrefix, event); err != nil {
+		return nil, fmt.Errorf("write actor log event: %w", err)
+	}
+	res.EventID = eventID
+
+	// Auto-publish so other actors see the abandon promptly. Mirrors
+	// the seal --submit auto-publish path; failures are non-fatal
+	// (the event is in the local actor log and will publish on next
+	// `mainline publish` or `seal --submit`).
+	if s.Git.HasRemote(s.remoteName()) {
+		ref := s.Store.ActorLogRef(identity.ActorID, cfg.Mainline.ActorLogPrefix)
+		refspec := fmt.Sprintf("%s:%s", ref, ref)
+		if err := s.Git.Push(s.remoteName(), refspec); err == nil {
+			res.Published = true
+		} else {
+			res.Warning = "Abandoned locally but failed to publish. Run `mainline publish` to retry."
+		}
+	} else {
+		res.Warning = "No remote configured. Run `mainline publish` once you set one up."
+	}
+
+	// Update the local draft last so the file mirrors the event we
+	// just wrote — keeps `mainline status` and `show` in sync without
+	// waiting for a Sync round-trip.
 	draft.Status = domain.StatusAbandoned
 	draft.LastModifiedAt = core.Now()
-	return s.Store.WriteDraft(draft)
+	if err := s.Store.WriteDraft(draft); err != nil {
+		return nil, fmt.Errorf("update draft: %w", err)
+	}
+
+	return res, nil
 }

@@ -261,8 +261,7 @@ func TestAbandonThenStartNew(t *testing.T) {
 	svc.Append("some work")
 
 	// Abandon
-	err := svc.Abandon(start1.IntentID, "wrong approach")
-	if err != nil {
+	if _, err := svc.Abandon(start1.IntentID, "wrong approach"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -532,7 +531,7 @@ func TestSealedLocalCanBeAbandoned(t *testing.T) {
 	data, _ := json.Marshal(sr)
 	svc.SealSubmit(json.RawMessage(data))
 
-	if err := svc.Abandon(start.IntentID, "reason"); err != nil {
+	if _, err := svc.Abandon(start.IntentID, "reason"); err != nil {
 		t.Errorf("sealed_local → abandoned should be valid: %v", err)
 	}
 }
@@ -562,7 +561,7 @@ func TestPropertyCannotAbandonMerged(t *testing.T) {
 		t.Fatalf("merge: %v", err)
 	}
 
-	if err := svc.Abandon(start.IntentID, "should fail"); err == nil {
+	if _, err := svc.Abandon(start.IntentID, "should fail"); err == nil {
 		t.Error("merged → abandoned must be rejected")
 	}
 }

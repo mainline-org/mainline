@@ -410,15 +410,15 @@ func TestAbandon(t *testing.T) {
 	svc.Init("test-agent")
 
 	start, _ := svc.Start("goal", "")
-	err := svc.Abandon(start.IntentID, "no longer needed")
-	if err != nil {
+	if _, err := svc.Abandon(start.IntentID, "no longer needed"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Should be able to start a new intent now (abandoned one shouldn't block)
-	show, _ := svc.Show(start.IntentID)
-	if show.Intent.Status != domain.StatusAbandoned {
-		t.Errorf("expected abandoned, got %s", show.Intent.Status)
+	// Drafting → abandon deletes the draft entirely (no public state
+	// existed to clean), so Show returns NotFound. The status surface
+	// is the absence of the intent rather than a tombstone.
+	if _, err := svc.Show(start.IntentID); err == nil {
+		t.Errorf("expected drafting-abandon to delete the draft, but Show still succeeds")
 	}
 }
 
