@@ -13,10 +13,9 @@ package engine
 // has to widen this interface, which is the conversation we want to
 // have explicitly.
 //
-// Sync, Status, and BinaryStaleness are all read-only and produce
-// state snapshots — none of them can mint an intent, append a turn,
-// or write a sealed event. They are the only operations the dispatcher
-// needs to assemble session_start additional_context.
+// Sync, Status, ListProposals, and BinaryStaleness are all read-only
+// and produce state snapshots — none of them can mint an intent,
+// append a turn, or write a sealed event.
 func (s *Service) HookFacade() HookFacade { return hookFacade{s: s} }
 
 // HookFacade is the narrow surface the hooks Dispatcher uses. Type
@@ -25,6 +24,7 @@ func (s *Service) HookFacade() HookFacade { return hookFacade{s: s} }
 type HookFacade interface {
 	Sync() (any, error)
 	Status() (any, error)
+	ListProposals() (any, error)
 	// BinaryStaleness returns a snapshot of how old the running
 	// mainline binary is relative to main HEAD. Pure mechanical (file
 	// mtime + git commit date), no semantic judgement. Used by the
@@ -43,6 +43,10 @@ func (h hookFacade) Sync() (any, error) {
 
 func (h hookFacade) Status() (any, error) {
 	return h.s.Status()
+}
+
+func (h hookFacade) ListProposals() (any, error) {
+	return h.s.ListProposals()
 }
 
 func (h hookFacade) BinaryStaleness() (any, error) {
