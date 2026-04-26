@@ -38,17 +38,35 @@ func (Agent) HookNames() []string {
 }
 
 func (Agent) RenderHookOutput(hookName string, d *hooks.Dispatcher, _ *hooks.Event, _ any) ([]byte, error) {
-	if hookName != HookSessionStart || d == nil {
+	if d == nil || !d.Settings.Enabled {
 		return nil, nil
 	}
-	md := d.RenderSessionStartContext(d.LastSync(), d.LastStatus())
+
+	var eventName string
+	var md string
+	switch hookName {
+	case HookSessionStart:
+		eventName = "SessionStart"
+		md = d.RenderSessionStartContext(d.LastSync(), d.LastStatus())
+	case HookUserPromptSubmit:
+		if d.Engine == nil {
+			return nil, nil
+		}
+		status, statusErr := d.Engine.Status()
+		proposals, proposalsErr := d.Engine.ListProposals()
+		eventName = "UserPromptSubmit"
+		md = d.RenderTurnStartContext(status, proposals, statusErr, proposalsErr)
+	default:
+		return nil, nil
+	}
+
 	if md == "" {
 		return nil, nil
 	}
 	return json.Marshal(map[string]any{
 		"continue": true,
 		"hookSpecificOutput": map[string]any{
-			"hookEventName":     "SessionStart",
+			"hookEventName":     eventName,
 			"additionalContext": md,
 		},
 	})

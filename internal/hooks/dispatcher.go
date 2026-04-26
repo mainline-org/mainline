@@ -17,12 +17,11 @@ import (
 // LLM intelligence, so they must never produce semantic content
 // (intent goal, append description, fingerprint). All the dispatcher
 // can do is execute mechanical, deterministic operations and surface
-// state for the agent to read. Sync and Status are the only two such
-// operations on this contract; everything else (start, append, seal
+// state for the agent to read. Everything else (start, append, seal
 // prepare/submit, check) is an agent decision and stays a manual CLI
 // call described in AGENTS.md.
 type EngineFacade interface {
-	// Sync runs the auto-flow team-state refresh. Used by SessionStart.
+	// Sync runs the team-state refresh. Used by SessionStart.
 	Sync() (any, error)
 
 	// Status returns a marshallable status report. Used at SessionStart
@@ -31,6 +30,13 @@ type EngineFacade interface {
 	// whether to start / append / seal — exactly as AGENTS.md
 	// instructs it to in the no-hook flow.
 	Status() (any, error)
+
+	// ListProposals returns a marshallable, read-only snapshot of
+	// proposed team intents. Used by agents that can inject fresh
+	// per-prompt context. This stays mechanical: it only reports
+	// already-recorded intent metadata and never decides whether the
+	// current prompt overlaps with it.
+	ListProposals() (any, error)
 
 	// BinaryStaleness returns a hint about whether the running
 	// mainline binary is older than the latest main commit. Pure
@@ -103,11 +109,11 @@ type Dispatcher struct {
 	// Cached SessionStart results so the agent renderer can build
 	// additional_context without re-running sync/status. Set by
 	// onSessionStart, consumed by RenderSessionStartContext.
-	lastSync       any
-	lastSyncErr    error
-	lastStatus     any
-	lastStaleness  any
-	lastSessionEv  *Event
+	lastSync      any
+	lastSyncErr   error
+	lastStatus    any
+	lastStaleness any
+	lastSessionEv *Event
 }
 
 // DispatchSettings mirror the [hooks] section of .mainline/config.toml.
@@ -357,6 +363,137 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 	b.WriteString("- When the task is complete, commit code, then `mainline seal --prepare --json`, fill the SealResult (fingerprint generously), then `mainline seal --submit --json < seal.json`. If the response carries a `conflicts` array, surface it to the user verbatim.\n")
 	b.WriteString("- Re-run `mainline status` whenever you are about to make an architectural decision; sessionStart context is a one-shot snapshot, not a live view.\n")
 	return b.String()
+}
+
+// RenderTurnStartContext composes the small per-prompt reminder used
+// by agents that support UserPromptSubmit additionalContext. It is
+// intentionally much shorter than RenderSessionStartContext: enough to
+// keep the current active intent / proposal count visible, but not a
+// substitute for the agent's required log/show pass before non-trivial
+// work.
+func (d *Dispatcher) RenderTurnStartContext(status any, proposals any, statusErr error, proposalsErr error) string {
+	var b strings.Builder
+	b.WriteString("# Mainline per-prompt context\n\n")
+	b.WriteString("Codex refreshed lightweight Mainline state before this prompt. ")
+	b.WriteString("Use it as a reminder; AGENTS.md remains the workflow authority.\n\n")
+
+	b.WriteString("## status summary\n\n")
+	if statusErr != nil {
+		b.WriteString("Status FAILED: `")
+		b.WriteString(statusErr.Error())
+		b.WriteString("`.\n\n")
+	} else if raw, ok := compactStatusJSON(status); ok {
+		b.WriteString("```json\n")
+		b.Write(raw)
+		b.WriteString("\n```\n\n")
+	} else {
+		b.WriteString("_status unavailable_\n\n")
+	}
+
+	b.WriteString("## proposals summary\n\n")
+	if proposalsErr != nil {
+		b.WriteString("ListProposals FAILED: `")
+		b.WriteString(proposalsErr.Error())
+		b.WriteString("`.\n\n")
+	} else if raw, ok := compactProposalsJSON(proposals); ok {
+		b.WriteString("```json\n")
+		b.Write(raw)
+		b.WriteString("\n```\n\n")
+	} else {
+		b.WriteString("_proposals unavailable_\n\n")
+	}
+
+	b.WriteString("## reminder\n\n")
+	b.WriteString("- If this prompt is real work and there is no `active_intent`, decide whether to run `mainline start \"<goal>\"` before editing.\n")
+	b.WriteString("- If there is an `active_intent`, append only after a meaningful logical change; hooks still do not decide that for you.\n")
+	b.WriteString("- Before non-trivial changes, still run `mainline log --json --limit 30` and `mainline show <intent_id> --json` for relevant prior intents.\n")
+	return b.String()
+}
+
+func compactStatusJSON(status any) ([]byte, bool) {
+	if status == nil {
+		return nil, false
+	}
+	raw, err := json.Marshal(status)
+	if err != nil {
+		return nil, false
+	}
+	var in struct {
+		Branch       string `json:"branch,omitempty"`
+		ActorID      string `json:"actor_id,omitempty"`
+		ActiveIntent *struct {
+			IntentID string `json:"intent_id,omitempty"`
+			Status   string `json:"status,omitempty"`
+			Thread   string `json:"thread,omitempty"`
+			Goal     string `json:"goal,omitempty"`
+		} `json:"active_intent,omitempty"`
+		TurnCount     int  `json:"turn_count"`
+		ProposedCount int  `json:"proposed_count"`
+		SyncStale     bool `json:"sync_stale"`
+		Coverage      *struct {
+			UncoveredCount int `json:"uncovered_count"`
+		} `json:"coverage,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, false
+	}
+	out := struct {
+		Branch         string `json:"branch,omitempty"`
+		ActorID        string `json:"actor_id,omitempty"`
+		ActiveIntent   any    `json:"active_intent,omitempty"`
+		TurnCount      int    `json:"turn_count"`
+		ProposedCount  int    `json:"proposed_count"`
+		SyncStale      bool   `json:"sync_stale"`
+		UncoveredCount *int   `json:"uncovered_count,omitempty"`
+	}{
+		Branch:        in.Branch,
+		ActorID:       in.ActorID,
+		ActiveIntent:  in.ActiveIntent,
+		TurnCount:     in.TurnCount,
+		ProposedCount: in.ProposedCount,
+		SyncStale:     in.SyncStale,
+	}
+	if in.Coverage != nil {
+		out.UncoveredCount = &in.Coverage.UncoveredCount
+	}
+	raw, err = json.MarshalIndent(out, "", "  ")
+	return raw, err == nil
+}
+
+func compactProposalsJSON(proposals any) ([]byte, bool) {
+	if proposals == nil {
+		return nil, false
+	}
+	raw, err := json.Marshal(proposals)
+	if err != nil {
+		return nil, false
+	}
+	var in struct {
+		Proposals []struct {
+			IntentID string `json:"intent_id,omitempty"`
+			Title    string `json:"title,omitempty"`
+			Thread   string `json:"thread,omitempty"`
+			Status   string `json:"status,omitempty"`
+		} `json:"proposals"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, false
+	}
+	limit := len(in.Proposals)
+	if limit > 5 {
+		limit = 5
+	}
+	out := struct {
+		Count     int `json:"count"`
+		Shown     int `json:"shown"`
+		Proposals any `json:"proposals"`
+	}{
+		Count:     len(in.Proposals),
+		Shown:     limit,
+		Proposals: in.Proposals[:limit],
+	}
+	raw, err = json.MarshalIndent(out, "", "  ")
+	return raw, err == nil
 }
 
 // -----------------------------------------------------------

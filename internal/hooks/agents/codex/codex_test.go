@@ -171,3 +171,69 @@ func TestRenderSessionStartOutput(t *testing.T) {
 		t.Fatalf("missing mainline context: %s", got.HookSpecificOutput.AdditionalContext)
 	}
 }
+
+func TestRenderUserPromptSubmitOutput(t *testing.T) {
+	eng := fakeEngine{
+		status: map[string]any{
+			"branch":         "feature/work",
+			"actor_id":       "actor_1",
+			"turn_count":     2,
+			"proposed_count": 2,
+			"sync_stale":     false,
+			"active_intent": map[string]any{
+				"intent_id": "int_active",
+				"thread":    "feature/work",
+				"goal":      "Do active work",
+			},
+			"coverage": map[string]any{
+				"uncovered_count": 1,
+			},
+		},
+		proposals: map[string]any{
+			"proposals": []map[string]any{
+				{
+					"intent_id": "int_one",
+					"title":     "First proposal",
+					"thread":    "feature/one",
+					"goal":      "This long goal should not be rendered in the per-prompt summary",
+					"status":    "proposed",
+				},
+			},
+		},
+	}
+	d := hooks.NewDispatcher(eng, nil, hooks.DefaultDispatchSettings())
+	out, err := (Agent{}).RenderHookOutput(HookUserPromptSubmit, d, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Continue           bool `json:"continue"`
+		HookSpecificOutput struct {
+			HookEventName     string `json:"hookEventName"`
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Continue || got.HookSpecificOutput.HookEventName != "UserPromptSubmit" {
+		t.Fatalf("unexpected render output: %s", out)
+	}
+	ctx := got.HookSpecificOutput.AdditionalContext
+	if !strings.Contains(ctx, "Mainline per-prompt context") || !strings.Contains(ctx, "int_active") || !strings.Contains(ctx, "int_one") {
+		t.Fatalf("missing prompt context details: %s", ctx)
+	}
+	if strings.Contains(ctx, "This long goal should not be rendered") {
+		t.Fatalf("proposal goal leaked into lightweight prompt context: %s", ctx)
+	}
+}
+
+type fakeEngine struct {
+	status    any
+	proposals any
+}
+
+func (f fakeEngine) Sync() (any, error)            { return nil, nil }
+func (f fakeEngine) Status() (any, error)          { return f.status, nil }
+func (f fakeEngine) ListProposals() (any, error)   { return f.proposals, nil }
+func (f fakeEngine) BinaryStaleness() (any, error) { return nil, nil }
