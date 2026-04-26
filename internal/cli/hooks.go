@@ -16,6 +16,7 @@ import (
 	// Blank-import each agent package so its init() registers with
 	// the hooks registry. New agents are added here, alongside the
 	// cursor entry; the rest of the cli is agent-agnostic.
+	_ "github.com/mainline-org/mainline/internal/hooks/agents/claudecode"
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/codex"
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/cursor"
 )
