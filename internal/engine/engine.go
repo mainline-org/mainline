@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"mainline/internal/core"
-	"mainline/internal/domain"
-	"mainline/internal/gitops"
-	"mainline/internal/storage"
+	"github.com/mainline-org/mainline/internal/core"
+	"github.com/mainline-org/mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/gitops"
+	"github.com/mainline-org/mainline/internal/storage"
 )
 
 // Service is the main business-logic facade.
@@ -146,17 +146,9 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	// Write PR template (no trailers, rc3)
 	s.writePRTemplate()
 
-	// Configure git notes fetch/push (rc3: notes are source of truth)
-	if s.Git.HasRemote("origin") {
-		notesFetch := "+refs/notes/mainline/*:refs/notes/mainline/*"
-		if !strings.Contains(s.Git.ConfigGet("remote.origin.fetch"), "refs/notes/mainline") {
-			s.Git.ConfigAdd("remote.origin.fetch", notesFetch)
-		}
-		notesPush := "refs/notes/mainline/*:refs/notes/mainline/*"
-		if !strings.Contains(s.Git.ConfigGet("remote.origin.push"), "refs/notes/mainline") {
-			s.Git.ConfigAdd("remote.origin.push", notesPush)
-		}
-	}
+	// Configure git notes + actor-log fetch/push so the dedicated
+	// mainline refs travel with normal `git push` / `git fetch`.
+	s.configureRemoteRefspecs(cfg.Mainline.ActorLogPrefix)
 	// Configure git log to show mainline notes by default
 	s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 
@@ -174,6 +166,120 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 		MainBranch: cfg.Mainline.MainBranch,
 		Created:    true,
 	}, nil
+}
+
+// configureRemoteRefspecs ensures origin's fetch/push refspecs include
+// both the notes ref (refs/notes/mainline/*) and the actor-log namespace
+// (refs/heads/<prefix>/*). Each refspec is added at most once — a re-run
+// is a no-op. Silently does nothing when origin is not configured yet.
+//
+// MVP-readiness fix (PR fix/mvp-install-setup): this used to live
+// inline in Init and only fired once. If a user ran `mainline init`
+// before adding `git remote add origin ...`, refspecs were never
+// configured and cross-actor sync silently degraded. Pulling the
+// logic into a helper lets `mainline init --rewire`, `mainline doctor
+// --setup --fix`, and Sync's first-time auto-detection all share one
+// implementation.
+//
+// Returns the list of refspec lines that were added this call (for
+// reporting in the doctor / rewire UX). Empty slice means everything
+// was already in place or there is no origin to configure.
+func (s *Service) configureRemoteRefspecs(actorLogPrefix string) []string {
+	remote := s.remoteName()
+	if !s.Git.HasRemote(remote) {
+		return nil
+	}
+	fetchKey := "remote." + remote + ".fetch"
+	pushKey := "remote." + remote + ".push"
+	added := []string{}
+
+	notesFetch := "+refs/notes/mainline/*:refs/notes/mainline/*"
+	if !strings.Contains(s.Git.ConfigGet(fetchKey), "refs/notes/mainline") {
+		s.Git.ConfigAdd(fetchKey, notesFetch)
+		added = append(added, "fetch: "+notesFetch)
+	}
+	notesPush := "refs/notes/mainline/*:refs/notes/mainline/*"
+	if !strings.Contains(s.Git.ConfigGet(pushKey), "refs/notes/mainline") {
+		s.Git.ConfigAdd(pushKey, notesPush)
+		added = append(added, "push: "+notesPush)
+	}
+
+	actorFetch := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*",
+		actorLogPrefix, remote, actorLogPrefix)
+	if !strings.Contains(s.Git.ConfigGet(fetchKey), "refs/heads/"+actorLogPrefix) {
+		s.Git.ConfigAdd(fetchKey, actorFetch)
+		added = append(added, "fetch: "+actorFetch)
+	}
+	actorPush := fmt.Sprintf("refs/heads/%s/*:refs/heads/%s/*",
+		actorLogPrefix, actorLogPrefix)
+	if !strings.Contains(s.Git.ConfigGet(pushKey), "refs/heads/"+actorLogPrefix) {
+		s.Git.ConfigAdd(pushKey, actorPush)
+		added = append(added, "push: "+actorPush)
+	}
+
+	return added
+}
+
+// RewireResult is returned by Service.Rewire / `mainline init --rewire`.
+type RewireResult struct {
+	HadRemote      bool     `json:"had_remote"`
+	RefspecsAdded  []string `json:"refspecs_added"`
+	NotesDisplayed bool     `json:"notes_displayed"`
+	AGENTSWritten  bool     `json:"agents_written"`
+	PRTplWritten   bool     `json:"pr_template_written"`
+	GitignoreFixed bool     `json:"gitignore_fixed"`
+}
+
+// Rewire re-applies the parts of `mainline init` that depend on the
+// remote being present and that init normally only does once: refspec
+// configuration, AGENTS.md, PR template, .gitignore. Identity, team
+// config, and committed .mainline/ files are NOT touched — Rewire is
+// safe to run repeatedly on an already-initialised repo.
+//
+// Use cases:
+//   - User ran `mainline init` then later `git remote add origin ...`
+//     — refspecs were never written; Rewire fixes that.
+//   - Older AGENTS.md / PR template that init's stat-check skipped on
+//     the second call — Rewire force-rewrites them to the current
+//     template version.
+func (s *Service) Rewire() (*RewireResult, error) {
+	if err := s.requireInit(); err != nil {
+		return nil, err
+	}
+	cfg, err := s.getTeamConfig()
+	if err != nil {
+		return nil, err
+	}
+	r := &RewireResult{
+		HadRemote: s.Git.HasRemote(s.remoteName()),
+	}
+	r.RefspecsAdded = s.configureRemoteRefspecs(cfg.Mainline.ActorLogPrefix)
+
+	// Always re-apply notes.displayRef (idempotent ConfigAdd dedupes).
+	s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
+	r.NotesDisplayed = true
+
+	// Re-apply .gitignore, AGENTS.md, PR template — but unlike init,
+	// force-rewrite the templates to pick up newer content. We do this
+	// by deleting then re-creating; safer than os.Stat-check.
+	if err := s.Git.EnsureGitignore([]string{".ml-cache/"}); err == nil {
+		r.GitignoreFixed = true
+	}
+	agentsPath := filepath.Join(s.Git.RepoRoot, "AGENTS.md")
+	if _, err := os.Stat(agentsPath); err == nil {
+		os.Remove(agentsPath)
+	}
+	s.writeAgentsMD()
+	r.AGENTSWritten = true
+
+	prtPath := filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md")
+	if _, err := os.Stat(prtPath); err == nil {
+		os.Remove(prtPath)
+	}
+	s.writePRTemplate()
+	r.PRTplWritten = true
+
+	return r, nil
 }
 
 func (s *Service) ensureLocalViews(cfg *domain.TeamConfig) {
@@ -204,6 +310,7 @@ schema_version = %d
 main_branch = "%s"
 actor_log_prefix = "%s"
 require_seal_before = "%s"
+remote = "%s"
 
 [sync]
 auto_sync = %v
@@ -224,7 +331,7 @@ strategy = "%s"
 [log]
 default_limit = %d
 `,
-		cfg.Mainline.SchemaVersion, cfg.Mainline.MainBranch, cfg.Mainline.ActorLogPrefix, cfg.Mainline.RequireSealBefore,
+		cfg.Mainline.SchemaVersion, cfg.Mainline.MainBranch, cfg.Mainline.ActorLogPrefix, cfg.Mainline.RequireSealBefore, cfg.Mainline.Remote,
 		cfg.Sync.AutoSync, cfg.Sync.Interval,
 		cfg.Check.AutoCheck, cfg.Check.Lookback, cfg.Check.Phase1Threshold, cfg.Check.RequireBeforeMerge,
 		cfg.Publish.AutoPublish,
@@ -408,6 +515,22 @@ func (s *Service) Status() (*StatusResult, error) {
 func (s *Service) GetTeamConfigForCLI() (*domain.TeamConfig, error) {
 	return s.getTeamConfig()
 }
+
+// remoteName returns the git remote mainline pushes / fetches its
+// notes and actor logs to. Reads cfg.Mainline.Remote (defaults to
+// "origin"). Pre-MVP this was hardcoded to "origin" everywhere —
+// fork-based or non-default-remote workflows broke silently.
+func (s *Service) remoteName() string {
+	cfg, err := s.getTeamConfig()
+	if err != nil || cfg == nil || cfg.Mainline.Remote == "" {
+		return "origin"
+	}
+	return cfg.Mainline.Remote
+}
+
+// RemoteName is the exported variant for the CLI layer to print
+// "Fetched from <remote>" messages without re-loading the config.
+func (s *Service) RemoteName() string { return s.remoteName() }
 
 // GetLastSyncForCLI returns the last-sync record (or nil if none),
 // re-exported for the auto-before-command wrapper.

@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 func BenchmarkGenerateIntentID(b *testing.B) {

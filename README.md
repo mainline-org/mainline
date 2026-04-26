@@ -44,7 +44,7 @@ In one sentence: **catch intent conflicts before they reach a PR review**.
 ## Install
 
 ```bash
-go install mainline@latest
+go install github.com/mainline-org/mainline@latest
 ```
 
 Or build from source:
@@ -54,12 +54,22 @@ git clone https://github.com/mainline-org/mainline
 cd mainline && go build -o mainline .
 ```
 
+After installing, verify your setup at any time:
+
+```bash
+mainline doctor --setup
+```
+
 ## Five-minute quick start
 
 ```bash
 # 1. Initialise (once per repo)
 cd your-repo
 mainline init --actor-name "alice"
+# If you add a git remote later (or this repo's remote was added after
+# init), run `mainline init --rewire` to wire up notes / actor-log
+# refspecs for cross-actor sync. `mainline doctor --setup` will tell
+# you when that's needed.
 
 # 2. While the agent works
 mainline start "Add JWT auth"
@@ -194,6 +204,8 @@ These are the commands a human or agent will actually run.
 | `mainline context` | State dump for agent consumption |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |
 | `mainline check --submit` | Submit phase 2 judgment; result surfaces in log column |
+| `mainline doctor --setup` | Verify installation: refspecs, identity, AGENTS.md, PR template, .gitignore |
+| `mainline init --rewire` | Re-apply remote refspec config + AGENTS.md + PR template (use after adding origin post-init) |
 
 All commands accept `--json`. The persistent `--no-sync` flag opts a command out of the auto-sync wrapper.
 

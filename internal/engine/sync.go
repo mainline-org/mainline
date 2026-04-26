@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"mainline/internal/core"
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/core"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // -----------------------------------------------------------
@@ -49,7 +49,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 	}
 
 	fetched := false
-	if s.Git.HasRemote("origin") {
+	if s.Git.HasRemote(s.remoteName()) {
 		// One fetch, three refspecs: main branch + every actor log +
 		// the notes ref (rc3: notes are the source of truth for merged
 		// status). A single `git fetch` shares one ssh handshake with
@@ -57,7 +57,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// (~3s each on github), which dominated sync wall time.
 		actorRefspec := fmt.Sprintf("refs/heads/%s/*:refs/remotes/origin/%s/*",
 			cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
-		s.Git.Fetch("origin",
+		s.Git.Fetch(s.remoteName(),
 			cfg.Mainline.MainBranch,
 			actorRefspec,
 			"refs/notes/mainline/*:refs/notes/mainline/*",

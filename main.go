@@ -1,6 +1,6 @@
 package main
 
-import "mainline/internal/cli"
+import "github.com/mainline-org/mainline/internal/cli"
 
 func main() {
 	cli.Execute()

@@ -10,7 +10,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // rapidJSONValue generates an arbitrary JSON-shaped value (map | slice | string |

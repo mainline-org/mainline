@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"mainline/internal/engine"
+	"github.com/mainline-org/mainline/internal/engine"
 )
 
 var sealPrepare bool

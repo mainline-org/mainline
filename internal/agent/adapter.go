@@ -1,6 +1,6 @@
 package agent
 
-import "mainline/internal/domain"
+import "github.com/mainline-org/mainline/internal/domain"
 
 // Adapter is the interface for agent-side operations.
 // v0.1 is a stub – detection and auto-invocation are not implemented.
