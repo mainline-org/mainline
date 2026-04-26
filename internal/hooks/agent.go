@@ -81,6 +81,14 @@ type InstallOptions struct {
 	// hooks subsystem itself get their changes picked up without a
 	// reinstall. Off by default.
 	LocalDev bool
+
+	// BinPath, if non-empty, makes the wrapper exec this absolute
+	// path directly instead of looking up `mainline` on PATH. Use
+	// when the user has built a binary locally (e.g. `go build -o
+	// mainline .`) and wants the hook to invoke it without first
+	// `go install`-ing or copying to /usr/local/bin. Wins over
+	// LocalDev when both are set.
+	BinPath string
 }
 
 // InstallReport tells the CLI what to print after a successful install.

@@ -52,12 +52,21 @@ production paging targets.`,
 // 8 random hex when not provided) so subsequent test/remove/retry
 // commands have something to address. The URL is required; everything
 // else has reasonable defaults.
+//
+// Accepts the URL either as `--url <url>` or as the first positional
+// argument so both shapes documented historically (`webhook add
+// --url X` and `webhook add X`) keep working.
 var webhookAddCmd = &cobra.Command{
-	Use:   "add",
-	Short: "Add a webhook subscription to .mainline/config.toml",
-	RunE: func(*cobra.Command, []string) error {
+	Use:          "add [url]",
+	Short:        "Add a webhook subscription to .mainline/config.toml",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE: func(_ *cobra.Command, args []string) error {
+		if webhookAddURL == "" && len(args) == 1 {
+			webhookAddURL = args[0]
+		}
 		if webhookAddURL == "" {
-			return fmt.Errorf("--url is required")
+			return fmt.Errorf("a destination URL is required (--url <url> or positional arg)")
 		}
 		svc, err := getService()
 		if err != nil {
@@ -147,11 +156,16 @@ var webhookListCmd = &cobra.Command{
 }
 
 var webhookRemoveCmd = &cobra.Command{
-	Use:   "remove",
-	Short: "Remove a webhook subscription by ID",
-	RunE: func(*cobra.Command, []string) error {
+	Use:          "remove [id]",
+	Short:        "Remove a webhook subscription by ID",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE: func(_ *cobra.Command, args []string) error {
+		if webhookRemoveID == "" && len(args) == 1 {
+			webhookRemoveID = args[0]
+		}
 		if webhookRemoveID == "" {
-			return fmt.Errorf("--id is required")
+			return fmt.Errorf("a subscription id is required (--id <id> or positional arg)")
 		}
 		svc, err := getService()
 		if err != nil {
@@ -188,10 +202,25 @@ var webhookRemoveCmd = &cobra.Command{
 // detached sender INLINE so the user sees the result. The request
 // body is the same envelope shape production uses; the only
 // difference is the event Name (`webhook.test` by default).
+//
+// Crucial: this command bypasses each subscription's events filter.
+// A `test` is a connectivity check. The subscriber's filter exists
+// for production fan-out, where mismatched events should be silently
+// ignored — but for `test` ignoring would be misleading ("you said
+// delivered, where's my POST?"). We send to every selected sub
+// regardless of filter and report matched vs skipped explicitly.
+//
+// Accepts subscription id either as `--id <id>` or first positional
+// arg so `webhook test wh_xxx` works as documented.
 var webhookTestCmd = &cobra.Command{
-	Use:   "test",
-	Short: "Send a synthetic test event to one or all subscriptions",
-	RunE: func(*cobra.Command, []string) error {
+	Use:          "test [id]",
+	Short:        "Send a synthetic test event to one or all subscriptions",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE: func(_ *cobra.Command, args []string) error {
+		if webhookTestID == "" && len(args) == 1 {
+			webhookTestID = args[0]
+		}
 		svc, err := getService()
 		if err != nil {
 			return err
@@ -236,20 +265,40 @@ var webhookTestCmd = &cobra.Command{
 			os.WriteFile(path, buf, 0o644)
 		}
 		sender := webhook.DefaultSender(svc.Store, subs)
-		err = sender.Dispatch(context.Background(), env.EventID)
-		if err != nil {
+		// bypass filter: a test is a connectivity probe, not a
+		// production fan-out. Subscribers' Events filter exists to
+		// suppress real production noise, not to defeat the user's
+		// own probe.
+		res, dispatchErr := sender.Dispatch(context.Background(), env.EventID, true /*bypassFilter*/)
+		out := map[string]any{
+			"event_id":   env.EventID,
+			"event_name": name,
+			"matched":    0,
+			"skipped":    0,
+			"failures":   []string{},
+			"ok":         false,
+			"sub_count":  len(subs),
+		}
+		if res != nil {
+			out["matched"] = res.Matched
+			out["skipped"] = res.Skipped
+			out["failures"] = res.Failures
+		}
+		if dispatchErr != nil {
+			out["error"] = dispatchErr.Error()
 			if jsonOutput {
-				outputJSON(map[string]any{"ok": false, "error": err.Error(), "event_id": env.EventID})
+				outputJSON(out)
 			} else {
-				fmt.Printf("✗ test delivery failed: %v\n", err)
+				fmt.Printf("✗ test delivery failed: %v\n", dispatchErr)
 				fmt.Printf("  failed envelope: .ml-cache/webhook-queue/%s.failed.json\n", env.EventID)
 			}
-			return err
+			return dispatchErr
 		}
+		out["ok"] = true
 		if jsonOutput {
-			outputJSON(map[string]any{"ok": true, "event_id": env.EventID, "delivered_to": len(subs)})
+			outputJSON(out)
 		} else {
-			fmt.Printf("✓ delivered test event to %d subscription(s)\n", len(subs))
+			fmt.Printf("✓ delivered test event %q to %d subscription(s)\n", name, res.Matched)
 		}
 		return nil
 	},
@@ -260,10 +309,18 @@ var webhookTestCmd = &cobra.Command{
 // it back to a regular .json filename, then run the same sender. On
 // success the .json (and .failed.json) are gone; on failure a new
 // .failed.json carries the latest error and attempt count.
+//
+// Accepts the event id either as `--id <id>` or first positional
+// arg, matching the rest of the webhook subcommands.
 var webhookRetryCmd = &cobra.Command{
-	Use:   "retry",
-	Short: "Retry a failed webhook delivery",
-	RunE: func(*cobra.Command, []string) error {
+	Use:          "retry [event-id]",
+	Short:        "Retry a failed webhook delivery",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE: func(_ *cobra.Command, args []string) error {
+		if webhookRetryID == "" && len(args) == 1 {
+			webhookRetryID = args[0]
+		}
 		svc, err := getService()
 		if err != nil {
 			return err
@@ -324,7 +381,7 @@ var webhookRetryCmd = &cobra.Command{
 				out = append(out, result{EventID: id, Error: err.Error()})
 				continue
 			}
-			if err := sender.Dispatch(context.Background(), id); err != nil {
+			if _, err := sender.Dispatch(context.Background(), id, false); err != nil {
 				out = append(out, result{EventID: id, Error: err.Error()})
 				continue
 			}
@@ -370,8 +427,10 @@ var webhookDispatchCmd = &cobra.Command{
 		sender := webhook.DefaultSender(svc.Store, cfg.Webhooks)
 		// Long context — the sender enforces per-attempt timeouts
 		// internally, so the outer context only matters for SIGTERM
-		// during shutdown.
-		return sender.Dispatch(context.Background(), args[0])
+		// during shutdown. Production fan-out always honours each
+		// subscription's events filter (bypassFilter=false).
+		_, err = sender.Dispatch(context.Background(), args[0], false)
+		return err
 	},
 }
 

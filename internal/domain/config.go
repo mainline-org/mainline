@@ -105,23 +105,23 @@ type HooksSection struct {
 	// Enabled is the soft kill-switch. When false, the on-disk hook
 	// commands still fire but the dispatcher exits immediately. Lets
 	// users pause automation without uninstalling.
-	Enabled bool `toml:"enabled"`
+	Enabled bool `toml:"enabled" json:"enabled"`
 
 	// AutoStartIntent: TurnStart -> mainline start using the user
 	// prompt as goal when no active intent exists.
-	AutoStartIntent bool `toml:"auto_start_intent"`
+	AutoStartIntent bool `toml:"auto_start_intent" json:"auto_start_intent"`
 
 	// AutoAppendTurn: TurnEnd / SubagentEnd -> mainline append using
 	// the agent-supplied summary or modified-file count.
-	AutoAppendTurn bool `toml:"auto_append_turn"`
+	AutoAppendTurn bool `toml:"auto_append_turn" json:"auto_append_turn"`
 
 	// AutoSealPrepare: SessionEnd -> mainline seal --prepare so the
 	// next session has a snapshot waiting for the agent to fill in
 	// fingerprint and submit.
-	AutoSealPrepare bool `toml:"auto_seal_prepare"`
+	AutoSealPrepare bool `toml:"auto_seal_prepare" json:"auto_seal_prepare"`
 
 	// AutoSyncOnSessionStart: SessionStart -> mainline sync.
-	AutoSyncOnSessionStart bool `toml:"auto_sync_on_session_start"`
+	AutoSyncOnSessionStart bool `toml:"auto_sync_on_session_start" json:"auto_sync_on_session_start"`
 }
 
 // WebhookSubscription is one HTTP destination for the domain-event
@@ -131,28 +131,28 @@ type WebhookSubscription struct {
 	// ID is a stable handle the CLI uses for `mainline webhook
 	// remove <id>` / `test <id>` / `retry --id <id>`. If the user
 	// does not set one, the cli generates "wh_<8>" on add.
-	ID string `toml:"id"`
+	ID string `toml:"id" json:"id"`
 
 	// URL is the destination endpoint. HTTP and HTTPS only — no
 	// schemes like file://. The sender does NOT pre-resolve DNS;
 	// network errors are caught at delivery time.
-	URL string `toml:"url"`
+	URL string `toml:"url" json:"url"`
 
 	// Events filters which DomainEvent.Name values to deliver. An
 	// empty list means "deliver everything", which is fine for a
 	// monitoring dashboard but probably not for a paging system.
-	Events []string `toml:"events"`
+	Events []string `toml:"events" json:"events,omitempty"`
 
 	// Secret signs the body with HMAC-SHA256; subscribers verify
 	// via the X-Mainline-Signature header. Supports the literal
 	// "$ENV:VAR_NAME" form so secrets do not have to live in the
 	// committed config.toml. Empty disables signing.
-	Secret string `toml:"secret"`
+	Secret string `toml:"secret" json:"secret,omitempty"`
 
 	// TimeoutSeconds caps each delivery attempt. 0 means use the
 	// sender's default (5s). Long timeouts on slow webhooks would
 	// otherwise hold the detached sender process for minutes.
-	TimeoutSeconds int `toml:"timeout_seconds"`
+	TimeoutSeconds int `toml:"timeout_seconds" json:"timeout_seconds,omitempty"`
 }
 
 // DefaultHooksSection returns the "everything on" defaults that ship
