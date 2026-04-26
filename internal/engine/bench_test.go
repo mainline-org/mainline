@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 func BenchmarkFingerprintOverlap(b *testing.B) {

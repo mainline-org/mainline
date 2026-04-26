@@ -2,21 +2,58 @@ package engine
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 type DoctorOptions struct {
 	Fix        bool
 	StaleAfter time.Duration
+	// Setup, when true, runs install / wiring sanity checks
+	// (remote refspec configuration, identity file present and
+	// readable, AGENTS.md present in repo root) instead of the
+	// drafts orphan scan. Combined with Fix=true, missing refspec
+	// configuration is rewired in place — Setup never touches the
+	// identity file because that's a per-actor decision.
+	Setup bool
 }
 
 type DoctorResult struct {
-	CheckedDrafts int                  `json:"checked_drafts"`
-	OrphanDrafts  []DoctorDraftFinding `json:"orphan_drafts,omitempty"`
-	StaleDrafts   []DoctorDraftFinding `json:"stale_drafts,omitempty"`
-	DeletedDrafts []string             `json:"deleted_drafts,omitempty"`
+	CheckedDrafts  int                  `json:"checked_drafts,omitempty"`
+	OrphanDrafts   []DoctorDraftFinding `json:"orphan_drafts,omitempty"`
+	StaleDrafts    []DoctorDraftFinding `json:"stale_drafts,omitempty"`
+	DeletedDrafts  []string             `json:"deleted_drafts,omitempty"`
+	Setup          *DoctorSetupReport   `json:"setup,omitempty"`
+}
+
+// DoctorSetupReport summarises every install / wiring check the doctor
+// runs in --setup mode. Each field is a small struct so the consumer
+// (CLI text output, JSON, or future TUI) can render the *fix me* state
+// without grepping a free-form message string.
+//
+// RemoteName is whichever git remote mainline talks to (defaults to
+// "origin"; teams that push to a non-origin remote configure it via
+// [mainline] remote in .mainline/config.toml). HasRemote checks
+// whether that named remote actually exists in `git remote`.
+type DoctorSetupReport struct {
+	RemoteName        string   `json:"remote_name"`
+	HasRemote         bool     `json:"has_remote"`
+	NotesFetchOK      bool     `json:"notes_fetch_ok"`
+	NotesPushOK       bool     `json:"notes_push_ok"`
+	ActorFetchOK      bool     `json:"actor_fetch_ok"`
+	ActorPushOK       bool     `json:"actor_push_ok"`
+	NotesDisplayRefOK bool     `json:"notes_display_ref_ok"`
+	IdentityOK        bool     `json:"identity_ok"`
+	IdentityActorID   string   `json:"identity_actor_id,omitempty"`
+	AgentsMDOK        bool     `json:"agents_md_ok"`
+	PRTemplateOK      bool     `json:"pr_template_ok"`
+	GitignoreOK       bool     `json:"gitignore_ok"`
+	Fixed             []string `json:"fixed,omitempty"` // refspecs added by --fix
+	Issues            []string `json:"issues,omitempty"`
 }
 
 type DoctorDraftFinding struct {
@@ -36,6 +73,10 @@ func (s *Service) Doctor(opts DoctorOptions) (*DoctorResult, error) {
 	}
 	if opts.StaleAfter <= 0 {
 		opts.StaleAfter = 24 * time.Hour
+	}
+
+	if opts.Setup {
+		return s.doctorSetup(opts.Fix)
 	}
 
 	currentBranch, _ := s.Git.CurrentBranch()
@@ -104,4 +145,101 @@ func staleDraft(d *domain.DraftIntent, now time.Time, staleAfter time.Duration) 
 		}
 	}
 	return now.Sub(t) >= staleAfter
+}
+
+// doctorSetup runs the install / wiring sanity checks. Always
+// inspects every dimension and populates DoctorSetupReport.Issues
+// with one human-readable line per problem; the bool fields support
+// programmatic JSON consumers. When fix is true and origin exists,
+// missing refspec configuration is rewired in place via Service.Rewire.
+func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
+	cfg, err := s.getTeamConfig()
+	if err != nil {
+		return nil, err
+	}
+	remote := s.remoteName()
+	rep := &DoctorSetupReport{
+		RemoteName: remote,
+		HasRemote:  s.Git.HasRemote(remote),
+	}
+
+	// Identity check
+	if id, err := s.Store.ReadIdentity(); err == nil && id != nil && id.ActorID != "" {
+		rep.IdentityOK = true
+		rep.IdentityActorID = id.ActorID
+	} else {
+		rep.Issues = append(rep.Issues,
+			"identity file missing — run 'mainline init --actor-name <name>'")
+	}
+
+	// AGENTS.md / PR template / .gitignore presence
+	rep.AgentsMDOK = fileExists(filepath.Join(s.Git.RepoRoot, "AGENTS.md"))
+	if !rep.AgentsMDOK {
+		rep.Issues = append(rep.Issues, "AGENTS.md missing — run 'mainline init --rewire'")
+	}
+	rep.PRTemplateOK = fileExists(filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md"))
+	if !rep.PRTemplateOK {
+		rep.Issues = append(rep.Issues, ".github/PULL_REQUEST_TEMPLATE.md missing — run 'mainline init --rewire'")
+	}
+	rep.GitignoreOK = gitignoreContains(s.Git.RepoRoot, ".ml-cache/")
+	if !rep.GitignoreOK {
+		rep.Issues = append(rep.Issues, "'.ml-cache/' missing from .gitignore — run 'mainline init --rewire'")
+	}
+
+	// notes.displayRef config — informative, not load-bearing
+	rep.NotesDisplayRefOK = strings.Contains(s.Git.ConfigGet("notes.displayRef"), "refs/notes/mainline")
+	if !rep.NotesDisplayRefOK {
+		rep.Issues = append(rep.Issues,
+			"notes.displayRef not pointing at mainline — 'git log' will not show notes inline")
+	}
+
+	// Refspec checks (only meaningful when the configured remote exists)
+	fetchKey := "remote." + remote + ".fetch"
+	pushKey := "remote." + remote + ".push"
+	if rep.HasRemote {
+		fetch := s.Git.ConfigGet(fetchKey)
+		push := s.Git.ConfigGet(pushKey)
+		rep.NotesFetchOK = strings.Contains(fetch, "refs/notes/mainline")
+		rep.NotesPushOK = strings.Contains(push, "refs/notes/mainline")
+		rep.ActorFetchOK = strings.Contains(fetch, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
+		rep.ActorPushOK = strings.Contains(push, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
+		if !rep.NotesFetchOK || !rep.NotesPushOK || !rep.ActorFetchOK || !rep.ActorPushOK {
+			rep.Issues = append(rep.Issues,
+				"remote refspecs incomplete — run 'mainline init --rewire' (or 'mainline doctor --setup --fix')")
+		}
+	} else {
+		rep.Issues = append(rep.Issues, fmt.Sprintf(
+			"no '%s' remote configured — cross-actor sync requires one. "+
+				"Either `git remote add %s <url>`, or set [mainline] remote = \"<name>\" "+
+				"in .mainline/config.toml then re-run with --fix",
+			remote, remote))
+	}
+
+	if fix && rep.HasRemote {
+		added := s.configureRemoteRefspecs(cfg.Mainline.ActorLogPrefix)
+		rep.Fixed = added
+		// Re-evaluate the refspec booleans after the fix attempt so
+		// the JSON consumer sees the post-fix state.
+		fetch := s.Git.ConfigGet(fetchKey)
+		push := s.Git.ConfigGet(pushKey)
+		rep.NotesFetchOK = strings.Contains(fetch, "refs/notes/mainline")
+		rep.NotesPushOK = strings.Contains(push, "refs/notes/mainline")
+		rep.ActorFetchOK = strings.Contains(fetch, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
+		rep.ActorPushOK = strings.Contains(push, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
+	}
+
+	return &DoctorResult{Setup: rep}, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func gitignoreContains(repoRoot, pattern string) bool {
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".gitignore"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), pattern)
 }

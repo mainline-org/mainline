@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"mainline/internal/domain"
-	"mainline/internal/engine"
+	"github.com/mainline-org/mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/engine"
 )
 
 var (

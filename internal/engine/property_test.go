@@ -11,8 +11,8 @@ import (
 
 	"pgregory.net/rapid"
 
-	"mainline/internal/core"
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/core"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // -----------------------------------------------------------

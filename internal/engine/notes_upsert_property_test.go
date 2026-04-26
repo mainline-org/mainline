@@ -10,7 +10,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // Property: after upserting any sequence of single-intent notes onto the

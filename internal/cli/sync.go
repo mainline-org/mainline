@@ -26,7 +26,7 @@ var syncCmd = &cobra.Command{
 			outputJSON(result)
 		} else {
 			if result.Fetched {
-				fmt.Println("Fetched from origin")
+				fmt.Printf("Fetched from %s\n", svc.RemoteName())
 			}
 			fmt.Printf("View rebuilt: %d intents, %d proposed", result.IntentsInView, result.ProposedCount)
 			if result.NewSealedSeen > 0 {
@@ -82,7 +82,7 @@ var publishCmd = &cobra.Command{
 			fmt.Printf("Published intent %s\n", result.IntentID)
 			fmt.Printf("  Ref:    %s\n", result.Ref)
 			if result.Pushed {
-				fmt.Println("  Pushed to origin")
+				fmt.Printf("  Pushed to %s\n", svc.RemoteName())
 			} else {
 				fmt.Println("  (no remote; local only)")
 			}

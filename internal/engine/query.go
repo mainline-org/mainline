@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"mainline/internal/core"
-	"mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/core"
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // -----------------------------------------------------------
