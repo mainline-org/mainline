@@ -19,7 +19,7 @@ var (
 	noSync     bool
 )
 
-// autoSyncCommands is the rc5 Patch 4 list of commands that auto-trigger
+// autoSyncCommands is the list of commands that auto-trigger
 // a sync (subject to the freshness window) before running. Hardcoded
 // rather than config because it's a product behaviour, not team policy.
 // Any command whose Use line first word appears here is wrapped.
@@ -27,6 +27,8 @@ var (
 // Membership criterion: a stale answer would be functionally wrong.
 //   - check: phase1 must compare against the freshest remote intents,
 //     otherwise it under-reports conflicts.
+//   - status / context / list-proposals: these are collaboration
+//     awareness surfaces; stale output hides active team work.
 //
 // Notably absent:
 //   - context, list-proposals, log: read-only displays. A stale answer
@@ -60,7 +62,7 @@ func maybeAutoSync(cmd *cobra.Command) {
 	if noSync {
 		return
 	}
-	if !autoSyncCommands[cmd.Name()] {
+	if !shouldAutoSync(cmd) {
 		return
 	}
 	svc, err := getService()
@@ -94,6 +96,13 @@ func maybeAutoSync(cmd *cobra.Command) {
 	}
 }
 
+func shouldAutoSync(cmd *cobra.Command) bool {
+	if autoSyncCommands[cmd.Name()] {
+		return true
+	}
+	return cmd.Name() == "log" && logSync
+}
+
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -113,6 +122,7 @@ func init() {
 	rootCmd.AddCommand(sealCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(publishCmd)
+	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(mergeCmd)
 	rootCmd.AddCommand(logCmd)
