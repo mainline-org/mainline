@@ -16,7 +16,5 @@ mainline
 **/.DS_Store
 # rapid PBT failure recordings (per-run, not committed):
 internal/engine/testdata/rapid/
-# Local agent scratch:
-assets/
 .cursor/
 .tmp-bin/
