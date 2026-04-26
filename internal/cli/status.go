@@ -39,6 +39,32 @@ var statusCmd = &cobra.Command{
 				fmt.Println("Intent:    (none active)")
 			}
 			fmt.Printf("Proposed:  %d intents\n", result.ProposedCount)
+			if result.LastSync == nil {
+				fmt.Println("Sync:      never synced — run 'mainline sync' to see team activity")
+			} else {
+				marker := ""
+				if result.SyncStale {
+					marker = " (stale)"
+				}
+				fmt.Printf("Sync:      %s ago%s\n",
+					formatElapsed(result.SyncStaleSeconds), marker)
+			}
 		}
 	},
+}
+
+// formatElapsed renders an int64 second count as a short human string
+// like "12m" / "3h" / "2d". Granularity matches what's useful in a
+// status one-liner; not a general-purpose duration formatter.
+func formatElapsed(seconds int64) string {
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%ds", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%dm", seconds/60)
+	case seconds < 86400:
+		return fmt.Sprintf("%dh", seconds/3600)
+	default:
+		return fmt.Sprintf("%dd", seconds/86400)
+	}
 }
