@@ -420,9 +420,10 @@ const syncWorkers = 8
 // notedCommitData carries the per-noted-commit data the apply step
 // needs: commit hash, date (for chronological sort), raw note body.
 type notedCommitData struct {
-	hash string
-	when time.Time
-	raw  string
+	hash  string
+	when  time.Time
+	order int
+	raw   string
 }
 
 func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMap map[string]*domain.IntentView) {
@@ -431,12 +432,19 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		return
 	}
 
-	// O(1) reachability via a single rev-list of main, replacing N
-	// `merge-base --is-ancestor` forks. For a 50k-commit main this is
-	// ~150ms and constant in note count.
-	reachable, err := s.Git.RevListSet(mainRef)
+	// O(1) reachability and chronological replay order via a single
+	// rev-list of main, replacing N `merge-base --is-ancestor` forks.
+	// For a 50k-commit main this is ~150ms and constant in note count.
+	mainCommits, err := s.Git.RevList(mainRef)
 	if err != nil {
 		return
+	}
+	reachable := make(map[string]bool, len(mainCommits))
+	mainOrder := make(map[string]int, len(mainCommits))
+	for i, commit := range mainCommits {
+		reachable[commit] = true
+		// rev-list is newest-first; larger order means newer commit.
+		mainOrder[commit] = len(mainCommits) - i
 	}
 
 	// Fetch all reachable note bodies in one cat-file --batch session.
@@ -486,9 +494,17 @@ func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMa
 		if err != nil {
 			continue
 		}
-		entries = append(entries, notedCommitData{hash: p.commit, when: t, raw: p.raw})
+		entries = append(entries, notedCommitData{
+			hash:  p.commit,
+			when:  t,
+			order: mainOrder[p.commit],
+			raw:   p.raw,
+		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].order != entries[j].order {
+			return entries[i].order < entries[j].order
+		}
 		return entries[i].when.Before(entries[j].when)
 	})
 

@@ -784,18 +784,31 @@ func (g *Git) LogChainTrees(ref string) ([]CommitTree, error) {
 // fork replaces N `merge-base --is-ancestor` calls when the caller has
 // many commits to test against the same ref.
 func (g *Git) RevListSet(ref string) (map[string]bool, error) {
-	out, err := g.run("rev-list", ref)
+	commits, err := g.RevList(ref)
 	if err != nil {
 		return nil, err
 	}
 	set := make(map[string]bool)
+	for _, commit := range commits {
+		set[commit] = true
+	}
+	return set, nil
+}
+
+// RevList returns every commit reachable from ref, newest first.
+func (g *Git) RevList(ref string) ([]string, error) {
+	out, err := g.run("rev-list", ref)
+	if err != nil {
+		return nil, err
+	}
+	var commits []string
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			set[line] = true
+			commits = append(commits, line)
 		}
 	}
-	return set, nil
+	return commits, nil
 }
 
 // NoteEntry pairs a note blob hash with the commit it annotates.
