@@ -52,6 +52,3 @@ paths ordered by reversibility (reset > backfill > skip).`,
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(gapsCmd)
-}
