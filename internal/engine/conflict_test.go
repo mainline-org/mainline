@@ -51,9 +51,7 @@ func TestSubsystemsFromFilesUsesInternalConvention(t *testing.T) {
 		"cmd/main.go",
 		"docs/x.md",
 	})
-	want := []string{"cli", "docs", "domain", "engine"} // cmd dropped: only one path segment? actually cmd is parts[0]
-	// Adjust expectation: "cmd" stays because parts[0] when not "internal".
-	want = []string{"cli", "cmd", "docs", "domain", "engine"}
+	want := []string{"cli", "cmd", "docs", "domain", "engine"}
 	if len(got) != len(want) {
 		t.Fatalf("got %v want %v", got, want)
 	}

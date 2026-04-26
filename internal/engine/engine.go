@@ -154,7 +154,7 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	// mainline refs travel with normal `git push` / `git fetch`.
 	s.configureRemoteRefspecs(cfg.Mainline.ActorLogPrefix)
 	// Configure git log to show mainline notes by default
-	s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
+	_ = s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 
 	// Commit .mainline/config.toml plus everything else Init created
 	// (.gitignore, AGENTS.md, PR template) in one commit so a fresh-init
@@ -534,20 +534,20 @@ const CoverageWindowSize = 30
 // list (only populated for uncovered commits — covered/skipped need
 // no action).
 type GapsResult struct {
-	WindowSize int                `json:"window_size"`
-	MainHead   string             `json:"main_head,omitempty"`
-	Uncovered  []GapsEntry        `json:"uncovered,omitempty"`
-	Skipped    []CommitCoverage   `json:"skipped,omitempty"`
-	Covered    int                `json:"covered_count"`
+	WindowSize int              `json:"window_size"`
+	MainHead   string           `json:"main_head,omitempty"`
+	Uncovered  []GapsEntry      `json:"uncovered,omitempty"`
+	Skipped    []CommitCoverage `json:"skipped,omitempty"`
+	Covered    int              `json:"covered_count"`
 }
 
 // GapsEntry is the per-uncovered-commit detail block.
 type GapsEntry struct {
-	Commit      string             `json:"commit"`
-	Subject     string             `json:"subject"`
-	Author      string             `json:"author"`
-	CommittedAt string             `json:"committed_at"`
-	Suggestions []GapsSuggestion   `json:"suggestions"`
+	Commit      string           `json:"commit"`
+	Subject     string           `json:"subject"`
+	Author      string           `json:"author"`
+	CommittedAt string           `json:"committed_at"`
+	Suggestions []GapsSuggestion `json:"suggestions"`
 }
 
 // GapsSuggestion is a single rescue path. Ordered by reversibility

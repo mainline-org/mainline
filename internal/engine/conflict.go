@@ -36,14 +36,11 @@ const partialFingerprintThreshold = 0.25
 var stopwords = map[string]bool{
 	"the": true, "and": true, "for": true, "with": true, "that": true,
 	"this": true, "from": true, "into": true, "have": true, "will": true,
-	"when": true, "where": true, "what": true, "which": true, "their":
-		true, "there": true, "about": true, "should": true, "could": true,
+	"when": true, "where": true, "what": true, "which": true, "their": true, "there": true, "about": true, "should": true, "could": true,
 	"would": true, "must": true, "after": true, "before": true,
 	"because": true, "while": true, "between": true, "make": true,
-	"made": true, "more": true, "less": true, "than": true, "then":
-		true, "also": true, "only": true, "some": true, "very": true,
-	"such": true, "each": true, "every": true, "other": true, "another":
-		true, "fix": true, "add": true, "use": true, "uses": true,
+	"made": true, "more": true, "less": true, "than": true, "then": true, "also": true, "only": true, "some": true, "very": true,
+	"such": true, "each": true, "every": true, "other": true, "another": true, "fix": true, "add": true, "use": true, "uses": true,
 	"used": true, "run": true, "runs": true, "via": true, "intent": true,
 	"intents": true,
 }
@@ -280,13 +277,13 @@ func (s *Service) detectSyncConflicts(view *domain.MainlineView, threshold float
 	}
 
 	type candidate struct {
-		id           string
-		actor        string
-		full         *domain.SemanticFingerprint
-		partial      *domain.PartialFingerprint
-		source       string // "draft" | "sealed"
-		isPartial    bool
-		threshold    float64
+		id        string
+		actor     string
+		full      *domain.SemanticFingerprint
+		partial   *domain.PartialFingerprint
+		source    string // "draft" | "sealed"
+		isPartial bool
+		threshold float64
 	}
 	var candidates []candidate
 
@@ -360,8 +357,8 @@ func (s *Service) detectSyncConflicts(view *domain.MainlineView, threshold float
 			if score < c.threshold {
 				continue
 			}
-			localFiles := []string{}
-			localSubs := []string{}
+			var localFiles []string
+			var localSubs []string
 			if c.isPartial {
 				localFiles = c.partial.FilesTouched
 				localSubs = c.partial.Subsystems
