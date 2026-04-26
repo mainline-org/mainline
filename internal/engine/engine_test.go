@@ -169,6 +169,61 @@ func TestStartIdempotent(t *testing.T) {
 	}
 }
 
+func TestContextMergedRecentSortedByActivity(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	svc.Init("test-agent")
+
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		MainHead:      "head",
+		Intents: []domain.IntentView{
+			{
+				IntentID:      "int_old",
+				Status:        domain.StatusMerged,
+				Goal:          "old",
+				SealedAt:      "2026-04-25T10:00:00Z",
+				ViewRebuiltAt: "2026-04-25T10:00:00Z",
+			},
+			{
+				IntentID:      "int_new",
+				Status:        domain.StatusMerged,
+				Goal:          "new",
+				SealedAt:      "2026-04-26T10:00:00Z",
+				ViewRebuiltAt: "2026-04-26T10:00:00Z",
+			},
+			{
+				IntentID:      "int_mid",
+				Status:        domain.StatusMerged,
+				Goal:          "mid",
+				SealedAt:      "2026-04-25T20:00:00Z",
+				ViewRebuiltAt: "2026-04-25T20:00:00Z",
+			},
+		},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, err := svc.Context()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ctx.MergedRecent) != 3 {
+		t.Fatalf("expected 3 merged intents, got %d", len(ctx.MergedRecent))
+	}
+	got := []string{ctx.MergedRecent[0].IntentID, ctx.MergedRecent[1].IntentID, ctx.MergedRecent[2].IntentID}
+	want := []string{"int_new", "int_mid", "int_old"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("merged_recent order mismatch: got %v want %v", got, want)
+		}
+	}
+}
+
 func TestSealPrepareAndSubmit(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
