@@ -349,8 +349,35 @@ func (s *Service) Context() (*ContextResult, error) {
 			}
 		}
 	}
+	s.sortContextIntentsByActivity(result.MergedRecent, view)
 
 	return result, nil
+}
+
+func (s *Service) sortContextIntentsByActivity(intents []ContextIntent, view *domain.MainlineView) {
+	if len(intents) < 2 || view == nil {
+		return
+	}
+	activity := make(map[string]string, len(intents))
+	for _, iv := range view.Intents {
+		activity[iv.IntentID] = s.intentViewActivityAt(iv)
+	}
+	sort.SliceStable(intents, func(i, j int) bool {
+		left := activity[intents[i].IntentID]
+		right := activity[intents[j].IntentID]
+		leftTime, leftOK := parseLogActivityTime(left)
+		rightTime, rightOK := parseLogActivityTime(right)
+		if leftOK != rightOK {
+			return leftOK
+		}
+		if leftOK && !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
+		}
+		if left != right {
+			return left > right
+		}
+		return intents[i].IntentID < intents[j].IntentID
+	})
 }
 
 // -----------------------------------------------------------
