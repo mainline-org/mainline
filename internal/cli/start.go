@@ -2,12 +2,17 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mainline-org/mainline/internal/engine"
 )
 
 var startGoal string
 var startThread string
+var startCommits []string
+var startRange string
 
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -27,7 +32,44 @@ var startCmd = &cobra.Command{
 			return
 		}
 
-		result, err := svc.Start(startGoal, startThread)
+		// v0.3 backfill: --commits is the primitive, --range is sugar
+		// that expands to a commit list via `git rev-list`. The two
+		// flags are mutually exclusive — keeping callers honest about
+		// which they intend.
+		var backfill []string
+		if len(startCommits) > 0 && startRange != "" {
+			outputError(fmt.Errorf("--commits and --range are mutually exclusive"))
+			return
+		}
+		for _, c := range startCommits {
+			for _, p := range strings.Split(c, ",") {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					backfill = append(backfill, p)
+				}
+			}
+		}
+		if startRange != "" {
+			out, err := svc.Git.Run("rev-list", "--reverse", startRange)
+			if err != nil {
+				outputError(fmt.Errorf("expand --range %s: %w", startRange, err))
+				return
+			}
+			for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+				if line != "" {
+					backfill = append(backfill, strings.TrimSpace(line))
+				}
+			}
+		}
+
+		var result *engine.StartResult
+		if len(backfill) > 0 {
+			result, err = svc.StartWithOptions(startGoal, startThread, &engine.StartOptions{
+				BackfillCommits: backfill,
+			})
+		} else {
+			result, err = svc.Start(startGoal, startThread)
+		}
 		if err != nil {
 			outputError(err)
 			return
@@ -40,6 +82,12 @@ var startCmd = &cobra.Command{
 			fmt.Printf("  Thread:  %s\n", result.Thread)
 			fmt.Printf("  Branch:  %s\n", result.GitBranch)
 			fmt.Printf("  Goal:    %s\n", result.Goal)
+			if len(result.BackfillCommits) > 0 {
+				fmt.Printf("  Backfill commits (%d):\n", len(result.BackfillCommits))
+				for _, c := range result.BackfillCommits {
+					fmt.Printf("    %s\n", shortHash(c))
+				}
+			}
 		}
 	},
 }
@@ -47,4 +95,6 @@ var startCmd = &cobra.Command{
 func init() {
 	startCmd.Flags().StringVar(&startGoal, "goal", "", "goal description for the intent")
 	startCmd.Flags().StringVar(&startThread, "thread", "", "thread name (default: current branch)")
+	startCmd.Flags().StringSliceVar(&startCommits, "commits", nil, "v0.3 backfill: comma-separated commit SHAs this intent claims to cover")
+	startCmd.Flags().StringVar(&startRange, "range", "", "v0.3 backfill: commit range base..head (sugar for --commits expanding via git rev-list)")
 }

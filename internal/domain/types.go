@@ -25,6 +25,12 @@ type DraftIntent struct {
 	Turns          []Turn       `json:"turns"`
 	CreatedAt      string       `json:"created_at"`
 	LastModifiedAt string       `json:"last_modified_at"`
+
+	// v0.3 backfill: when set, the auto-pin step pins this intent to
+	// these specific commits (overriding the tree_hash/commit_hash/
+	// goal_text cascade). Used by `mainline start --commits` to cover
+	// pre-existing main commits that landed without an intent.
+	BackfillCommits []string `json:"backfill_commits,omitempty"`
 }
 
 // IntentView is the materialized view of an intent, derived from events + main history.
@@ -46,6 +52,11 @@ type IntentView struct {
 	BaseCommit string `json:"base_commit,omitempty"`
 	CodeCommit string `json:"code_commit,omitempty"`
 	CodeTree   string `json:"code_tree,omitempty"`
+
+	// v0.3: explicit list of commits the sealed intent claims to
+	// cover (set by `mainline start --commits` backfill flow).
+	// When non-empty, Pin uses these instead of the tree-hash cascade.
+	BackfillCommits []string `json:"backfill_commits,omitempty"`
 
 	Summary     *IntentSummary       `json:"summary,omitempty"`
 	Fingerprint *SemanticFingerprint `json:"fingerprint,omitempty"`
@@ -78,8 +89,15 @@ type StatusEvidence struct {
 	SupersededByIntent string `json:"superseded_by_intent,omitempty"`
 	AbandonedEventID   string `json:"abandoned_event_id,omitempty"`
 	MergedMainCommit   string `json:"merged_main_commit,omitempty"`
-	MergedVia          string `json:"merged_via,omitempty"` // "merge" | "reconcile"
+	MergedVia          string `json:"merged_via,omitempty"` // "merge" | "pin"
 	RevertedMainCommit string `json:"reverted_main_commit,omitempty"`
+
+	// v0.3: seal-time worktree state, surfaced in `mainline show`.
+	// EvidenceComplete is the seal-time truth that survives forever.
+	// Legacy intents (sealed before v0.3) default to "complete / clean".
+	EvidenceComplete bool   `json:"evidence_complete,omitempty"`
+	WorktreeStatus   string `json:"worktree_status,omitempty"` // "clean" | "dirty" | "untracked"
+	SealedAtBranch   string `json:"sealed_at_branch,omitempty"`
 }
 
 // CommitNote is the structured JSON attached as a git note to main commits.
@@ -243,17 +261,23 @@ type SealConfidence struct {
 }
 
 // SealPreparePackage is returned by `mainline seal --prepare`.
+//
+// schema_version 2 (v0.3) added the Snapshot block + Intent.CurrentBranch.
+// Older readers still parse v2 packages because the new fields are
+// additive; older packages (v1) are still valid input to SealSubmit
+// because Snapshot is optional and CurrentBranch defaults to GitBranch.
 type SealPreparePackage struct {
 	Kind          string `json:"kind"` // "mainline.seal.prepare"
 	SchemaVersion int    `json:"schema_version"`
 
 	Intent struct {
-		ID          string `json:"id"`
-		Goal        string `json:"goal"`
-		Thread      string `json:"thread"`
-		GitBranch   string `json:"git_branch"`
-		BaseCommit  string `json:"base_commit"`
-		CurrentHead string `json:"current_head"`
+		ID            string `json:"id"`
+		Goal          string `json:"goal"`
+		Thread        string `json:"thread"`
+		GitBranch     string `json:"git_branch"`
+		BaseCommit    string `json:"base_commit"`
+		CurrentHead   string `json:"current_head"`
+		CurrentBranch string `json:"current_branch,omitempty"`
 	} `json:"intent"`
 
 	Turns       []TurnSummary `json:"turns"`
@@ -264,7 +288,19 @@ type SealPreparePackage struct {
 		FilesChanged []string `json:"files_changed"`
 	} `json:"diff_summary"`
 	ChangedFiles []FileChange `json:"changed_files"`
-	Instruction  string       `json:"instruction"`
+	Snapshot     *SealSnapshot `json:"snapshot,omitempty"`
+	Instruction  string        `json:"instruction"`
+}
+
+// SealSnapshot captures the worktree state at prepare time. SealSubmit
+// validates these fields against the live repo to prevent stale-prepare
+// submissions and silently dirty seals.
+type SealSnapshot struct {
+	PreparedAt        string       `json:"prepared_at"`
+	ChangedFiles      []FileChange `json:"changed_files"`
+	WorktreeStatus    string       `json:"worktree_status"`              // "clean" | "dirty" | "untracked"
+	WorktreeDirtyFiles []string    `json:"worktree_dirty_files,omitempty"`
+	EvidenceComplete  bool         `json:"evidence_complete"`
 }
 
 // CheckJudgmentResult is submitted by agents after semantic conflict analysis.

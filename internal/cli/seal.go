@@ -15,6 +15,7 @@ var sealPrepare bool
 var sealSubmit bool
 var sealIntentID string
 var sealOffline bool
+var sealAllowDirty bool
 
 var sealCmd = &cobra.Command{
 	Use:   "seal",
@@ -45,7 +46,7 @@ var sealCmd = &cobra.Command{
 				return
 			}
 			result, err := svc.SealSubmitWithOptions(json.RawMessage(data),
-				&engine.SealSubmitOptions{Offline: sealOffline})
+				&engine.SealSubmitOptions{Offline: sealOffline, AllowDirty: sealAllowDirty})
 			if err != nil {
 				outputError(err)
 				return
@@ -88,4 +89,5 @@ func init() {
 	sealCmd.Flags().BoolVar(&sealSubmit, "submit", false, "submit seal result from stdin (JSON)")
 	sealCmd.Flags().StringVar(&sealIntentID, "intent", "", "intent ID (default: active intent on current branch)")
 	sealCmd.Flags().BoolVar(&sealOffline, "offline", false, "skip the auto sync+check inside --submit (sealed_local only)")
+	sealCmd.Flags().BoolVar(&sealAllowDirty, "allow-dirty", false, "submit even when worktree is dirty/untracked (records dirty status in audit trail)")
 }

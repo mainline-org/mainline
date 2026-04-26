@@ -21,6 +21,20 @@ type MainlineSection struct {
 	// with `upstream`, multi-remote setups, GitLab/Gitea conventions)
 	// set this explicitly.
 	Remote string `toml:"remote"`
+	// Skip controls v0.3 coverage classification: which commits on
+	// main are treated as deliberately exempt from the
+	// "every commit needs an explaining intent" invariant. See spec
+	// docs_for_ai/mainline-spec-v0.3-coverage-and-snapshot.md §D.
+	Skip MainlineSkipSection `toml:"skip"`
+}
+
+// MainlineSkipSection lists regex patterns matched against commit
+// subject. A subject matching any pattern classifies the commit as
+// `skipped` (rather than `uncovered`) in coverage output. Per-commit
+// `Mainline-Skip:` trailers are the other entry point and do not need
+// config — they live in the commit message itself.
+type MainlineSkipSection struct {
+	Patterns []string `toml:"patterns"`
 }
 
 type SyncSection struct {
@@ -90,6 +104,16 @@ func DefaultTeamConfig() TeamConfig {
 			ActorLogPrefix:    "_mainline/actor",
 			RequireSealBefore: "push",
 			Remote:            "origin",
+			Skip: MainlineSkipSection{
+				// Defaults cover the most common low-information commit
+				// shapes that would otherwise drown the gaps surface
+				// in noise. Teams customise via [mainline.skip].patterns.
+				Patterns: []string{
+					"^Merge pull request ",
+					"^Merge branch ",
+					"^chore: bump version",
+				},
+			},
 		},
 		Sync: SyncSection{
 			AutoSync:              true,
