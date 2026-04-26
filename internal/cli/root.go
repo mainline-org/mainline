@@ -109,31 +109,69 @@ func Execute() {
 	}
 }
 
+// Help-output groups. Cobra renders commands grouped by these
+// titles when `--help` is invoked, in the order added below.
+//
+// The split is by FREQUENCY, not audience. Agents and humans run
+// mostly the same commands; the question is "do you reach for this
+// daily" vs "is this a one-time setup or manual fallback". Agents
+// inspect with `status` / `log` / `show` / `context` /
+// `list-proposals` / `gaps` exactly the same way humans do.
+//
+// Internal/debug-only commands set Hidden = true (canonical-hash) so
+// they remain runnable for debugging but do not pollute the help.
+var (
+	groupDaily    = &cobra.Group{ID: "daily", Title: "Daily commands:"}
+	groupSetup    = &cobra.Group{ID: "setup", Title: "Setup & repair (rare):"}
+	groupAdvanced = &cobra.Group{ID: "advanced", Title: "Advanced (manual fallbacks; auto-flow normally handles these):"}
+)
+
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "suppress non-error output")
 	rootCmd.PersistentFlags().StringVar(&cwdPath, "cwd", "", "set working directory")
 	rootCmd.PersistentFlags().BoolVar(&noSync, "no-sync", false, "skip the auto-sync some commands run before executing")
 
-	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(startCmd)
-	rootCmd.AddCommand(appendCmd)
-	rootCmd.AddCommand(sealCmd)
-	rootCmd.AddCommand(syncCmd)
-	rootCmd.AddCommand(publishCmd)
-	rootCmd.AddCommand(doctorCmd)
-	rootCmd.AddCommand(checkCmd)
-	rootCmd.AddCommand(mergeCmd)
-	rootCmd.AddCommand(logCmd)
-	rootCmd.AddCommand(showCmd)
-	rootCmd.AddCommand(threadCmd)
-	// rc3: pr-trailer removed, metadata goes via git notes
-	rootCmd.AddCommand(prDescriptionCmd)
-	rootCmd.AddCommand(pinCmd)
-	rootCmd.AddCommand(contextCmd)
-	rootCmd.AddCommand(listProposalsCmd)
-	rootCmd.AddCommand(canonicalHashCmd)
+	rootCmd.AddGroup(groupDaily, groupSetup, groupAdvanced)
+
+	// Daily — what every flow uses. Mixed write (start/append/seal),
+	// read (status/log/show/list-proposals/context/gaps), and team
+	// (sync/check) commands. Humans and agents both run all of these.
+	statusCmd.GroupID = groupDaily.ID
+	startCmd.GroupID = groupDaily.ID
+	appendCmd.GroupID = groupDaily.ID
+	sealCmd.GroupID = groupDaily.ID
+	logCmd.GroupID = groupDaily.ID
+	showCmd.GroupID = groupDaily.ID
+	syncCmd.GroupID = groupDaily.ID
+	gapsCmd.GroupID = groupDaily.ID
+	checkCmd.GroupID = groupDaily.ID
+	contextCmd.GroupID = groupDaily.ID
+	listProposalsCmd.GroupID = groupDaily.ID
+
+	// Setup & repair — one-time per repo or when something breaks.
+	initCmd.GroupID = groupSetup.ID
+	doctorCmd.GroupID = groupSetup.ID
+
+	// Advanced — manual fallbacks. AGENTS.md instructs agents NOT to
+	// run these unless the user explicitly asks; the auto-flow
+	// (auto-pin in sync, auto-publish in seal, GitHub PR for merge)
+	// covers the normal case.
+	pinCmd.GroupID = groupAdvanced.ID
+	mergeCmd.GroupID = groupAdvanced.ID
+	publishCmd.GroupID = groupAdvanced.ID
+	prDescriptionCmd.GroupID = groupAdvanced.ID
+	threadCmd.GroupID = groupAdvanced.ID
+
+	// Hidden — debug utility, not in the user mental model.
+	canonicalHashCmd.Hidden = true
+
+	rootCmd.AddCommand(
+		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
+		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
+		threadCmd, prDescriptionCmd, pinCmd, contextCmd,
+		listProposalsCmd, canonicalHashCmd, gapsCmd,
+	)
 }
 
 func getService() (*engine.Service, error) {
