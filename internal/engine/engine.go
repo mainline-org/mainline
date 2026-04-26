@@ -341,6 +341,7 @@ type StatusResult struct {
 	ActiveIntent  *domain.DraftIntent `json:"active_intent,omitempty"`
 	TurnCount     int                 `json:"turn_count"`
 	ProposedCount int                 `json:"proposed_count"`
+	LocalHead     string              `json:"local_head,omitempty"`
 	MainHead      string              `json:"main_head,omitempty"`
 	// rc5: sync staleness surface. LastSync is the persisted record
 	// of the most recent successful Sync; nil means never synced in
@@ -380,10 +381,11 @@ func (s *Service) Status() (*StatusResult, error) {
 	}
 
 	head, _ := s.Git.HeadCommit()
-	result.MainHead = head
+	result.LocalHead = head
 
 	if ls, _ := s.Store.ReadLastSync(); ls != nil {
 		result.LastSync = ls
+		result.MainHead = ls.MainHead
 		cfg, _ := s.getTeamConfig()
 		threshold := int64(86400)
 		if cfg != nil && cfg.Sync.StaleThresholdSeconds > 0 {
@@ -395,6 +397,9 @@ func (s *Service) Status() (*StatusResult, error) {
 			result.SyncStale = elapsed > threshold
 		}
 	} else {
+		if view, _ := s.Store.ReadMainlineView(); view != nil {
+			result.MainHead = view.MainHead
+		}
 		// Never synced — treat as stale so the CLI can prompt.
 		result.SyncStale = true
 	}
