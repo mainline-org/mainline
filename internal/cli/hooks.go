@@ -16,6 +16,7 @@ import (
 	// Blank-import each agent package so its init() registers with
 	// the hooks registry. New agents are added here, alongside the
 	// cursor entry; the rest of the cli is agent-agnostic.
+	_ "github.com/mainline-org/mainline/internal/hooks/agents/codex"
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/cursor"
 )
 
@@ -473,8 +474,9 @@ func selectAgents(name string, all bool) ([]hooks.Agent, error) {
 		return agents, nil
 	}
 	if name == "" {
-		// Default: just cursor for v1. When other agents land we
-		// will switch this to "all" or require --agent explicitly.
+		// Default remains cursor for compatibility with the first
+		// shipped hook flow; new agents are selected explicitly or
+		// via --all.
 		name = "cursor"
 	}
 	a, ok := hooks.Get(name)
