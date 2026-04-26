@@ -172,8 +172,8 @@ Generated at seal time. Lists subsystems, files, API changes, behavioural change
 
 Pinning a `CommitNote` to a main-branch commit is what marks the intent **merged**. Pins are written by either:
 
+- `mainline sync` — runs the strategy cascade (`tree_hash → commit_hash → goal_text`) automatically after every rebuild; tree hash matches GitHub squash merges with near-100 % reliability
 - `mainline merge` (if you use it) — at squash time
-- `mainline pin` — automatic cascade after sync, tries `tree_hash → commit_hash → goal_text` strategies (tree hash matches GitHub squash merges with near-100% reliability)
 - `mainline pin <intent> <commit>` — manual escape hatch when no heuristic matches
 
 ## Daily commands
@@ -188,8 +188,7 @@ These are the commands a human or agent will actually run.
 | `mainline append "..."` | Record a turn against the active intent |
 | `mainline seal --prepare` | Generate the seal-prepare package (JSON) |
 | `mainline seal --submit` | Submit a SealResult; auto-syncs and runs phase 1. Use `--offline` to skip the network step. |
-| `mainline sync` | Fetch remote state, rebuild views, surface new conflicts |
-| `mainline pin` | Auto-link merged commits to intents via the strategy cascade |
+| `mainline sync` | Fetch remote state, rebuild views, **auto-pin merged commits**, surface new conflicts |
 | `mainline log` | Intent history with author, time, and `[check:?\|~\|ok\|!\|human?]` |
 | `mainline show <id>` | Full intent detail, including LastCheck summary |
 | `mainline context` | State dump for agent consumption |
@@ -204,13 +203,12 @@ You usually don't need these. Documented for completeness.
 
 | Command | When you'd want it |
 |---|---|
-| `mainline pin <intent> <commit>` | Manually link an intent to a commit when no heuristic matches (rebase-rewritten history, cherry-picks) |
+| `mainline pin <intent> <commit>` | Manual escape hatch when sync's auto-pin cascade misses (rebased history, cherry-picks across forks, CI scripting). Two args required — there's no batch mode; sync covers that. |
 | `mainline merge --intent <id>` | Squash + write note in one step. Use when there's no PR system or you need it inside an automation pipeline. |
 | `mainline list-proposals` | Browse proposed intents across the team |
 | `mainline pr-description --intent <id>` | Generate PR description markdown |
 | `mainline publish --intent <id>` | Push actor log explicitly (usually automatic in seal) |
 | `mainline thread {new,list,close}` | Group multiple intents into a named thread |
-| `mainline reconcile` | Deprecated alias of `mainline pin` (kept for one release) |
 | `mainline canonical-hash <id>` | Debug: compute the canonical hash of an intent |
 
 ## Configuration
@@ -248,7 +246,7 @@ Nothing. `?` means "no overlap detected, no judgment requested". You only act on
 Only when you see `[check:~]` on an intent and want to know whether the overlap is a real conflict. `mainline check --prepare --intent <id>` produces a task package; the agent reads it and submits a judgment via `mainline check --submit`.
 
 **Q: Do I need to run `sync` manually?**
-Rarely. Commands that need fresh data (`pin`, `check`, `reconcile`) auto-sync if their last sync is older than 5 minutes. Read-only displays (`log`, `status`, `context`) skip auto-sync to stay snappy — explicitly `mainline sync` if you want fresh team activity.
+Yes — `sync` is now the single command that drives the team-aware loop: it fetches, rebuilds the view, **auto-pins merged commits**, runs phase 1 conflict detection on the delta, and writes the staleness record. `seal --submit` and `check` auto-sync internally; read-only displays (`log`, `status`, `context`) skip the network to stay snappy.
 
 **Q: What happens if the heuristics pin the wrong commit?**
 Use `mainline pin <intent> <commit>` to overwrite the pin manually. The note is updated, not duplicated; existing intents on the same commit are preserved.
@@ -340,8 +338,9 @@ The current line is **v0.1-rc5** in spec, with the implementation tracking it.
 | rc3 | git notes replaces commit-message trailers | Implemented |
 | rc4 | `pin` (was `reconcile`) with strategy cascade; `upsertCommitNote`; phase1 PBT | Implemented |
 | rc5 | Conflict detection on sync + seal; auto-before-command sync; status staleness; AGENTS.md v3 | Implemented |
-| rc6 (working) | `[check:X]` cascade with phase 1 / phase 2 priority; per-intent phase 1 cache; column drops on terminal status | Implemented |
-| v0.2 | Drop deprecated `reconcile` alias; auto-pin on sync (no separate `pin` step); GitHub Action for post-merge pin | Planned |
+| rc6 | `[check:X]` cascade with phase 1 / phase 2 priority; per-intent phase 1 cache; column drops on terminal status | Implemented |
+| v0.2 | Drop deprecated `reconcile` alias; auto-pin on sync (no separate `pin` step in daily use; manual `pin <intent> <commit>` retained as fallback) | Implemented |
+| v0.3 (planned) | GitHub Action for post-merge pin | Planned |
 | v0.5 | Reviewer dashboards; multi-repo intent threading | Planned |
 
 ## License

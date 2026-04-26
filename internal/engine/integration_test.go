@@ -461,11 +461,11 @@ func TestReconcileEmpty(t *testing.T) {
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	result, err := svc.Reconcile()
+	result, err := svc.Pin()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Reconciled != 0 {
+	if result.Pinned != 0 {
 		t.Error("should reconcile 0")
 	}
 }

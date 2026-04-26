@@ -119,17 +119,15 @@ func TestReconcileAutoTreeHashMatch(t *testing.T) {
 	mainCommit := squashMergeNoNote(t, dir, "feature/tree-match",
 		"Merge pull request #42 from org/feature/tree-match")
 
-	if _, err := svc.Sync(); err != nil {
+	// v0.2: Sync auto-pins; assertion target is SyncResult.AutoPinned.
+	syncRes, err := svc.Sync()
+	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	res, err := svc.Reconcile()
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
+	if len(syncRes.AutoPinned) != 1 {
+		t.Fatalf("expected sync to auto-pin 1 intent, got %+v", syncRes.AutoPinned)
 	}
-	if res.Reconciled != 1 || len(res.Links) != 1 {
-		t.Fatalf("expected 1 reconcile, got %+v", res)
-	}
-	link := res.Links[0]
+	link := syncRes.AutoPinned[0]
 	if link.IntentID != intentID {
 		t.Errorf("intent mismatch: %s", link.IntentID)
 	}
@@ -179,17 +177,17 @@ func TestReconcileAutoCommitHashMatch(t *testing.T) {
 	gitCmd(t, dir, "checkout", "main")
 	gitCmd(t, dir, "merge", "--ff-only", "feature/ff")
 
-	if _, err := svc.Sync(); err != nil {
+	// v0.2: Sync's auto-pin runs the strategy cascade in-line, so
+	// the assertion target is SyncResult.AutoPinned rather than a
+	// separate Pin() call.
+	syncRes, err := svc.Sync()
+	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	res, err := svc.Reconcile()
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
+	if len(syncRes.AutoPinned) != 1 {
+		t.Fatalf("expected sync to auto-pin 1 intent, got %d", len(syncRes.AutoPinned))
 	}
-	if res.Reconciled != 1 {
-		t.Fatalf("expected 1 reconcile, got %d", res.Reconciled)
-	}
-	link := res.Links[0]
+	link := syncRes.AutoPinned[0]
 	if link.IntentID != intentID {
 		t.Errorf("intent mismatch")
 	}
@@ -232,17 +230,17 @@ func TestReconcileWorksAcrossActors(t *testing.T) {
 		t.Fatalf("swap identity: %v", err)
 	}
 
-	if _, err := svcA.Sync(); err != nil {
+	// v0.2: Sync auto-pins via the strategy cascade; the cross-actor
+	// invariant is "actor B's sync writes a note for actor A's intent".
+	syncRes, err := svcA.Sync()
+	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	res, err := svcA.Reconcile()
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
+	if len(syncRes.AutoPinned) != 1 {
+		t.Fatalf("expected sync to auto-pin 1 intent under foreign actor, got %d",
+			len(syncRes.AutoPinned))
 	}
-	if res.Reconciled != 1 {
-		t.Fatalf("expected 1 reconcile under foreign actor, got %d", res.Reconciled)
-	}
-	if res.Links[0].IntentID != intentID {
+	if syncRes.AutoPinned[0].IntentID != intentID {
 		t.Errorf("intent mismatch")
 	}
 
@@ -291,16 +289,16 @@ func TestReconcileManualPinsCommit(t *testing.T) {
 	}
 
 	// Auto reconcile shouldn't touch this — no strategy matches.
-	res, err := svc.Reconcile()
+	res, err := svc.Pin()
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if res.Reconciled != 0 {
-		t.Fatalf("auto reconcile should not match unrelated commit, got %d", res.Reconciled)
+	if res.Pinned != 0 {
+		t.Fatalf("auto reconcile should not match unrelated commit, got %d", res.Pinned)
 	}
 
 	// Manual reconcile should pin it.
-	link, err := svc.ReconcileManual(intentID, mainCommit)
+	link, err := svc.PinExplicit(intentID, mainCommit)
 	if err != nil {
 		t.Fatalf("manual reconcile: %v", err)
 	}
@@ -343,7 +341,7 @@ func TestReconcileManualRejectsBadCommit(t *testing.T) {
 	intentID, _ := seedSealedIntent(t, dir, svc, "guard", "gd.go")
 	svc.Sync()
 
-	if _, err := svc.ReconcileManual(intentID, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"); err == nil {
+	if _, err := svc.PinExplicit(intentID, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"); err == nil {
 		t.Error("expected error on non-existent commit, got nil")
 	}
 }
@@ -362,7 +360,7 @@ func TestReconcileManualRejectsMergedIntent(t *testing.T) {
 
 	gitCmd(t, dir, "checkout", "main")
 	headOut, _ := gitRunIn(t, dir, "rev-parse", "HEAD")
-	if _, err := svc.ReconcileManual(intentID, strings.TrimSpace(headOut)); err == nil {
+	if _, err := svc.PinExplicit(intentID, strings.TrimSpace(headOut)); err == nil {
 		t.Error("expected error reconciling already-merged intent, got nil")
 	}
 }
