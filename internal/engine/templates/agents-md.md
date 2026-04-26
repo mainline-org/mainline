@@ -129,6 +129,24 @@ mainline check --submit --json < judgment.json
 
 The verdict surfaces in `mainline log`'s `[check:X]` column.
 
+### Optional: agent hooks (opt-in automation)
+
+If `mainline hooks install <agent>` has been run for your agent
+runtime (Cursor today; Codex / Claude Code reserved), the hook layer
+will automatically invoke mainline at session and turn boundaries:
+
+- `session_start` → `mainline sync` (surfaces any conflicts in stderr).
+- `turn_start`    → `mainline start "<goal>"` if no draft exists.
+- `turn_end`      → `mainline append "<turn summary>"`.
+- `session_end`   → `mainline seal --prepare` (writes `seal.json` for
+  you to fill in fingerprint/risks/followups; `seal --submit` is
+  still a deliberate human-or-agent action).
+
+Run `mainline hooks status` to confirm whether hooks are wired for
+your agent and which auto-flow toggles are enabled. Hooks are a
+convenience layer — the contract above (read intents, append turns,
+seal honestly) still applies whether they are installed or not.
+
 ### What you do NOT need to run
 
 - `mainline sync` — runs automatically inside `seal --submit` and

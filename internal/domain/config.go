@@ -8,6 +8,24 @@ type TeamConfig struct {
 	Publish  PublishSection  `toml:"publish"`
 	Merge    MergeSection    `toml:"merge"`
 	Log      LogSection      `toml:"log"`
+
+	// Hooks controls the agent-hooks subsystem (cursor / codex /
+	// claude-code etc). When the hook entries are installed in an
+	// agent's config (.cursor/hooks.json and friends), the agent
+	// invokes `mainline hooks <agent> <event>` at lifecycle points
+	// and the dispatcher runs the matching mainline command. The
+	// section is empty in pre-hook configs and gets populated with
+	// defaults the first time the hook flow runs.
+	Hooks HooksSection `toml:"hooks"`
+
+	// Webhooks is a per-team list of HTTP destinations that should
+	// receive domain events (intent_started / turn_appended /
+	// intent_sealed / sync_completed / conflict_detected /
+	// check_judged). Each entry is one subscription; the same event
+	// fans out to all matching subscriptions. The list is committed
+	// alongside config.toml because hook outputs are a team
+	// observability concern, not a per-developer one.
+	Webhooks []WebhookSubscription `toml:"webhook"`
 }
 
 type MainlineSection struct {
@@ -77,6 +95,77 @@ type MergeSection struct {
 
 type LogSection struct {
 	DefaultLimit int `toml:"default_limit"`
+}
+
+// HooksSection mirrors the dispatch toggles in internal/hooks. We
+// keep them in domain so config parsing has a single home; the hooks
+// package consumes them via a plain DispatchSettings struct (no
+// import dependency back into domain).
+type HooksSection struct {
+	// Enabled is the soft kill-switch. When false, the on-disk hook
+	// commands still fire but the dispatcher exits immediately. Lets
+	// users pause automation without uninstalling.
+	Enabled bool `toml:"enabled"`
+
+	// AutoStartIntent: TurnStart -> mainline start using the user
+	// prompt as goal when no active intent exists.
+	AutoStartIntent bool `toml:"auto_start_intent"`
+
+	// AutoAppendTurn: TurnEnd / SubagentEnd -> mainline append using
+	// the agent-supplied summary or modified-file count.
+	AutoAppendTurn bool `toml:"auto_append_turn"`
+
+	// AutoSealPrepare: SessionEnd -> mainline seal --prepare so the
+	// next session has a snapshot waiting for the agent to fill in
+	// fingerprint and submit.
+	AutoSealPrepare bool `toml:"auto_seal_prepare"`
+
+	// AutoSyncOnSessionStart: SessionStart -> mainline sync.
+	AutoSyncOnSessionStart bool `toml:"auto_sync_on_session_start"`
+}
+
+// WebhookSubscription is one HTTP destination for the domain-event
+// fan-out. Multiple entries are supported; each event is delivered
+// to every subscription whose Events filter matches.
+type WebhookSubscription struct {
+	// ID is a stable handle the CLI uses for `mainline webhook
+	// remove <id>` / `test <id>` / `retry --id <id>`. If the user
+	// does not set one, the cli generates "wh_<8>" on add.
+	ID string `toml:"id"`
+
+	// URL is the destination endpoint. HTTP and HTTPS only — no
+	// schemes like file://. The sender does NOT pre-resolve DNS;
+	// network errors are caught at delivery time.
+	URL string `toml:"url"`
+
+	// Events filters which DomainEvent.Name values to deliver. An
+	// empty list means "deliver everything", which is fine for a
+	// monitoring dashboard but probably not for a paging system.
+	Events []string `toml:"events"`
+
+	// Secret signs the body with HMAC-SHA256; subscribers verify
+	// via the X-Mainline-Signature header. Supports the literal
+	// "$ENV:VAR_NAME" form so secrets do not have to live in the
+	// committed config.toml. Empty disables signing.
+	Secret string `toml:"secret"`
+
+	// TimeoutSeconds caps each delivery attempt. 0 means use the
+	// sender's default (5s). Long timeouts on slow webhooks would
+	// otherwise hold the detached sender process for minutes.
+	TimeoutSeconds int `toml:"timeout_seconds"`
+}
+
+// DefaultHooksSection returns the "everything on" defaults that ship
+// the first time `mainline hooks install` writes the section. Users
+// can later flip individual fields off without losing the rest.
+func DefaultHooksSection() HooksSection {
+	return HooksSection{
+		Enabled:                true,
+		AutoStartIntent:        true,
+		AutoAppendTurn:         true,
+		AutoSealPrepare:        true,
+		AutoSyncOnSessionStart: true,
+	}
 }
 
 // LocalConfig is stored at .mainline/local.toml, NOT committed.

@@ -39,6 +39,20 @@ func (s *Store) teamConfigPath() string  { return filepath.Join(s.mainlineDir(),
 func (s *Store) localConfigPath() string { return filepath.Join(s.mainlineDir(), "local.toml") }
 func (s *Store) identityPath() string    { return filepath.Join(s.cacheDir(), "identity.json") }
 
+// HooksDir is the per-repo working dir for hook state. Used by the
+// hooks package to persist e.g. the SessionStart→SessionEnd correlation
+// or the most-recent prompt that opted us into auto-start. Keep all
+// hook bookkeeping under one path so a `mainline clean` later has one
+// directory to wipe.
+func (s *Store) HooksDir() string { return filepath.Join(s.cacheDir(), "hooks") }
+
+// WebhookQueueDir is where the main process drops envelopes that the
+// detached `mainline __webhook-dispatch` sender will pick up. Each
+// envelope is one file (`<event-id>.json`); failures are renamed to
+// `<event-id>.failed.json` so users can inspect or `mainline webhook
+// retry`.
+func (s *Store) WebhookQueueDir() string { return filepath.Join(s.cacheDir(), "webhook-queue") }
+
 // -----------------------------------------------------------
 // Init dirs
 // -----------------------------------------------------------
@@ -98,6 +112,20 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 	}
 	if cfg.Mainline.Remote == "" {
 		cfg.Mainline.Remote = "origin"
+	}
+	// Hooks section defaults: when the [hooks] block is absent we
+	// treat hooks as enabled-with-everything-on so the first-time
+	// `mainline hooks install` user gets the documented behaviour.
+	// "Section literally absent" matches the install flow's promise
+	// in `mainline hooks install`. If the user has explicitly
+	// written [hooks] with `enabled = false`, that overrides — we
+	// only backfill on absent.
+	if !explicitlyHasKey(data, "[hooks]", "enabled") &&
+		!explicitlyHasKey(data, "[hooks]", "auto_start_intent") &&
+		!explicitlyHasKey(data, "[hooks]", "auto_append_turn") &&
+		!explicitlyHasKey(data, "[hooks]", "auto_seal_prepare") &&
+		!explicitlyHasKey(data, "[hooks]", "auto_sync_on_session_start") {
+		cfg.Hooks = domain.DefaultHooksSection()
 	}
 	// v0.3 backfill: pre-v0.3 configs have no [mainline.skip] section.
 	// Without the defaults, every Merge pull request commit shows up
