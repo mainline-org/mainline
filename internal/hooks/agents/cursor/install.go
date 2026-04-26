@@ -71,7 +71,7 @@ func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallR
 		// this is a rewrite; otherwise it's a fresh install. Either
 		// way the resulting state is the same.
 		filtered = append(filtered, hookEntry{
-			Command: wrapperCommand(opts.LocalDev, cliName),
+			Command: wrapperCommand(opts, cliName),
 		})
 		hookCount++
 		if removed != 1 || !fileExisted {
@@ -263,35 +263,51 @@ func encodeEntries(entries []hookEntry) (json.RawMessage, error) {
 // wrapperCommand returns the full command string for one cursor hook
 // entry, with the hook id (e.g. "session-start") baked in.
 //
-// Production form is fail-soft: `command -v` returns 1 when the
-// mainline binary is not on PATH, the `&&` short-circuits, and
-// `|| exit 0` makes the whole pipeline succeed quietly so cursor
-// does not surface a "hook failed" error to the user.
+// Three shapes, in priority order:
 //
-// LocalDev form points at `go run .` from the worktree root so a
-// contributor iterating on the hooks subsystem does not have to
-// reinstall the binary between every change.
-func wrapperCommand(localDev bool, hookID string) string {
-	if localDev {
+//   - BinPath set: hard-code the absolute binary path. Used when the
+//     user has built a local mainline (e.g. `go build -o ./mainline .`)
+//     and wants hooks to invoke it without putting `mainline` on PATH.
+//     Tests this exact path on every fire — fastest, most reliable for
+//     dogfooding. Still fail-soft: if the binary disappears, the test
+//     short-circuits and `|| exit 0` keeps cursor happy.
+//
+//   - LocalDev set: `go run .` from the worktree root. Picks up source
+//     changes without a rebuild step but pays a 1-3s compile cost on
+//     every hook fire — fine for slow events (sessionStart) but
+//     painful on beforeSubmitPrompt where the user waits for the
+//     prompt to dispatch.
+//
+//   - Default: `command -v mainline` on PATH. Production form for
+//     users who `go install` mainline. Fail-soft via `|| exit 0` so
+//     a system without mainline doesn't break cursor.
+func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
+	switch {
+	case opts.BinPath != "":
+		return fmt.Sprintf(`sh -c 'test -x %q && exec %q hooks cursor %s || exit 0'`,
+			opts.BinPath, opts.BinPath, hookID)
+	case opts.LocalDev:
 		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks cursor %s'`, hookID)
+	default:
+		return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks cursor %s || exit 0'`, hookID)
 	}
-	return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks cursor %s || exit 0'`, hookID)
 }
 
-// allManagedPrefixes is the union of every form of wrapper-command
-// substring mainline has ever written. Install removes prior
-// mainline-managed entries before appending the new one; Uninstall
-// removes ALL mainline-managed entries; IsInstalled detects ANY.
+// allManagedPrefixes is the union of every wrapper-command substring
+// mainline has ever written. Install removes prior mainline-managed
+// entries before appending the new one; Uninstall removes ALL
+// mainline-managed entries; IsInstalled detects ANY.
 //
-// We deliberately match against the unique `mainline hooks cursor`
-// substring rather than the full sh wrapper so old shapes (e.g.
-// "/usr/local/bin/mainline hooks cursor session-start") are also
-// recognized.
+// Two shapes recognized:
+//   - `mainline hooks cursor ` covers both the PATH form
+//     (`exec mainline hooks cursor X`) and the absolute-path form
+//     written by --bin (`exec "/abs/path/mainline" hooks cursor X`,
+//     containing the literal "mainline hooks cursor" substring).
+//   - `go run . hooks cursor ` covers --local-dev.
 func allManagedPrefixes() []string {
 	return []string{
 		`mainline hooks cursor `,
 		`go run . hooks cursor `,
-		`go run "$(git rev-parse --show-toplevel)" hooks cursor `,
 	}
 }
 

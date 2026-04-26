@@ -24,6 +24,7 @@ var (
 	hooksInstallAll      bool
 	hooksInstallForce    bool
 	hooksInstallLocalDev bool
+	hooksInstallBin      string
 	hooksUninstallAgent  string
 	hooksUninstallAll    bool
 	hooksDispatchAgent   string
@@ -75,11 +76,22 @@ var hooksInstallCmd = &cobra.Command{
 			return err
 		}
 
+		// Resolve --bin to an absolute path so the wrapper does not
+		// depend on whatever CWD cursor invokes the hook from.
+		bin := hooksInstallBin
+		if bin != "" {
+			abs, err := filepath.Abs(bin)
+			if err != nil {
+				return fmt.Errorf("--bin: %w", err)
+			}
+			bin = abs
+		}
 		results := make([]agentInstallResult, 0, len(targets))
 		for _, a := range targets {
 			rep, err := a.Install(root, hooks.InstallOptions{
 				Force:    hooksInstallForce,
 				LocalDev: hooksInstallLocalDev,
+				BinPath:  bin,
 			})
 			results = append(results, agentInstallResult{
 				Agent:  a.Name(),
@@ -482,13 +494,21 @@ func setHooksEnabled(enabled bool) error {
 	if err := svc.Store.WriteTeamConfig(cfg); err != nil {
 		return err
 	}
-	if !jsonOutput {
-		state := "disabled"
-		if enabled {
-			state = "enabled"
-		}
-		fmt.Printf("Hooks dispatcher %s.\n", state)
+	if jsonOutput {
+		// Echo the resulting [hooks] section so the caller does
+		// not need a follow-up `mainline hooks status --json` to
+		// confirm the toggle took effect.
+		outputJSON(map[string]any{
+			"enabled":  enabled,
+			"settings": cfg.Hooks,
+		})
+		return nil
 	}
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	fmt.Printf("Hooks dispatcher %s.\n", state)
 	return nil
 }
 
@@ -504,6 +524,7 @@ func init() {
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallAll, "all", false, "install for every supported agent")
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallForce, "force", false, "rewrite mainline-managed entries even if unchanged")
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallLocalDev, "local-dev", false, "wrap with `go run .` instead of installed mainline")
+	hooksInstallCmd.Flags().StringVar(&hooksInstallBin, "bin", "", "absolute (or relative) path to a prebuilt mainline binary; wrapper will exec it directly")
 
 	hooksUninstallCmd.Flags().StringVar(&hooksUninstallAgent, "agent", "", "agent to uninstall (defaults to cursor)")
 	hooksUninstallCmd.Flags().BoolVar(&hooksUninstallAll, "all", false, "uninstall every supported agent")

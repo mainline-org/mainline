@@ -55,52 +55,74 @@ func DefaultSender(store *storage.Store, subs []domain.WebhookSubscription) *Sen
 	}
 }
 
+// DispatchResult breaks a Dispatch call's outcome down to the level
+// `webhook test` needs to produce a non-misleading report: total
+// subscribers, how many matched the event filter, how many were
+// skipped, how many delivery attempts failed. The detached sender
+// in production ignores this struct (only checks err); the CLI uses
+// it to print "delivered to 1 of 3 (2 skipped by filter)" instead of
+// the historical "delivered_to: 3, ok: true" lie.
+type DispatchResult struct {
+	Total    int      `json:"total"`
+	Matched  int      `json:"matched"`
+	Skipped  int      `json:"skipped"`
+	Failures []string `json:"failures,omitempty"`
+}
+
 // Dispatch is the detached process entrypoint. Reads the envelope by
 // id, fans out to matching subscriptions, retries with exponential
 // backoff, and renames the queue file to .failed.json on terminal
 // failure (so `mainline webhook retry` can pick it up later).
 //
-// Returns a multi-error string only for caller-side logging; the
-// detached child's exit code is informational because nobody is
-// watching it.
-func (s *Sender) Dispatch(ctx context.Context, eventID string) error {
+// bypassFilter forces every subscription to receive the event even
+// if its Events filter would have rejected it. The production caller
+// (the detached __webhook-dispatch sender) always passes false; the
+// CLI's `webhook test` command passes true so users can verify
+// connectivity without temporarily editing their event filter.
+//
+// Returns a structured DispatchResult plus a multi-error string only
+// for caller-side logging; the detached child's exit code is
+// informational because nobody is watching it.
+func (s *Sender) Dispatch(ctx context.Context, eventID string, bypassFilter bool) (*DispatchResult, error) {
 	queuePath := filepath.Join(s.Store.WebhookQueueDir(), eventID+".json")
 	data, err := os.ReadFile(queuePath)
 	if err != nil {
-		return fmt.Errorf("read queue entry: %w", err)
+		return nil, fmt.Errorf("read queue entry: %w", err)
 	}
 	var env Envelope
 	if err := json.Unmarshal(data, &env); err != nil {
-		return fmt.Errorf("decode envelope: %w", err)
+		return nil, fmt.Errorf("decode envelope: %w", err)
 	}
 
-	var failures []string
+	res := &DispatchResult{Total: len(s.Subscriptions)}
 	for _, sub := range s.Subscriptions {
-		if !matchesEvents(sub.Events, env.Name) {
+		if !bypassFilter && !matchesEvents(sub.Events, env.Name) {
+			res.Skipped++
 			continue
 		}
+		res.Matched++
 		if err := s.deliver(ctx, sub, &env); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", subID(sub), err))
+			res.Failures = append(res.Failures, fmt.Sprintf("%s: %v", subID(sub), err))
 		}
 	}
 
-	if len(failures) > 0 {
+	if len(res.Failures) > 0 {
 		// Persist the envelope with attempt count + last error so
 		// `mainline webhook retry --id <event>` shows actionable
 		// detail instead of just "failed".
-		env.LastError = strings.Join(failures, "; ")
+		env.LastError = strings.Join(res.Failures, "; ")
 		failedPath := filepath.Join(s.Store.WebhookQueueDir(), eventID+".failed.json")
 		if buf, err := json.MarshalIndent(env, "", "  "); err == nil {
 			os.WriteFile(failedPath, buf, 0o644)
 		}
 		os.Remove(queuePath)
-		return fmt.Errorf("delivery failed: %s", env.LastError)
+		return res, fmt.Errorf("delivery failed: %s", env.LastError)
 	}
-	// All subscribers acked — the envelope has done its job. The
-	// queue file is the only persistent record; once removed there
-	// is nothing to retry.
+	// All subscribers acked (or no matched subscribers) — the
+	// envelope has done its job. The queue file is the only
+	// persistent record; once removed there is nothing to retry.
 	os.Remove(queuePath)
-	return nil
+	return res, nil
 }
 
 // deliver POSTs one envelope to one subscription with retries. The
