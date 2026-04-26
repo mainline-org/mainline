@@ -140,7 +140,7 @@ func TestReconcileAutoTreeHashMatch(t *testing.T) {
 		t.Errorf("expected commit %s, got %s", mainCommit, link.Commit)
 	}
 
-	// The note should record via=reconcile_auto and match_strategy=tree_hash.
+	// The note should record via=pin_auto and match_strategy=tree_hash.
 	noteRaw, _ := svc.Git.NotesShow(mainCommit)
 	if noteRaw == "" {
 		t.Fatal("no note written")
@@ -149,8 +149,8 @@ func TestReconcileAutoTreeHashMatch(t *testing.T) {
 	if err := json.Unmarshal([]byte(noteRaw), &note); err != nil {
 		t.Fatalf("parse note: %v", err)
 	}
-	if note.Via != "reconcile_auto" {
-		t.Errorf("expected via=reconcile_auto, got %s", note.Via)
+	if note.Via != "pin_auto" {
+		t.Errorf("expected via=pin_auto, got %s", note.Via)
 	}
 	if note.MatchStrategy != "tree_hash" {
 		t.Errorf("expected match_strategy=tree_hash, got %s", note.MatchStrategy)
@@ -263,8 +263,9 @@ func TestReconcileWorksAcrossActors(t *testing.T) {
 // Manual reconcile
 // -----------------------------------------------------------
 
-// Manual reconcile is the escape hatch when no heuristic matches. It must
-// pin the link unconditionally and stamp the note with via=reconcile_manual.
+// Manual pin (formerly "reconcile manual") is the escape hatch when no
+// heuristic matches. It must pin the link unconditionally and stamp the
+// note with via=pin_explicit.
 func TestReconcileManualPinsCommit(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -310,8 +311,8 @@ func TestReconcileManualPinsCommit(t *testing.T) {
 	noteRaw, _ := svc.Git.NotesShow(mainCommit)
 	var note domain.CommitNote
 	json.Unmarshal([]byte(noteRaw), &note)
-	if note.Via != "reconcile_manual" {
-		t.Errorf("expected via=reconcile_manual, got %s", note.Via)
+	if note.Via != "pin_explicit" {
+		t.Errorf("expected via=pin_explicit, got %s", note.Via)
 	}
 	if note.MatchStrategy != "manual" {
 		t.Errorf("expected match_strategy=manual, got %s", note.MatchStrategy)
@@ -370,19 +371,24 @@ func TestReconcileManualRejectsMergedIntent(t *testing.T) {
 // Backward-compat parsing
 // -----------------------------------------------------------
 
-// Older notes wrote via=reconcile (no _auto/_manual suffix) and the
-// pre-rc4 manual workflow even produced via=manual. Sync's normaliseVia
-// must collapse all of them to "reconcile" so MainlineView.merged_via
-// stays stable for downstream readers.
+// Older notes wrote via=reconcile / reconcile_auto / reconcile_manual /
+// manual (rc3 era and pre-Patch7 rc4). The current writer emits
+// pin_auto / pin_explicit. normaliseVia must collapse every flavour to
+// the view-layer bucket "pin" so MainlineView.merged_via stays stable
+// for downstream readers across the rename.
 func TestNormaliseViaBackwardCompat(t *testing.T) {
 	cases := map[string]string{
-		"":                "merge",
-		"merge":           "merge",
-		"reconcile":       "reconcile",
-		"reconcile_auto":  "reconcile",
-		"reconcile_manual": "reconcile",
-		"manual":          "reconcile",
-		"unknown_future":  "unknown_future",
+		"":                 "merge",
+		"merge":            "merge",
+		"pin_auto":         "pin",
+		"pin_explicit":     "pin",
+		"link_auto":        "pin",
+		"link_explicit":    "pin",
+		"reconcile":        "pin",
+		"reconcile_auto":   "pin",
+		"reconcile_manual": "pin",
+		"manual":           "pin",
+		"unknown_future":   "unknown_future",
 	}
 	for in, want := range cases {
 		if got := normaliseVia(in); got != want {
