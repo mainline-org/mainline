@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,7 +16,20 @@ var (
 	jsonOutput bool
 	quietMode  bool
 	cwdPath    string
+	noSync     bool
 )
+
+// autoSyncCommands is the rc5 Patch 4 list of commands that auto-trigger
+// a sync (subject to the freshness window) before running. Hardcoded
+// rather than config because it's a product behaviour, not team policy.
+// Any command whose Use line first word appears here is wrapped.
+var autoSyncCommands = map[string]bool{
+	"check":          true,
+	"list-proposals": true,
+	"context":        true,
+	"pin":            true,
+	"reconcile":      true,
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "mainline",
@@ -25,7 +39,51 @@ var rootCmd = &cobra.Command{
 		if cwdPath != "" {
 			os.Chdir(cwdPath)
 		}
+		maybeAutoSync(cmd)
 	},
+}
+
+// maybeAutoSync triggers a sync before commands listed in
+// autoSyncCommands, unless --no-sync is set or the last sync is within
+// the configured freshness window. Failures are non-fatal and printed
+// to stderr — the wrapped command always runs, possibly against stale
+// data (network being down should never block local-data queries).
+func maybeAutoSync(cmd *cobra.Command) {
+	if noSync {
+		return
+	}
+	if !autoSyncCommands[cmd.Name()] {
+		return
+	}
+	svc, err := getService()
+	if err != nil {
+		// Service init failure (no .mainline) — let the wrapped
+		// command surface the real error.
+		return
+	}
+	cfg, err := svc.GetTeamConfigForCLI()
+	if err != nil {
+		return
+	}
+	freshness := time.Duration(cfg.Sync.FreshnessSeconds) * time.Second
+	if freshness > 0 {
+		ls, _ := svc.GetLastSyncForCLI()
+		if ls != nil {
+			if t, err := time.Parse(time.RFC3339, ls.At); err == nil {
+				if time.Since(t) < freshness {
+					return // still fresh
+				}
+			}
+		}
+	}
+	if !jsonOutput {
+		fmt.Fprintln(os.Stderr, "Syncing with team...")
+	}
+	if _, err := svc.Sync(); err != nil {
+		if !jsonOutput {
+			fmt.Fprintf(os.Stderr, "⚠ sync failed (%v); using local data\n", err)
+		}
+	}
 }
 
 func Execute() {
@@ -38,6 +96,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "suppress non-error output")
 	rootCmd.PersistentFlags().StringVar(&cwdPath, "cwd", "", "set working directory")
+	rootCmd.PersistentFlags().BoolVar(&noSync, "no-sync", false, "skip the auto-sync some commands run before executing")
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(statusCmd)

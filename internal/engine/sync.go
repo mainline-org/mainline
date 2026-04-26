@@ -14,11 +14,13 @@ import (
 // -----------------------------------------------------------
 
 type SyncResult struct {
-	Fetched       bool   `json:"fetched"`
-	ViewRebuilt   bool   `json:"view_rebuilt"`
-	IntentsInView int    `json:"intents_in_view"`
-	ProposedCount int    `json:"proposed_count"`
-	MainHead      string `json:"main_head"`
+	Fetched       bool                  `json:"fetched"`
+	ViewRebuilt   bool                  `json:"view_rebuilt"`
+	IntentsInView int                   `json:"intents_in_view"`
+	ProposedCount int                   `json:"proposed_count"`
+	MainHead      string                `json:"main_head"`
+	NewSealedSeen int                   `json:"new_sealed_seen,omitempty"`
+	NewConflicts  []domain.ConflictPair `json:"new_conflicts,omitempty"`
 }
 
 func (s *Service) Sync() (*SyncResult, error) {
@@ -29,6 +31,17 @@ func (s *Service) Sync() (*SyncResult, error) {
 	cfg, err := s.getTeamConfig()
 	if err != nil {
 		return nil, err
+	}
+
+	// Snapshot the pre-sync view's intent ids so we can compute the
+	// rc5 conflict-detection delta below: `new` = post-sync intents
+	// not present in the pre-sync view. Drives both the LastSync
+	// delta counter and the auto-check sees-only-new-stuff filter.
+	priorIDs := make(map[string]bool)
+	if prior, _ := s.Store.ReadMainlineView(); prior != nil {
+		for _, iv := range prior.Intents {
+			priorIDs[iv.IntentID] = true
+		}
 	}
 
 	fetched := false
@@ -58,13 +71,56 @@ func (s *Service) Sync() (*SyncResult, error) {
 	idx := s.rebuildProposedIndex(view)
 	s.Store.WriteProposedIndex(idx)
 
-	return &SyncResult{
+	// rc5: compute the delta the LastSync record and auto-check both
+	// need. New = appeared this sync; we do not warn about pairs we
+	// already surfaced on a previous sync.
+	deltaIDs := make(map[string]bool)
+	newSealedSeen := 0
+	for _, iv := range view.Intents {
+		if !priorIDs[iv.IntentID] {
+			deltaIDs[iv.IntentID] = true
+			if iv.Status == domain.StatusProposed {
+				newSealedSeen++
+			}
+		}
+	}
+
+	result := &SyncResult{
 		Fetched:       fetched,
 		ViewRebuilt:   true,
 		IntentsInView: len(view.Intents),
 		ProposedCount: len(idx.Proposed),
 		MainHead:      view.MainHead,
-	}, nil
+		NewSealedSeen: newSealedSeen,
+	}
+
+	if cfg.Sync.AutoCheckAfterSync {
+		// On the first sync (no prior view), there is no "delta" —
+		// every intent is new. Warning on every existing pair would
+		// be noise; restrict to nil delta to reuse the all-eligible
+		// path only when the prior view is genuinely empty.
+		var delta map[string]bool
+		if len(priorIDs) > 0 {
+			delta = deltaIDs
+		}
+		result.NewConflicts = s.detectSyncConflicts(view, cfg.Check.Phase1Threshold, delta)
+	}
+
+	// Persist last-sync record for the freshness-window CLI wrapper
+	// and the staleness indicator in `mainline status`.
+	identity, _ := s.getIdentity()
+	actorID := ""
+	if identity != nil {
+		actorID = identity.ActorID
+	}
+	s.Store.WriteLastSync(&domain.LastSync{
+		At:            core.Now(),
+		ByActor:       actorID,
+		MainHead:      view.MainHead,
+		NewSealedSeen: newSealedSeen,
+	})
+
+	return result, nil
 }
 
 func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, error) {

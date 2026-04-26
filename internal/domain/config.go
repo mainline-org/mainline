@@ -18,8 +18,21 @@ type MainlineSection struct {
 }
 
 type SyncSection struct {
-	AutoSync bool `toml:"auto_sync"`
+	AutoSync bool   `toml:"auto_sync"`
 	Interval string `toml:"interval"`
+	// FreshnessSeconds gates the auto-before-command sync wrapper:
+	// if a command in the auto-before list runs within FreshnessSeconds
+	// of the last successful sync, the wrapper skips the network round
+	// trip and uses the cached view. 0 means "always sync".
+	FreshnessSeconds int `toml:"freshness_seconds"`
+	// StaleThresholdSeconds is when `mainline status` starts marking
+	// the sync state as stale in human output and JSON. Defaults to
+	// 24 hours; teams with slower-moving repos can raise it.
+	StaleThresholdSeconds int64 `toml:"stale_threshold_seconds"`
+	// AutoCheckAfterSync runs phase1 conflict detection over newly
+	// fetched proposed intents at the end of every sync. The list
+	// of warnings is added to the SyncResult and printed.
+	AutoCheckAfterSync bool `toml:"auto_check_after_sync"`
 }
 
 type CheckSection struct {
@@ -67,8 +80,11 @@ func DefaultTeamConfig() TeamConfig {
 			RequireSealBefore: "push",
 		},
 		Sync: SyncSection{
-			AutoSync: true,
-			Interval: "30s",
+			AutoSync:              true,
+			Interval:              "30s",
+			FreshnessSeconds:      300,   // 5 min — cheap commands may chain in quick succession
+			StaleThresholdSeconds: 86400, // 24h — flag in `mainline status`
+			AutoCheckAfterSync:    true,
 		},
 		Check: CheckSection{
 			AutoCheck: true,

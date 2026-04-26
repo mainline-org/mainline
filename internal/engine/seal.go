@@ -93,16 +93,34 @@ Return ONLY valid JSON matching the SealResult schema.`
 // -----------------------------------------------------------
 
 type SealSubmitResult struct {
-	IntentID   string `json:"intent_id"`
-	Status     string `json:"status"`
-	Published  bool   `json:"published"`
-	CodeCommit string `json:"code_commit"`
-	EventID    string `json:"event_id"`
-	Hash       string `json:"canonical_hash"`
-	Warning    string `json:"warning,omitempty"`
+	IntentID   string                `json:"intent_id"`
+	Status     string                `json:"status"`
+	Published  bool                  `json:"published"`
+	CodeCommit string                `json:"code_commit"`
+	EventID    string                `json:"event_id"`
+	Hash       string                `json:"canonical_hash"`
+	Warning    string                `json:"warning,omitempty"`
+	SyncRan    bool                  `json:"sync_ran"`
+	SyncError  string                `json:"sync_error,omitempty"`
+	Conflicts  []domain.ConflictPair `json:"conflicts,omitempty"`
 }
 
+// SealSubmitOptions controls the rc5 seal-submit augmentations.
+// Pass &SealSubmitOptions{Offline: true} via SealSubmitWithOptions to
+// skip the auto-sync-and-check step (typically used by tests or by
+// the explicit `--offline` CLI flag when the user knows they cannot
+// reach the remote and wants to seal locally).
+type SealSubmitOptions struct {
+	Offline bool
+}
+
+// SealSubmit retains the original signature and runs with default
+// options (auto sync + check on). Existing callers compile unchanged.
 func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
+	return s.SealSubmitWithOptions(input, nil)
+}
+
+func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitOptions) (*SealSubmitResult, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
 	}
@@ -182,7 +200,8 @@ func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
 	warning := ""
 	finalStatus := domain.StatusSealedLocal
 
-	if s.Git.HasRemote("origin") {
+	offline := opts != nil && opts.Offline
+	if s.Git.HasRemote("origin") && !offline {
 		ref := s.Store.ActorLogRef(identity.ActorID, cfg.Mainline.ActorLogPrefix)
 		refspec := fmt.Sprintf("%s:%s", ref, ref)
 		if err := s.Git.Push("origin", refspec); err == nil {
@@ -191,6 +210,8 @@ func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
 		} else {
 			warning = "Sealed locally but failed to publish. Run 'mainline publish' to retry."
 		}
+	} else if offline {
+		warning = "Sealed locally (--offline). Run 'mainline publish' when online."
 	}
 
 	// Update draft status to final status
@@ -198,7 +219,7 @@ func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
 	draft.LastModifiedAt = core.Now()
 	s.Store.WriteDraft(draft)
 
-	return &SealSubmitResult{
+	result := &SealSubmitResult{
 		IntentID:   sr.IntentID,
 		Status:     string(finalStatus),
 		Published:  published,
@@ -206,5 +227,29 @@ func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
 		EventID:    eventID,
 		Hash:       hash,
 		Warning:    warning,
-	}, nil
+	}
+
+	// rc5 Patch 3: auto sync + phase1 check unless --offline.
+	// Conflicts are advisory and never block the seal — this surface
+	// just makes them visible at the moment they actually matter
+	// (the user just promised the team they're doing this work).
+	if !offline {
+		syncResult, syncErr := s.Sync()
+		result.SyncRan = true
+		if syncErr != nil {
+			result.SyncError = syncErr.Error()
+		}
+		// Re-read view (Sync just rewrote it) to detect against the
+		// freshest remote state. Use the freshly-sealed fingerprint
+		// directly — view's snapshot of this intent may not reflect
+		// it yet (actor log replay race).
+		view, _ := s.Store.ReadMainlineView()
+		conflicts := s.detectSealedConflicts(sr.IntentID, &sr.Fingerprint, view, cfg.Check.Phase1Threshold)
+		if len(conflicts) > 0 {
+			result.Conflicts = conflicts
+		}
+		_ = syncResult // reserved for future surface (unused for now)
+	}
+
+	return result, nil
 }
