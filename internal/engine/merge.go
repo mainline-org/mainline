@@ -231,38 +231,65 @@ func (s *Service) gitRun(args ...string) (string, error) {
 }
 
 // -----------------------------------------------------------
-// Reconcile
+// Pin  (formerly Reconcile — see Patch 7 in the rc4 spec patch).
 // -----------------------------------------------------------
+//
+// Naming: at the user-facing layer this operation is now called Pin —
+// the action is "pin an intent to a main commit" via a git note. The
+// on-disk via values written by future calls reflect that
+// (pin_auto / pin_explicit). Older notes still on the ref carry the
+// historical reconcile_auto / reconcile_manual / reconcile / manual
+// values; sync.normaliseVia maps every flavour onto the view-layer
+// merged_via=pin bucket, so readers do not need to care which name
+// produced the note.
 
-// ReconciledLink records one (intent, commit, strategy) triple produced by
-// Reconcile. Strategy is the rule that won (see CommitNote.MatchStrategy).
-type ReconciledLink struct {
+// PinnedCommit records one (intent, commit, strategy) triple produced
+// by Pin. Strategy is the rule that won (see CommitNote.MatchStrategy).
+type PinnedCommit struct {
 	IntentID      string `json:"intent_id"`
 	Commit        string `json:"commit"`
 	MatchStrategy string `json:"match_strategy"`
 }
 
-type ReconcileResult struct {
-	Reconciled int              `json:"reconciled"`
-	IntentIDs  []string         `json:"intent_ids"`
-	Links      []ReconciledLink `json:"links,omitempty"`
+// ReconciledLink is the deprecated pre-rc4 spelling of PinnedCommit;
+// kept as a Go type alias so external packages and old test names
+// keep compiling.
+//
+// Deprecated: use PinnedCommit.
+type ReconciledLink = PinnedCommit
+
+type PinResult struct {
+	Pinned    int            `json:"pinned"`
+	IntentIDs []string       `json:"intent_ids"`
+	Links     []PinnedCommit `json:"links,omitempty"`
 }
 
-// matchStrategy is the priority-ordered list of rules tried by Reconcile.
-// tree_hash is first because squash merge preserves the tree exactly, and
-// it is what GitHub's web UI does by default — the case Reconcile must
-// handle to be useful in practice.
-var reconcileStrategies = []string{"tree_hash", "commit_hash", "goal_text"}
+// ReconcileResult is the deprecated pre-rc4 spelling of PinResult.
+//
+// Deprecated: use PinResult. The JSON `reconciled` key remains in
+// emitted payloads for one release via the legacy Reconcile/ReconcileManual
+// wrappers; new code should consume `pinned` instead.
+type ReconcileResult struct {
+	Reconciled int            `json:"reconciled"`
+	IntentIDs  []string       `json:"intent_ids"`
+	Links      []PinnedCommit `json:"links,omitempty"`
+}
 
-// Reconcile scans every proposed intent in the materialised view and tries
+// pinStrategies is the priority-ordered list of rules tried by Pin.
+// tree_hash is first because squash merge preserves the tree exactly,
+// and it is what GitHub's web UI does by default — the case Pin must
+// handle to be useful in practice.
+var pinStrategies = []string{"tree_hash", "commit_hash", "goal_text"}
+
+// Pin scans every proposed intent in the materialised view and tries
 // to associate it with a main-branch commit using a cascade of rules
 // (tree_hash → commit_hash → goal_text). The first matching commit wins.
 //
-// Unlike pre-rc4 builds, Reconcile is no longer restricted to intents
-// owned by the calling actor: notes live on shared main commits and any
-// teammate may attach one. The note's added_by field still records who
-// performed the reconciliation so the audit trail is preserved.
-func (s *Service) Reconcile() (*ReconcileResult, error) {
+// Pin is not restricted to intents owned by the calling actor: notes
+// live on shared main commits and any teammate may attach one. The
+// note's added_by field still records who performed the pin so the
+// audit trail is preserved.
+func (s *Service) Pin() (*PinResult, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
 	}
@@ -275,7 +302,7 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
-		return &ReconcileResult{}, nil
+		return &PinResult{}, nil
 	}
 
 	entries, _ := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
@@ -290,13 +317,13 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 		}
 	}
 
-	result := &ReconcileResult{}
+	result := &PinResult{}
 	for _, iv := range view.Intents {
 		if iv.Status != domain.StatusProposed {
 			continue
 		}
 
-		match, strategy := s.findReconcileMatch(iv, entries, treeOf)
+		match, strategy := s.findPinMatch(iv, entries, treeOf)
 		if match == "" {
 			continue
 		}
@@ -314,7 +341,7 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 			},
 			AddedAt:       core.Now(),
 			AddedBy:       identity.ActorID,
-			Via:           "reconcile_auto",
+			Via:           "pin_auto",
 			MatchStrategy: strategy,
 			ReconciledAt:  core.Now(),
 			ReconciledBy:  identity.ActorID,
@@ -323,36 +350,37 @@ func (s *Service) Reconcile() (*ReconcileResult, error) {
 			continue
 		}
 		result.IntentIDs = append(result.IntentIDs, iv.IntentID)
-		result.Links = append(result.Links, ReconciledLink{
+		result.Links = append(result.Links, PinnedCommit{
 			IntentID:      iv.IntentID,
 			Commit:        match,
 			MatchStrategy: strategy,
 		})
 	}
-	result.Reconciled = len(result.IntentIDs)
+	result.Pinned = len(result.IntentIDs)
 
-	if result.Reconciled > 0 && s.Git.HasRemote("origin") {
+	if result.Pinned > 0 && s.Git.HasRemote("origin") {
 		s.Git.Push("origin", "refs/notes/mainline/intents")
 	}
 
 	return result, nil
 }
 
-// ReconcileManual writes a reconcile_manual note pinning intentID to
-// commitHash without consulting the heuristic cascade. It is the escape
-// hatch when the automatic match cannot reach the right commit (e.g. a
-// rebase scrambled the tree, or the agent never recorded code_commit).
+// PinExplicit writes a pin_explicit note pinning intentID to
+// commitHash without consulting the heuristic cascade. It is the
+// escape hatch when the automatic match cannot reach the right commit
+// (e.g. a rebase scrambled the tree, or the agent never recorded
+// code_commit).
 //
-// The intent must currently be in the proposed state and the commit must
-// exist; the note's added_by records the calling actor regardless of who
-// owns the intent.
-func (s *Service) ReconcileManual(intentID, commitHash string) (*ReconciledLink, error) {
+// The intent must currently be in the proposed state and the commit
+// must exist; the note's added_by records the calling actor regardless
+// of who owns the intent.
+func (s *Service) PinExplicit(intentID, commitHash string) (*PinnedCommit, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
 	}
 	if intentID == "" || commitHash == "" {
 		return nil, domain.NewError(domain.ErrInvalidInput,
-			"reconcile manual requires both intent and commit")
+			"pin explicit requires both intent and commit")
 	}
 
 	identity, err := s.getIdentity()
@@ -383,12 +411,12 @@ func (s *Service) ReconcileManual(intentID, commitHash string) (*ReconciledLink,
 	}
 	if iv.Status != domain.StatusProposed {
 		return nil, domain.NewError(domain.ErrInvalidStatus,
-			fmt.Sprintf("intent %s is in status %s; only proposed intents can be reconciled",
+			fmt.Sprintf("intent %s is in status %s; only proposed intents can be pinned",
 				intentID, iv.Status))
 	}
 
 	if alreadyHasIntent(s.Git, resolved, intentID) {
-		return &ReconciledLink{
+		return &PinnedCommit{
 			IntentID:      intentID,
 			Commit:        resolved,
 			MatchStrategy: "manual",
@@ -404,7 +432,7 @@ func (s *Service) ReconcileManual(intentID, commitHash string) (*ReconciledLink,
 		},
 		AddedAt:       core.Now(),
 		AddedBy:       identity.ActorID,
-		Via:           "reconcile_manual",
+		Via:           "pin_explicit",
 		MatchStrategy: "manual",
 		ReconciledAt:  core.Now(),
 		ReconciledBy:  identity.ActorID,
@@ -416,18 +444,40 @@ func (s *Service) ReconcileManual(intentID, commitHash string) (*ReconciledLink,
 		s.Git.Push("origin", "refs/notes/mainline/intents")
 	}
 
-	return &ReconciledLink{
+	return &PinnedCommit{
 		IntentID:      intentID,
 		Commit:        resolved,
 		MatchStrategy: "manual",
 	}, nil
 }
 
-// findReconcileMatch walks reconcileStrategies in order and returns the
-// first matching commit hash plus the strategy name that won. Returns
+// Reconcile is the deprecated alias for Pin.
+//
+// Deprecated: use Service.Pin.
+func (s *Service) Reconcile() (*ReconcileResult, error) {
+	res, err := s.Pin()
+	if err != nil || res == nil {
+		return nil, err
+	}
+	return &ReconcileResult{
+		Reconciled: res.Pinned,
+		IntentIDs:  res.IntentIDs,
+		Links:      res.Links,
+	}, nil
+}
+
+// ReconcileManual is the deprecated alias for PinExplicit.
+//
+// Deprecated: use Service.PinExplicit.
+func (s *Service) ReconcileManual(intentID, commitHash string) (*PinnedCommit, error) {
+	return s.PinExplicit(intentID, commitHash)
+}
+
+// findPinMatch walks pinStrategies in order and returns the first
+// matching commit hash plus the strategy name that won. Returns
 // ("", "") when no strategy matches any candidate commit.
-func (s *Service) findReconcileMatch(iv domain.IntentView, entries []gitops.LogEntry, treeOf map[string]string) (string, string) {
-	for _, strategy := range reconcileStrategies {
+func (s *Service) findPinMatch(iv domain.IntentView, entries []gitops.LogEntry, treeOf map[string]string) (string, string) {
+	for _, strategy := range pinStrategies {
 		switch strategy {
 		case "tree_hash":
 			if iv.CodeCommit == "" {

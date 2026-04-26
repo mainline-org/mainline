@@ -152,7 +152,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 			if iv, ok := intentMap[evt.IntentID]; ok {
 				iv.Status = domain.StatusMerged
 				iv.StatusEvidence.MergedMainCommit = evt.MergeCommit
-				iv.StatusEvidence.MergedVia = "reconcile"
+				iv.StatusEvidence.MergedVia = "pin"
 			}
 
 		case domain.EventCheckJudgment:
@@ -337,18 +337,21 @@ func extractAgainstIntents(judgments []domain.ConflictJudgment, candidate string
 	return out
 }
 
-// normaliseVia collapses the on-disk via spelling into the two values the
-// view layer cares about: "merge" or "reconcile". rc4 introduced
-// reconcile_auto / reconcile_manual to let audit code distinguish how a
-// note was written; everything older (legacy "reconcile" and the early
-// ad-hoc "manual") still maps to "reconcile" so existing notes keep
-// rendering correctly.
+// normaliseVia collapses the on-disk via spelling into the two values
+// the view layer cares about: "merge" or "pin". The operation is
+// called Pin from rc4 Patch 7 onwards; on-disk values written by
+// future code use "pin_auto" / "pin_explicit". Everything older
+// (rc3-era "reconcile" / "manual" / rc4-pre-Patch7 "reconcile_auto" /
+// "reconcile_manual" / "link_auto" / "link_explicit") still maps to
+// "pin" so existing notes keep rendering correctly.
 func normaliseVia(raw string) string {
 	switch raw {
 	case "", "merge":
 		return "merge"
-	case "reconcile", "reconcile_auto", "reconcile_manual", "manual":
-		return "reconcile"
+	case "pin_auto", "pin_explicit",
+		"link_auto", "link_explicit",
+		"reconcile", "reconcile_auto", "reconcile_manual", "manual":
+		return "pin"
 	default:
 		return raw
 	}

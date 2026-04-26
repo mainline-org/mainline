@@ -53,6 +53,8 @@ func init() {
 	rootCmd.AddCommand(threadCmd)
 	// rc3: pr-trailer removed, metadata goes via git notes
 	rootCmd.AddCommand(prDescriptionCmd)
+	rootCmd.AddCommand(pinCmd)
+	// reconcile is kept as a hidden deprecated alias of pin.
 	rootCmd.AddCommand(reconcileCmd)
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(listProposalsCmd)

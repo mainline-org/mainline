@@ -274,6 +274,62 @@ Dogfood 在 PR #6/#8 合并后跑 `mainline check --prepare`，发现：
 
 ---
 
-**文档版本**：v0.1-rc4 patch (含 Patch 6 增补)
+## Patch 7：把 `reconcile` 改名为 `pin`（语义修正）
+
+`reconcile` 这个词暗示"调和分歧、修复不一致"——给用户的心理暗示是"系统出问题了，我得修"。但在 rc4 设计里它**已经是常规路径**：每次走 GitHub web UI merge 后都需要它。
+
+而且更深一层——"reconcile" 暗示**双向**协调；实际上这里是**单向**操作：把已经在 main 上的 commit 关联到 mainline view 的 intent。
+
+**正确语义**：把 intent 钉到 commit 上 → `pin`。
+
+| 概念 | 旧 (rc3 / pre-Patch7 rc4) | 新 (Patch 7) |
+|---|---|---|
+| 用户面命令 | `mainline reconcile` | `mainline pin` |
+| 自动批量 | `mainline reconcile` | `mainline pin`（无参） |
+| 显式 | `mainline reconcile <i> <c>` | `mainline pin <intent> <commit>` |
+| Service 主方法 | `Reconcile()` / `ReconcileManual()` | `Pin()` / `PinExplicit()` |
+| 结果类型 | `ReconcileResult` / `ReconciledLink` | `PinResult` / `PinnedCommit` |
+| `CommitNote.via` 新写值 | `reconcile_auto` / `reconcile_manual` | `pin_auto` / `pin_explicit` |
+| 视图层 `merged_via` | `"reconcile"` | `"pin"` |
+
+### 兼容性
+
+- `mainline reconcile` 保留为 hidden deprecated alias，cobra 自动打印 `Deprecated:` 警告并指向 `mainline pin`。脚本不破坏。
+- `Service.Reconcile` / `Service.ReconcileManual` 保留为 deprecated wrapper，调用 `Pin` / `PinExplicit`。
+- `ReconcileResult` 仍是独立类型保 JSON `reconciled` key 兼容；`ReconciledLink` 是 Go type alias 到 `PinnedCommit`。
+- `sync.normaliseVia` 把所有历史 via 字符串（`reconcile` / `reconcile_auto` / `reconcile_manual` / `manual` / `link_auto` / `link_explicit`）和新值（`pin_auto` / `pin_explicit`）一并折叠到视图层 `"pin"` 桶。已 push 到 remote 的旧 note 仍然正确显示。
+
+### 为什么不全 grep 改
+
+历史 git notes 已经写到 `refs/notes/mainline/intents` 并 push 到 remote — git 历史不可改写，那些 `via=reconcile_auto` 字符串永远存在。`normaliseVia` 已经处理；这些字符串当成"语义化石"留在数据层是合适的。
+
+只有**用户面**的命令、方法、类型、新写值需要换名。git note 历史里的 reconcile 字面值不必全 rewrite。
+
+### "从 note 读取" — `pin` 的 idempotency
+
+实现里 `Pin()` 在写之前调用 `alreadyHasIntent(commit, intentID)`：先 `git notes show` 读现有 note 的 intents 列表，包含此 intent 就 short-circuit 跳过。这让 `mainline pin` 反复跑而无副作用 — 是常规 sync 后续操作的安全前提。
+
+整个数据流：
+
+```
+intent.sealed event   →  在 actor log 里
+note on main commit   →  intent 的 merged 状态
+view = function(actor logs, notes)
+```
+
+note 是 merged 状态的**单一真相源**。
+
+### 命令演进路径
+
+```
+v0.1-rc3:               mainline reconcile        (语义模糊)
+v0.1-rc4 (Patch 7):     mainline pin              (主名)
+                        mainline reconcile        → deprecated, hidden, prints warning
+v0.2:                   reconcile alias 移除
+```
+
+---
+
+**文档版本**：v0.1-rc4 patch (含 Patch 6 + Patch 7)
 **应用对象**：v0.1-rc3 spec
 **状态**：实现完成，待合并到 main
