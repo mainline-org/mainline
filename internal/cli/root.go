@@ -23,12 +23,21 @@ var (
 // a sync (subject to the freshness window) before running. Hardcoded
 // rather than config because it's a product behaviour, not team policy.
 // Any command whose Use line first word appears here is wrapped.
+//
+// Membership criterion: a stale answer would be functionally wrong.
+//   - pin / reconcile: pinning needs the latest main commits; missing a
+//     fresh commit means a proposed intent stays unmatched.
+//   - check: phase1 must compare against the freshest remote intents,
+//     otherwise it under-reports conflicts.
+//
+// Notably absent (rc5 dogfood feedback: 3s ssh handshake felt long):
+//   - context, list-proposals, log: read-only displays. A stale answer
+//     is just slightly out of date, not wrong; users who need fresh
+//     team activity can run `mainline sync` first.
 var autoSyncCommands = map[string]bool{
-	"check":          true,
-	"list-proposals": true,
-	"context":        true,
-	"pin":            true,
-	"reconcile":      true,
+	"check":     true,
+	"pin":       true,
+	"reconcile": true,
 }
 
 var rootCmd = &cobra.Command{
