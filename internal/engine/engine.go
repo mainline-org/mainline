@@ -445,6 +445,16 @@ type StatusResult struct {
 	// is the separate `mainline gaps` command.
 	Coverage *StatusCoverageSummary `json:"coverage,omitempty"`
 
+	// AgentsGuidance reports the state of the Mainline-managed
+	// block inside AGENTS.md. After a binary upgrade the user has
+	// a stale block until they run `mainline agents update`;
+	// surfacing the state here on every status is the primary
+	// upgrade-discoverability mechanism. The block uses checksum-
+	// based change detection so user edits are never silently
+	// overwritten — mainline owns the block, the user owns the
+	// rest of the file.
+	AgentsGuidance *StatusAgentsGuidance `json:"agents_guidance,omitempty"`
+
 	// rc7+: status as the daily entry point.
 	//
 	// UnsealedDrafts surfaces work the user (or the agent that did
@@ -581,6 +591,14 @@ func (s *Service) Status() (*StatusResult, error) {
 				result.Coverage = summary
 			}
 		}
+	}
+
+	// AGENTS.md managed-block state. Cheap (one ReadFile + regex +
+	// sha256). Populates the StatusAgentsGuidance summary so JSON
+	// callers can introspect; the Suggestions block below picks
+	// the right call-to-action based on State.
+	if g := s.AgentsGuidanceState(); g != nil {
+		result.AgentsGuidance = g
 	}
 
 	// rc7+ daily-entry-point blocks. Each is a derived rollup over
@@ -769,6 +787,18 @@ func buildStatusSuggestions(r *StatusResult) []string {
 	}
 	if r.Coverage != nil && r.Coverage.UncoveredCount > 0 {
 		out = append(out, "mainline gaps   # uncovered commits with rescue options")
+	}
+	if g := r.AgentsGuidance; g != nil {
+		switch g.State {
+		case AgentsBlockStateNotInstalled:
+			out = append(out, "mainline agents install   # add Mainline guidance block to AGENTS.md")
+		case AgentsBlockStateUpdateAvailable:
+			out = append(out, "mainline agents diff   # see what changed; then `mainline agents update`")
+		case AgentsBlockStateLocallyModified:
+			out = append(out, "mainline agents check   # AGENTS.md managed block has local edits; review before update")
+		case AgentsBlockStateLegacy:
+			out = append(out, "mainline agents update   # migrate AGENTS.md to the versioned managed-block format")
+		}
 	}
 	return out
 }
