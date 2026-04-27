@@ -1,7 +1,7 @@
 <!-- mainline:begin -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 5 -->
+<!-- mainline-agents-md-version: 7 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -26,4 +26,13 @@ mainline seal --submit < seal.json                   # auto syncs + checks
 ```
 
 Sync, pin, merge are automatic — do not invoke them.
+
+### If `mainline hooks` is installed for your agent
+
+When hooks are active, the only thing that changes is sessionStart:
+the hook runs `mainline sync` + `mainline status` for you and injects
+the snapshot into your system context. Every other workflow step
+(start / append / commit / seal --prepare / seal --submit / check)
+remains agent-driven exactly as `AGENTS.md` describes. Hooks are a
+context provider, not a workflow driver.
 <!-- mainline:end -->
