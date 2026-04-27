@@ -80,6 +80,40 @@ var statusCmd = &cobra.Command{
 					fmt.Println("\n  Run `mainline gaps` for details + rescue options.")
 				}
 			}
+
+			// rc7+ daily entry-point blocks. Each only renders when
+			// it has content; on a clean repo with no orphans,
+			// status stays as terse as before.
+			if len(result.UnsealedDrafts) > 0 {
+				fmt.Println("\nUnsealed intents (other branches):")
+				for _, d := range result.UnsealedDrafts {
+					age := formatElapsed(d.AgeSeconds)
+					fmt.Printf("  %s  [%s on %s]  %s — %d turn(s), %s old\n",
+						d.IntentID, d.Status, d.GitBranch,
+						truncate(d.Goal, 50), d.TurnCount, age)
+				}
+			}
+			if len(result.RecentSealed) > 0 {
+				fmt.Println("\nRecent sealed intents:")
+				for _, r := range result.RecentSealed {
+					when := "(time unknown)"
+					if r.WhenSeconds >= 0 {
+						when = formatElapsed(r.WhenSeconds) + " ago"
+					}
+					actor := ""
+					if r.ActorName != "" {
+						actor = " by " + r.ActorName
+					}
+					fmt.Printf("  %s  %s%s — %s\n",
+						r.IntentID, truncate(r.Title, 60), actor, when)
+				}
+			}
+			if len(result.Suggestions) > 0 {
+				fmt.Println("\nSuggestions:")
+				for _, s := range result.Suggestions {
+					fmt.Printf("  %s\n", s)
+				}
+			}
 		}
 	},
 }
