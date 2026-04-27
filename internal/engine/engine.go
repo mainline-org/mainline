@@ -586,7 +586,7 @@ func (s *Service) Status() (*StatusResult, error) {
 	// rc7+ daily-entry-point blocks. Each is a derived rollup over
 	// data already in the view + drafts dir; status performs no new
 	// git work beyond what the prior CoverageWindow call did.
-	result.UnsealedDrafts = s.collectUnsealedDrafts(branch)
+	result.UnsealedDrafts = s.collectUnsealedDrafts(branch, view)
 	result.RecentSealed = collectRecentSealed(view, statusRecentSealedLimit)
 	result.Suggestions = buildStatusSuggestions(result)
 
@@ -602,10 +602,24 @@ const statusRecentSealedLimit = 3
 // draft in drafting or sealed_local state across all branches. The
 // current-branch active draft (already in result.ActiveIntent) is
 // excluded so it's not double-printed.
-func (s *Service) collectUnsealedDrafts(currentBranch string) []StatusUnsealedDraft {
+//
+// Cross-referenced against the view: a draft file may say
+// "sealed_local" while the view (from sync's auto-pin) already
+// reports the intent as merged. Trusting only the draft file would
+// surface "Unsealed intents: <id>" and a "resume" suggestion for an
+// intent the team already considers landed — exactly the kind of
+// stale-suggestion that destroys trust in `mainline status`.
+func (s *Service) collectUnsealedDrafts(currentBranch string, view *domain.MainlineView) []StatusUnsealedDraft {
 	ids, _ := s.Store.ListDrafts()
 	if len(ids) == 0 {
 		return nil
+	}
+	// Index the view's authoritative status per intent id.
+	viewStatus := make(map[string]domain.IntentStatus)
+	if view != nil {
+		for _, iv := range view.Intents {
+			viewStatus[iv.IntentID] = iv.Status
+		}
 	}
 	now := time.Now().UTC()
 	var out []StatusUnsealedDraft
@@ -616,6 +630,17 @@ func (s *Service) collectUnsealedDrafts(currentBranch string) []StatusUnsealedDr
 		}
 		if d.Status != domain.StatusDrafting && d.Status != domain.StatusSealedLocal {
 			continue
+		}
+		// View-overrides-draft: if sync has progressed this intent
+		// past sealed_local, the draft file is stale. Treat the
+		// view's status as truth.
+		if vs, ok := viewStatus[id]; ok {
+			if vs == domain.StatusMerged ||
+				vs == domain.StatusAbandoned ||
+				vs == domain.StatusSuperseded ||
+				vs == domain.StatusReverted {
+				continue
+			}
 		}
 		// Skip the active draft on the current branch — it's
 		// already shown via ActiveIntent.
