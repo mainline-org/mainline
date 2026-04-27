@@ -132,8 +132,9 @@ type DispatchSettings struct {
 	AutoSyncOnSessionStart bool
 }
 
-// DefaultDispatchSettings: hooks installed implies sync-on-start. No
-// other auto-flow toggles exist — start/append/seal are agent jobs.
+// DefaultDispatchSettings returns the default dispatcher toggles:
+// hooks installed implies sync-on-start. No other auto-flow toggles
+// exist — start/append/seal are agent jobs.
 func DefaultDispatchSettings() DispatchSettings {
 	return DispatchSettings{
 		Enabled:                true,
