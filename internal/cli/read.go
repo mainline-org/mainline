@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mainline-org/mainline/internal/engine"
 )
 
 var logLimit int
@@ -141,9 +143,41 @@ var showCmd = &cobra.Command{
 	},
 }
 
+var (
+	contextCurrent bool
+	contextFiles   []string
+	contextQuery   string
+	contextLimit   int
+)
+
 var contextCmd = &cobra.Command{
 	Use:   "context",
-	Short: "Show full context for agent consumption",
+	Short: "Retrieve relevant historical intents before editing code",
+	Long: `Intent-first context retrieval for coding agents.
+
+Three modes — pick one:
+
+  --current               retrieve intents relevant to the current
+                          repo state (active draft goal + diff vs main)
+  --files <path>...       retrieve intents that touched these files
+  --query "<text>"        retrieve intents whose decisions / risks /
+                          summary match these keywords
+
+Output is compact and ranked. Each intent comes with its top
+decisions / risks / fingerprint plus copy-paste follow-ups
+(` + "`mainline show`" + ` / ` + "`trace`" + `) for full detail.
+
+Default workflow for agents:
+
+  1. mainline status                       (overall state)
+  2. mainline context --current --json     (relevant prior intents)
+  3. read decisions / risks of those intents
+  4. THEN grep / read code to verify against current implementation
+  5. THEN edit
+
+Bare ` + "`mainline context`" + ` (no flags) is the legacy state-dump form
+kept for backwards compatibility; new agent guidance points at the
+mode flags above.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -151,6 +185,39 @@ var contextCmd = &cobra.Command{
 			return
 		}
 
+		// Mode flags take priority over the legacy state-dump.
+		// Exactly one mode flag at a time keeps the contract simple.
+		retrievalMode := ""
+		switch {
+		case contextCurrent:
+			retrievalMode = "current"
+		case len(contextFiles) > 0:
+			retrievalMode = "files"
+		case contextQuery != "":
+			retrievalMode = "query"
+		}
+
+		if retrievalMode != "" {
+			req := engine.ContextRetrievalRequest{
+				Mode:  retrievalMode,
+				Files: contextFiles,
+				Query: contextQuery,
+				Limit: contextLimit,
+			}
+			result, err := svc.RetrieveContext(req)
+			if err != nil {
+				outputError(err)
+				return
+			}
+			if jsonOutput {
+				outputJSON(result)
+				return
+			}
+			printContextRetrievalText(result)
+			return
+		}
+
+		// Legacy state-dump path (no mode flag).
 		result, err := svc.Context()
 		if err != nil {
 			outputError(err)
@@ -174,6 +241,9 @@ var contextCmd = &cobra.Command{
 			if len(result.MergedRecent) > 0 {
 				fmt.Printf("Merged:     %d intent(s)\n", len(result.MergedRecent))
 			}
+			fmt.Println()
+			fmt.Println("Tip: for ranked retrieval before editing, run:")
+			fmt.Println("  mainline context --current --json")
 		}
 	},
 }
@@ -242,4 +312,72 @@ func init() {
 	logCmd.Flags().IntVar(&logLimit, "limit", 0, "max intents to show (default: from config)")
 	logCmd.Flags().StringVar(&logStatus, "status", "", "filter by status (drafting, sealed_local, proposed, merged, abandoned, superseded, reverted)")
 	logCmd.Flags().BoolVar(&logSync, "sync", false, "sync with team before showing the log")
+
+	contextCmd.Flags().BoolVar(&contextCurrent, "current", false,
+		"retrieve intents relevant to the current repo state (active draft + diff vs main)")
+	contextCmd.Flags().StringSliceVar(&contextFiles, "files", nil,
+		"retrieve intents that touched these files (repeat or comma-separate)")
+	contextCmd.Flags().StringVar(&contextQuery, "query", "",
+		"retrieve intents whose decisions / risks / summary match these keywords")
+	contextCmd.Flags().IntVar(&contextLimit, "limit", 0,
+		"max intents to return (default 5)")
+}
+
+// printContextRetrievalText renders ContextRetrievalResult as flat
+// human-readable text. JSON is the agent default; text exists for
+// quick interactive inspection.
+func printContextRetrievalText(r *engine.ContextRetrievalResult) {
+	fmt.Printf("Mode: %s", r.Query.Mode)
+	if len(r.Query.Files) > 0 {
+		fmt.Printf("  files=%v", r.Query.Files)
+	}
+	if r.Query.Text != "" {
+		fmt.Printf("  text=%q", r.Query.Text)
+	}
+	fmt.Println()
+	fmt.Println()
+
+	if len(r.RelevantIntents) == 0 {
+		fmt.Println("No relevant intents found above the relevance threshold.")
+		fmt.Println("Run `mainline log` to browse the full intent history.")
+	} else {
+		fmt.Printf("Relevant intents (%d):\n", len(r.RelevantIntents))
+		for _, ri := range r.RelevantIntents {
+			fmt.Printf("\n  %s  [%s]  score=%.2f\n", ri.IntentID, ri.Status, ri.Relevance.Score)
+			if ri.Title != "" {
+				fmt.Printf("    %s\n", ri.Title)
+			}
+			if len(ri.Relevance.Reasons) > 0 {
+				fmt.Printf("    why: %s\n", strings.Join(ri.Relevance.Reasons, "; "))
+			}
+			if ri.Summary != "" {
+				fmt.Printf("    %s\n", ri.Summary)
+			}
+			if len(ri.Decisions) > 0 {
+				fmt.Println("    decisions:")
+				for _, d := range ri.Decisions {
+					fmt.Printf("      - %s\n", d)
+				}
+			}
+			if len(ri.Risks) > 0 {
+				fmt.Println("    risks:")
+				for _, k := range ri.Risks {
+					fmt.Printf("      - %s\n", k)
+				}
+			}
+			if ri.SupersededBy != "" {
+				fmt.Printf("    superseded by: %s\n", ri.SupersededBy)
+			}
+			if show := ri.Followups["show"]; show != "" {
+				fmt.Printf("    full: %s\n", show)
+			}
+		}
+	}
+
+	if len(r.Guidance) > 0 {
+		fmt.Println()
+		for _, g := range r.Guidance {
+			fmt.Printf("⚠ %s\n", g)
+		}
+	}
 }

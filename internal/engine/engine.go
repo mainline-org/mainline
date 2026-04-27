@@ -745,8 +745,11 @@ func buildStatusSuggestions(r *StatusResult) []string {
 	var out []string
 	switch {
 	case r.ActiveIntent != nil && r.ActiveIntent.Status == domain.StatusDrafting:
-		// Mid-flight intent on the current branch.
+		// Mid-flight intent on the current branch. Lead with
+		// context --current so the agent reads relevant historical
+		// intents BEFORE editing — the rc8 intent-first rule.
 		out = append(out,
+			"mainline context --current --json   # relevant prior intents BEFORE editing",
 			fmt.Sprintf("mainline append \"<what changed>\"   # record progress on %s", r.ActiveIntent.IntentID),
 			"mainline seal --prepare > seal.json   # then fill seal.json and submit")
 	case r.ActiveIntent != nil && r.ActiveIntent.Status == domain.StatusSealedLocal:
@@ -761,7 +764,8 @@ func buildStatusSuggestions(r *StatusResult) []string {
 	default:
 		// Clean state — prompt for a new intent.
 		out = append(out,
-			"mainline start \"<the user's goal>\"   # claim a new intent")
+			"mainline start \"<the user's goal>\"   # claim a new intent",
+			"mainline context --current --json   # relevant prior intents (before editing)")
 	}
 	// Sync staleness is a separate axis — append regardless.
 	if r.SyncStale {
