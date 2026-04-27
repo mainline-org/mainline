@@ -156,6 +156,41 @@ func TestStatus_SuggestionsCleanRepoSuggestsStart(t *testing.T) {
 	}
 }
 
+// Alpha-walkthrough regression: a draft file may say sealed_local
+// while the view (rebuilt from sync's auto-pin) already shows the
+// intent as merged. Pre-fix, status surfaced the stale draft as
+// "Unsealed intents" and the Suggestions block proposed
+// `git checkout … && mainline status # resume <id>` for an intent
+// the team had already landed. Status should trust the view.
+func TestStatus_UnsealedDraftsIgnoresIntentsAlreadyMergedInView(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	id, _ := seedMergedIntent(t, dir, svc, "view-overrides", "vo.go")
+	gitCmd(t, dir, "checkout", "main")
+	if _, err := svc.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	for _, d := range res.UnsealedDrafts {
+		if d.IntentID == id {
+			t.Fatalf("merged-in-view intent %s should not surface in UnsealedDrafts; got %+v", id, d)
+		}
+	}
+	for _, sug := range res.Suggestions {
+		if strings.Contains(sug, id) && strings.Contains(sug, "resume") {
+			t.Errorf("suggestions should not propose resuming a merged intent; got %q", sug)
+		}
+	}
+}
+
 func TestStatus_SuggestionsResumeOrphanBranchWhenIdle(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
