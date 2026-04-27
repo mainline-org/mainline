@@ -135,6 +135,7 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 			"^Merge pull request ",
 			"^Merge branch ",
 			"^chore: bump version",
+			"^mainline: init",
 		}
 	}
 	return &cfg, nil
