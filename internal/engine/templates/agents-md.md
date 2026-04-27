@@ -70,13 +70,48 @@ Use this aggressively. The cost is one or two CLI calls; the payoff
 is correct architectural decisions and not duplicating someone's
 just-finished work.
 
-### While working
+### Turns and intent history
 
-After each meaningful logical change (a feature added, a bug
-isolated, a test introduced), record one turn:
+Turns are a lightweight thinking scaffold used to prepare a good
+seal. They are **not** expected to be a real-time activity log.
+
+It is normal for several turns to be recorded together near seal
+time, especially when an agent summarizes its work before sealing.
+`mainline trace` will surface this honestly via the
+`append_turns_recorded_together` flag — that is informational, not a
+warning.
+
+Use:
 
 ```
-mainline append "<specific description of what changed>" --json
+mainline show <intent_id> --json
+```
+
+to inspect the structured conclusion of an intent: summary,
+decisions, risks, and fingerprint.
+
+Use:
+
+```
+mainline trace <intent_id> --json
+```
+
+to inspect how an intent unfolded over time: start, append, seal,
+abandon, or supersede events.
+
+`show` answers: *"What did this intent decide?"*
+`trace` answers: *"How did this intent unfold?"*
+
+### While working
+
+Record turns at points that will help you write a good seal — when
+a meaningful subtask completes, when you pivot, when a discovery
+changes the plan. Many short turns or a few long turns are both
+fine; what matters is that the seal author (you, later) has the
+material to compose a faithful summary:
+
+```
+mainline append "<what changed and why>" --json
 ```
 
 Turns are append-only. Don't try to amend or delete them — describe
