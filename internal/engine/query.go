@@ -438,7 +438,8 @@ func (s *Service) ThreadNew(name string) (*ThreadNewResult, error) {
 		if mainHead == "" {
 			mainHead = base
 		}
-		s.Git.CreateBranch(gitBranch, mainHead)
+		// Best-effort: branch may already exist (idempotent re-run).
+		_ = s.Git.CreateBranch(gitBranch, mainHead)
 	}
 
 	thread := &domain.Thread{

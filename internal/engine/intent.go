@@ -111,10 +111,10 @@ func (s *Service) StartWithOptions(goal string, thread string, opts *StartOption
 			Status:     "active",
 			CreatedAt:  now,
 		}
-		s.Store.WriteThread(t)
+		_ = s.Store.WriteThread(t)
 	} else {
 		t.Intents = append(t.Intents, intentID)
-		s.Store.WriteThread(t)
+		_ = s.Store.WriteThread(t)
 	}
 
 	res := &StartResult{

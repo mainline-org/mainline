@@ -50,7 +50,7 @@ func NewRecoverableError(code ErrorCode, msg string, actions ...string) *Mainlin
 
 // JSONErrorResponse is the top-level JSON error envelope.
 type JSONErrorResponse struct {
-	OK    bool          `json:"ok"`
+	OK    bool           `json:"ok"`
 	Error *MainlineError `json:"error"`
 }
 

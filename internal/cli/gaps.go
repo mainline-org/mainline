@@ -51,4 +51,3 @@ paths ordered by reversibility (reset > backfill > skip).`,
 			result.Covered, len(result.Skipped), len(result.Uncovered))
 	},
 }
-
