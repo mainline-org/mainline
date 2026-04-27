@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -443,6 +444,51 @@ type StatusResult struct {
 	// on main. Surfaced by default in `mainline status`. Detail view
 	// is the separate `mainline gaps` command.
 	Coverage *StatusCoverageSummary `json:"coverage,omitempty"`
+
+	// rc7+: status as the daily entry point.
+	//
+	// UnsealedDrafts surfaces work the user (or the agent that did
+	// it) might have forgotten — drafts in drafting or sealed_local
+	// state on ANY branch, not just the current one. A common
+	// pre-this-version failure was: agent starts work on
+	// feature/A, gets pulled to feature/B, comes back two days
+	// later — `mainline status` on feature/B never mentioned the
+	// orphan draft on feature/A.
+	UnsealedDrafts []StatusUnsealedDraft `json:"unsealed_drafts,omitempty"`
+
+	// RecentSealed lists the last few intents that landed on main
+	// — informational, helps a user re-enter "what just happened"
+	// without running a separate `mainline log`. Capped to keep the
+	// status output short.
+	RecentSealed []StatusRecentIntent `json:"recent_sealed,omitempty"`
+
+	// Suggestions are actionable next-step CLI commands derived
+	// from the rest of StatusResult. The CLI prints them as a
+	// "Suggestions:" block under the main rollup.
+	Suggestions []string `json:"suggestions,omitempty"`
+}
+
+// StatusUnsealedDraft is the per-draft summary surfaced under
+// "Unsealed intents" in `mainline status`.
+type StatusUnsealedDraft struct {
+	IntentID   string `json:"intent_id"`
+	Goal       string `json:"goal"`
+	GitBranch  string `json:"git_branch"`
+	Status     string `json:"status"` // drafting | sealed_local
+	TurnCount  int    `json:"turn_count"`
+	AgeSeconds int64  `json:"age_seconds"`
+}
+
+// StatusRecentIntent is the per-intent summary in the "Recent sealed
+// intents" block. Just enough to answer "what landed recently"
+// without sending the user to `mainline log`.
+type StatusRecentIntent struct {
+	IntentID         string `json:"intent_id"`
+	Title            string `json:"title"`
+	Status           string `json:"status"`
+	ActorName        string `json:"actor_name,omitempty"`
+	WhenSeconds      int64  `json:"when_seconds_ago"`
+	MergedMainCommit string `json:"merged_main_commit,omitempty"`
 }
 
 // StatusCoverageSummary is the compact coverage rollup carried in
@@ -513,7 +559,8 @@ func (s *Service) Status() (*StatusResult, error) {
 	// facts (notes ref, commit messages); cheap thanks to cat-file
 	// --batch (already shipped). Errors are non-fatal — coverage is
 	// nice-to-have, not load-bearing for status.
-	if view, _ := s.Store.ReadMainlineView(); view != nil {
+	view, _ := s.Store.ReadMainlineView()
+	if view != nil {
 		cfg, _ := s.getTeamConfig()
 		if cfg != nil {
 			window := CoverageWindowSize
@@ -536,7 +583,169 @@ func (s *Service) Status() (*StatusResult, error) {
 		}
 	}
 
+	// rc7+ daily-entry-point blocks. Each is a derived rollup over
+	// data already in the view + drafts dir; status performs no new
+	// git work beyond what the prior CoverageWindow call did.
+	result.UnsealedDrafts = s.collectUnsealedDrafts(branch)
+	result.RecentSealed = collectRecentSealed(view, statusRecentSealedLimit)
+	result.Suggestions = buildStatusSuggestions(result)
+
 	return result, nil
+}
+
+// statusRecentSealedLimit caps the "Recent sealed intents" block.
+// Three is the median count that fits inline without forcing a
+// scroll on a typical terminal; users wanting more run `mainline log`.
+const statusRecentSealedLimit = 3
+
+// collectUnsealedDrafts walks the drafts directory and returns every
+// draft in drafting or sealed_local state across all branches. The
+// current-branch active draft (already in result.ActiveIntent) is
+// excluded so it's not double-printed.
+func (s *Service) collectUnsealedDrafts(currentBranch string) []StatusUnsealedDraft {
+	ids, _ := s.Store.ListDrafts()
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	var out []StatusUnsealedDraft
+	for _, id := range ids {
+		d, err := s.Store.ReadDraft(id)
+		if err != nil || d == nil {
+			continue
+		}
+		if d.Status != domain.StatusDrafting && d.Status != domain.StatusSealedLocal {
+			continue
+		}
+		// Skip the active draft on the current branch — it's
+		// already shown via ActiveIntent.
+		if d.Status == domain.StatusDrafting && d.GitBranch == currentBranch {
+			continue
+		}
+		turns, _ := s.Store.ReadTurns(id)
+		var ageSec int64
+		if t, err := time.Parse(time.RFC3339, d.CreatedAt); err == nil {
+			ageSec = int64(now.Sub(t).Seconds())
+		}
+		out = append(out, StatusUnsealedDraft{
+			IntentID:   id,
+			Goal:       d.Goal,
+			GitBranch:  d.GitBranch,
+			Status:     string(d.Status),
+			TurnCount:  len(turns),
+			AgeSeconds: ageSec,
+		})
+	}
+	// Newest first — recency dominates relevance for "did I forget
+	// something" recall. Same-second ties broken stably by intent id.
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].AgeSeconds < out[j].AgeSeconds
+	})
+	return out
+}
+
+// collectRecentSealed picks the last N merged intents from the view
+// by sealed_at descending. Cross-actor included (the user wants to
+// see "what landed recently" regardless of who did it).
+func collectRecentSealed(view *domain.MainlineView, limit int) []StatusRecentIntent {
+	if view == nil || limit <= 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	type candidate struct {
+		summary    StatusRecentIntent
+		sortKeySec int64
+	}
+	var pool []candidate
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusMerged {
+			continue
+		}
+		title := iv.Goal
+		if iv.Summary != nil && iv.Summary.Title != "" {
+			title = iv.Summary.Title
+		}
+		var ago int64 = -1
+		if iv.SealedAt != "" {
+			if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil {
+				ago = int64(now.Sub(t).Seconds())
+			}
+		}
+		pool = append(pool, candidate{
+			summary: StatusRecentIntent{
+				IntentID:         iv.IntentID,
+				Title:            title,
+				Status:           string(iv.Status),
+				ActorName:        iv.ActorName,
+				WhenSeconds:      ago,
+				MergedMainCommit: iv.StatusEvidence.MergedMainCommit,
+			},
+			sortKeySec: ago,
+		})
+	}
+	// Sort by recency: smallest WhenSeconds (most recent) first;
+	// unknown timestamps (-1) sort last via the explicit guard.
+	sort.SliceStable(pool, func(i, j int) bool {
+		ai, aj := pool[i].sortKeySec, pool[j].sortKeySec
+		if ai < 0 {
+			return false
+		}
+		if aj < 0 {
+			return true
+		}
+		return ai < aj
+	})
+	if len(pool) > limit {
+		pool = pool[:limit]
+	}
+	out := make([]StatusRecentIntent, len(pool))
+	for i, c := range pool {
+		out[i] = c.summary
+	}
+	return out
+}
+
+// buildStatusSuggestions derives a short list of next-step commands
+// from the assembled status. The goal is "obvious next thing" — not
+// an exhaustive cookbook. Order matches the natural daily flow:
+// active intent first, then unsealed work elsewhere, then setup
+// repair, then a fresh start prompt.
+func buildStatusSuggestions(r *StatusResult) []string {
+	if !r.Initialized {
+		return []string{"mainline init --actor-name \"<your name>\""}
+	}
+	if !r.IdentityConfigured {
+		return []string{"mainline init --actor-name \"<your name>\""}
+	}
+	var out []string
+	switch {
+	case r.ActiveIntent != nil && r.ActiveIntent.Status == domain.StatusDrafting:
+		// Mid-flight intent on the current branch.
+		out = append(out,
+			fmt.Sprintf("mainline append \"<what changed>\"   # record progress on %s", r.ActiveIntent.IntentID),
+			"mainline seal --prepare > seal.json   # then fill seal.json and submit")
+	case r.ActiveIntent != nil && r.ActiveIntent.Status == domain.StatusSealedLocal:
+		// Sealed but not yet pushed.
+		out = append(out,
+			fmt.Sprintf("mainline publish --intent %s   # push the actor log to the team", r.ActiveIntent.IntentID))
+	case len(r.UnsealedDrafts) > 0:
+		// Work elsewhere worth resuming.
+		d := r.UnsealedDrafts[0]
+		out = append(out,
+			fmt.Sprintf("git checkout %s && mainline status   # resume %s", d.GitBranch, d.IntentID))
+	default:
+		// Clean state — prompt for a new intent.
+		out = append(out,
+			"mainline start \"<the user's goal>\"   # claim a new intent")
+	}
+	// Sync staleness is a separate axis — append regardless.
+	if r.SyncStale {
+		out = append(out, "mainline sync   # team view is stale")
+	}
+	if r.Coverage != nil && r.Coverage.UncoveredCount > 0 {
+		out = append(out, "mainline gaps   # uncovered commits with rescue options")
+	}
+	return out
 }
 
 // CoverageWindowSize controls how many recent commits on main `mainline

@@ -1,0 +1,180 @@
+package engine
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/mainline-org/mainline/internal/domain"
+)
+
+// rc7+ status-as-daily-entry-point tests. Each block (UnsealedDrafts,
+// RecentSealed, Suggestions) has at least one focused case here so a
+// regression is caught at the engine layer regardless of CLI rendering.
+
+func TestStatus_UnsealedDraftsSurfacesOtherBranches(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// Drafting intent on feature/orphan, then return to main.
+	gitCmd(t, dir, "checkout", "-b", "feature/orphan")
+	orphan, err := svc.Start("orphaned in another branch", "")
+	if err != nil {
+		t.Fatalf("start orphan: %v", err)
+	}
+	if _, err := svc.Append("did some work"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	gitCmd(t, dir, "checkout", "main")
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if len(res.UnsealedDrafts) == 0 {
+		t.Fatalf("expected the orphan draft to surface in UnsealedDrafts")
+	}
+	found := false
+	for _, d := range res.UnsealedDrafts {
+		if d.IntentID == orphan.IntentID {
+			found = true
+			if d.GitBranch != "feature/orphan" {
+				t.Errorf("expected GitBranch=feature/orphan, got %s", d.GitBranch)
+			}
+			if d.Status != string(domain.StatusDrafting) {
+				t.Errorf("expected drafting status, got %s", d.Status)
+			}
+			if d.TurnCount != 1 {
+				t.Errorf("expected 1 turn, got %d", d.TurnCount)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("orphan intent %s missing from UnsealedDrafts", orphan.IntentID)
+	}
+
+	// Confirm the active draft on the CURRENT branch is NOT
+	// double-counted in UnsealedDrafts (it's already shown via
+	// ActiveIntent on the main rollup).
+	gitCmd(t, dir, "checkout", "-b", "feature/active")
+	active, _ := svc.Start("active on current branch", "")
+
+	res, err = svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if res.ActiveIntent == nil || res.ActiveIntent.IntentID != active.IntentID {
+		t.Fatalf("expected ActiveIntent=%s, got %+v", active.IntentID, res.ActiveIntent)
+	}
+	for _, d := range res.UnsealedDrafts {
+		if d.IntentID == active.IntentID {
+			t.Errorf("active draft on current branch should NOT appear in UnsealedDrafts (already in ActiveIntent)")
+		}
+	}
+}
+
+func TestStatus_RecentSealedListsLatestMerged(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	id1, _ := seedMergedIntent(t, dir, svc, "rec-1", "r1.go")
+	id2, _ := seedMergedIntent(t, dir, svc, "rec-2", "r2.go")
+	id3, _ := seedMergedIntent(t, dir, svc, "rec-3", "r3.go")
+	gitCmd(t, dir, "checkout", "main")
+	if _, err := svc.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if len(res.RecentSealed) == 0 {
+		t.Fatalf("expected RecentSealed populated, got empty")
+	}
+	if len(res.RecentSealed) > statusRecentSealedLimit {
+		t.Fatalf("RecentSealed exceeded limit %d, got %d",
+			statusRecentSealedLimit, len(res.RecentSealed))
+	}
+	seen := make(map[string]bool)
+	for _, r := range res.RecentSealed {
+		seen[r.IntentID] = true
+		if r.Status != string(domain.StatusMerged) {
+			t.Errorf("RecentSealed entry must have status=merged, got %s for %s",
+				r.Status, r.IntentID)
+		}
+	}
+	// At least one of the three seeded ids should be in there.
+	if !seen[id1] && !seen[id2] && !seen[id3] {
+		t.Fatalf("none of the seeded merged intents (%s, %s, %s) appear in RecentSealed",
+			id1, id2, id3)
+	}
+}
+
+func TestStatus_SuggestionsActiveDraftingIntent(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+	gitCmd(t, dir, "checkout", "-b", "feature/suggestions")
+	svc.Start("test suggestions", "")
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	joined := strings.Join(res.Suggestions, "\n")
+	if !strings.Contains(joined, "mainline append") {
+		t.Errorf("suggestions for drafting intent should mention `mainline append`, got: %v", res.Suggestions)
+	}
+	if !strings.Contains(joined, "mainline seal --prepare") {
+		t.Errorf("suggestions for drafting intent should mention seal --prepare, got: %v", res.Suggestions)
+	}
+}
+
+func TestStatus_SuggestionsCleanRepoSuggestsStart(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+	// On main, no active intent.
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	joined := strings.Join(res.Suggestions, " ")
+	if !strings.Contains(joined, "mainline start") {
+		t.Errorf("clean-repo suggestions should prompt `mainline start`, got: %v", res.Suggestions)
+	}
+}
+
+func TestStatus_SuggestionsResumeOrphanBranchWhenIdle(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	gitCmd(t, dir, "checkout", "-b", "feature/forgotten")
+	orphan, _ := svc.Start("orphan needs resuming", "")
+	gitCmd(t, dir, "checkout", "main")
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	joined := strings.Join(res.Suggestions, "\n")
+	if !strings.Contains(joined, "git checkout feature/forgotten") {
+		t.Errorf("idle-but-orphan suggestions should propose checking out the orphan branch, got: %v", res.Suggestions)
+	}
+	if !strings.Contains(joined, orphan.IntentID) {
+		t.Errorf("suggestion should reference the orphan intent id %s, got: %v", orphan.IntentID, res.Suggestions)
+	}
+}
