@@ -1,6 +1,49 @@
+# golangci-lint configuration for mainline.
+#
+# Two design choices, both deliberate:
+#
+# 1. disable-all + opt-in. The default golangci-lint linter set rotates
+#    over time and would silently turn things on across releases — bad
+#    for a CI gate we want stable. Opt-in keeps the contract explicit.
+#
+# 2. Stricter on production code than on tests. errcheck on test files
+#    is mostly noise (the test framework catches the failure another
+#    way) so we exclude *_test.go from a couple of checks. Tests still
+#    get the bug-finder linters (govet, ineffassign, staticcheck).
+
 linters:
   disable-all: true
   enable:
+    # Bug finders — pre-existing baseline.
     - govet
     - ineffassign
     - staticcheck
+
+    # Real-bug catchers we add to the gate.
+    - errcheck      # unchecked error returns
+    - unused        # dead code (function / var / const)
+    - unconvert     # unnecessary type conversions
+
+    # Cheap quality nits.
+    - misspell      # typos in comments / strings
+    - gocritic      # micro-checks (assignOp, ifElseChain, etc.)
+    - unparam       # unused function parameters
+
+issues:
+  exclude-rules:
+    # Test files may ignore errors from setup helpers (svc.Init,
+    # svc.Sync, svc.Append, WriteTeamConfig, etc.) — the failure mode
+    # is the test failing on a later assertion. Production code stays
+    # under errcheck so the abandon-bug class is caught.
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gocritic
+    # bench_test.go discards results on purpose (we only care about timing).
+    - path: bench_test\.go
+      linters:
+        - errcheck
+
+  # Show every issue rather than the default cap of 50.
+  max-issues-per-linter: 0
+  max-same-issues: 0

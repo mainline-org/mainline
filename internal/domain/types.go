@@ -287,7 +287,7 @@ type SealPreparePackage struct {
 		Removed      int      `json:"removed"`
 		FilesChanged []string `json:"files_changed"`
 	} `json:"diff_summary"`
-	ChangedFiles []FileChange `json:"changed_files"`
+	ChangedFiles []FileChange  `json:"changed_files"`
 	Snapshot     *SealSnapshot `json:"snapshot,omitempty"`
 	Instruction  string        `json:"instruction"`
 }
@@ -296,11 +296,11 @@ type SealPreparePackage struct {
 // validates these fields against the live repo to prevent stale-prepare
 // submissions and silently dirty seals.
 type SealSnapshot struct {
-	PreparedAt        string       `json:"prepared_at"`
-	ChangedFiles      []FileChange `json:"changed_files"`
-	WorktreeStatus    string       `json:"worktree_status"`              // "clean" | "dirty" | "untracked"
-	WorktreeDirtyFiles []string    `json:"worktree_dirty_files,omitempty"`
-	EvidenceComplete  bool         `json:"evidence_complete"`
+	PreparedAt         string       `json:"prepared_at"`
+	ChangedFiles       []FileChange `json:"changed_files"`
+	WorktreeStatus     string       `json:"worktree_status"` // "clean" | "dirty" | "untracked"
+	WorktreeDirtyFiles []string     `json:"worktree_dirty_files,omitempty"`
+	EvidenceComplete   bool         `json:"evidence_complete"`
 }
 
 // CheckJudgmentResult is submitted by agents after semantic conflict analysis.

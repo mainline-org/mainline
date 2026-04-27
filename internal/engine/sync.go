@@ -74,7 +74,10 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// the user resolves explicitly via git.
 		actorRefspec := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/origin/%s/*",
 			cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
-		s.Git.Fetch(s.remoteName(),
+		// Network fetch is best-effort: a transient network failure
+		// should let the rest of sync run against local refs (the
+		// freshness window from PR #20 already handles staleness).
+		_ = s.Git.Fetch(s.remoteName(),
 			cfg.Mainline.MainBranch,
 			actorRefspec,
 			"+refs/notes/mainline/*:refs/notes/mainline/*",
@@ -103,9 +106,11 @@ func (s *Service) Sync() (*SyncResult, error) {
 		}
 	}
 
-	// Rebuild proposed index
+	// Rebuild proposed index. The view is the source of truth; this
+	// index is a derived cache for fast list-proposals lookups, so
+	// write failure here just means the next sync re-derives.
 	idx := s.rebuildProposedIndex(view)
-	s.Store.WriteProposedIndex(idx)
+	_ = s.Store.WriteProposedIndex(idx)
 
 	// rc5: compute the delta the LastSync record and auto-check both
 	// need. New = appeared this sync; we do not warn about pairs we
@@ -140,7 +145,8 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// is brand-new this sync, so users do not re-see warnings
 		// they already acknowledged on a previous sync.
 		all := s.detectSyncConflicts(view, cfg.Check.Phase1Threshold, nil)
-		s.Store.WritePhase1Warnings(&domain.Phase1WarningsCache{
+		// Cache failure is non-fatal — next sync recomputes.
+		_ = s.Store.WritePhase1Warnings(&domain.Phase1WarningsCache{
 			SchemaVersion: 1,
 			UpdatedAt:     core.Now(),
 			Pairs:         all,
@@ -165,7 +171,9 @@ func (s *Service) Sync() (*SyncResult, error) {
 	if identity != nil {
 		actorID = identity.ActorID
 	}
-	s.Store.WriteLastSync(&domain.LastSync{
+	// Cache failure here just means the next status command shows
+	// "never synced" — recoverable without user action.
+	_ = s.Store.WriteLastSync(&domain.LastSync{
 		At:            core.Now(),
 		ByActor:       actorID,
 		MainHead:      view.MainHead,
@@ -323,7 +331,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 	}
 
 	// Scan main branch notes for merge evidence (rc3: notes replace trailers)
-	s.scanMainNotes(cfg, mainRef, intentMap)
+	s.scanMainNotes(mainRef, intentMap)
 
 	for _, iv := range intentMap {
 		view.Intents = append(view.Intents, *iv)
@@ -453,7 +461,7 @@ type notedCommitData struct {
 	raw   string
 }
 
-func (s *Service) scanMainNotes(cfg *domain.TeamConfig, mainRef string, intentMap map[string]*domain.IntentView) {
+func (s *Service) scanMainNotes(mainRef string, intentMap map[string]*domain.IntentView) {
 	notes, err := s.Git.NotesListEntries()
 	if err != nil || len(notes) == 0 {
 		return

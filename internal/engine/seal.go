@@ -68,11 +68,11 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	dirty := append([]string{}, wt.DirtyFiles...)
 	dirty = append(dirty, wt.Untracked...)
 	snapshot := &domain.SealSnapshot{
-		PreparedAt:        core.Now(),
-		ChangedFiles:      changes,
-		WorktreeStatus:    wt.Status,
+		PreparedAt:         core.Now(),
+		ChangedFiles:       changes,
+		WorktreeStatus:     wt.Status,
 		WorktreeDirtyFiles: dirty,
-		EvidenceComplete:  wt.Status == "clean",
+		EvidenceComplete:   wt.Status == "clean",
 	}
 
 	pkg := &domain.SealPreparePackage{
@@ -197,11 +197,11 @@ type SealSubmitResult struct {
 
 // SealSubmitOptions controls the rc5+ seal-submit augmentations.
 //
-//   Offline    skips the post-seal sync + phase1 check (CLI --offline)
-//   AllowDirty bypasses the v0.3 snapshot-contract worktree check
-//              (CLI --allow-dirty). Dirty seals still proceed but the
-//              IntentSealedEvent permanently records the worktree state
-//              so reviewers see the audit trail.
+//	Offline    skips the post-seal sync + phase1 check (CLI --offline)
+//	AllowDirty bypasses the v0.3 snapshot-contract worktree check
+//	           (CLI --allow-dirty). Dirty seals still proceed but the
+//	           IntentSealedEvent permanently records the worktree state
+//	           so reviewers see the audit trail.
 type SealSubmitOptions struct {
 	Offline    bool
 	AllowDirty bool
@@ -342,10 +342,12 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		warning = "Sealed locally (--offline). Run 'mainline publish' when online."
 	}
 
-	// Update draft status to final status
+	// Update draft status to final status. Best-effort: a write
+	// failure here just means `mainline status` reads the previous
+	// status until the next sync rebuilds the view from events.
 	draft.Status = finalStatus
 	draft.LastModifiedAt = core.Now()
-	s.Store.WriteDraft(draft)
+	_ = s.Store.WriteDraft(draft)
 
 	result := &SealSubmitResult{
 		IntentID:   sr.IntentID,

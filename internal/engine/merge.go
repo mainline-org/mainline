@@ -81,7 +81,7 @@ func (s *Service) Publish(intentID string) (*PublishResult, error) {
 	if pushed && draft.Status == domain.StatusSealedLocal {
 		draft.Status = domain.StatusProposed
 		draft.LastModifiedAt = core.Now()
-		s.Store.WriteDraft(draft)
+		_ = s.Store.WriteDraft(draft)
 	}
 
 	return &PublishResult{
@@ -161,14 +161,15 @@ func (s *Service) Merge(intentID string) (*MergeResult, error) {
 	// Non-fatal: note write failure doesn't block merge.
 	_ = upsertCommitNote(s.Git, mergeCommit, note)
 
-	// Update draft status
+	// Update draft status. Best-effort: the merge already happened
+	// in git; failure here just means the local draft file lags.
 	draft.Status = domain.StatusMerged
 	draft.LastModifiedAt = core.Now()
-	s.Store.WriteDraft(draft)
+	_ = s.Store.WriteDraft(draft)
 
 	// Push notes if remote exists
 	if s.Git.HasRemote(s.remoteName()) {
-		s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
+		_ = s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
 	}
 
 	return &MergeResult{
@@ -189,20 +190,20 @@ func (s *Service) squashMerge(branch, mainBranch string, draft *domain.DraftInte
 
 	if _, err := s.gitRun("merge", "--squash", branch); err != nil {
 		// Attempt to abort on failure
-		s.gitRun("merge", "--abort")
-		s.gitRun("checkout", branch)
+		_, _ = s.gitRun("merge", "--abort")
+		_, _ = s.gitRun("checkout", branch)
 		return "", fmt.Errorf("squash merge failed: %w", err)
 	}
 
 	if _, err := s.gitRun("commit", "-m", message); err != nil {
-		s.gitRun("checkout", branch)
+		_, _ = s.gitRun("checkout", branch)
 		return "", fmt.Errorf("commit failed: %w", err)
 	}
 
 	head, _ := s.Git.HeadCommit()
 
 	// Return to original branch
-	s.gitRun("checkout", branch)
+	_, _ = s.gitRun("checkout", branch)
 
 	return head, nil
 }
@@ -216,13 +217,13 @@ func (s *Service) regularMerge(branch, mainBranch string, draft *domain.DraftInt
 	message := fmt.Sprintf("Merge %s: %s", branch, draft.Goal)
 
 	if _, err := s.gitRun("merge", "--no-ff", branch, "-m", message); err != nil {
-		s.gitRun("merge", "--abort")
-		s.gitRun("checkout", branch)
+		_, _ = s.gitRun("merge", "--abort")
+		_, _ = s.gitRun("checkout", branch)
 		return "", fmt.Errorf("merge failed: %w", err)
 	}
 
 	head, _ := s.Git.HeadCommit()
-	s.gitRun("checkout", branch)
+	_, _ = s.gitRun("checkout", branch)
 	return head, nil
 }
 
@@ -446,7 +447,7 @@ func (s *Service) Pin() (*PinResult, error) {
 	result.Pinned = len(result.IntentIDs)
 
 	if result.Pinned > 0 && s.Git.HasRemote(s.remoteName()) {
-		s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
+		_ = s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
 	}
 
 	return result, nil
@@ -524,7 +525,7 @@ func (s *Service) PinExplicit(intentID, commitHash string) (*PinnedCommit, error
 		return nil, fmt.Errorf("write note: %w", err)
 	}
 	if s.Git.HasRemote(s.remoteName()) {
-		s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
+		_ = s.Git.Push(s.remoteName(), "refs/notes/mainline/intents")
 	}
 
 	return &PinnedCommit{

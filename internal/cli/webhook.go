@@ -262,7 +262,9 @@ var webhookTestCmd = &cobra.Command{
 		}
 		path := filepath.Join(queueDir, env.EventID+".json")
 		if buf, err := json.MarshalIndent(env, "", "  "); err == nil {
-			os.WriteFile(path, buf, 0o644)
+			// Best-effort: queue persistence is for retry visibility,
+			// not load-bearing for the in-flight delivery below.
+			_ = os.WriteFile(path, buf, 0o644)
 		}
 		sender := webhook.DefaultSender(svc.Store, subs)
 		// bypass filter: a test is a connectivity probe, not a

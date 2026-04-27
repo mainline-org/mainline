@@ -31,7 +31,7 @@ type TeamConfig struct {
 type MainlineSection struct {
 	SchemaVersion     int    `toml:"schema_version"`
 	MainBranch        string `toml:"main_branch"`
-	ActorLogPrefix    string `toml:"actor_log_prefix"` // refs/heads/_mainline/actor
+	ActorLogPrefix    string `toml:"actor_log_prefix"`    // refs/heads/_mainline/actor
 	RequireSealBefore string `toml:"require_seal_before"` // push|merge|never
 	// Remote is the git remote name mainline reads/writes notes and
 	// actor-log refs to. Defaults to "origin" — what `git clone`

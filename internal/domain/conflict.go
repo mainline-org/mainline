@@ -48,7 +48,7 @@ type PartialFingerprint struct {
 // auto-before-command CLI wrapper, and the `mainline status`
 // staleness indicator.
 type LastSync struct {
-	At            string `json:"at"`              // RFC3339
+	At            string `json:"at"` // RFC3339
 	ByActor       string `json:"by_actor"`
 	MainHead      string `json:"main_head"`
 	NewSealedSeen int    `json:"new_sealed_seen"` // delta vs prior LastSync

@@ -52,7 +52,7 @@ func BenchmarkCanonicalJSONLarge(b *testing.B) {
 			},
 		},
 		"fingerprint": map[string]interface{}{
-			"subsystems":   []interface{}{"auth", "middleware", "db"},
+			"subsystems":    []interface{}{"auth", "middleware", "db"},
 			"files_touched": []interface{}{"auth.go", "middleware.go", "db/users.go", "config.go"},
 			"tags":          []interface{}{"security", "feature", "breaking-change"},
 			"api_changes": []interface{}{
@@ -86,7 +86,7 @@ func BenchmarkCanonicalHashLarge(b *testing.B) {
 			"title": "title", "what": "what", "why": "why",
 		},
 		"fingerprint": map[string]interface{}{
-			"subsystems":   []interface{}{"a", "b", "c", "d", "e"},
+			"subsystems":    []interface{}{"a", "b", "c", "d", "e"},
 			"files_touched": []interface{}{"a.go", "b.go", "c.go", "d.go"},
 		},
 	}

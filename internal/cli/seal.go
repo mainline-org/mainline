@@ -35,7 +35,7 @@ var sealCmd = &cobra.Command{
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
-			enc.Encode(pkg)
+			_ = enc.Encode(pkg)
 			return
 		}
 
@@ -80,7 +80,7 @@ var sealCmd = &cobra.Command{
 		}
 
 		// Default: show help
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 

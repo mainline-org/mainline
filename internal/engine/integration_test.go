@@ -320,7 +320,7 @@ func TestCheckPrepareWithOverlap(t *testing.T) {
 		Summary:  domain.IntentSummary{Title: "Auth v2", What: "auth v2", Why: "upgrade"},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   []string{"auth", "middleware"}, // overlaps!
-			FilesTouched: []string{"auth.go"},             // overlaps!
+			FilesTouched: []string{"auth.go"},            // overlaps!
 			Tags:         []string{"security"},
 		},
 		Confidence: domain.SealConfidence{Summary: 0.9, Fingerprint: 0.9},
