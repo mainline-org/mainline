@@ -25,21 +25,38 @@ var (
 // rather than config because it's a product behaviour, not team policy.
 // Any command whose Use line first word appears here is wrapped.
 //
-// Membership criterion: a stale answer would be functionally wrong.
-//   - check: phase1 must compare against the freshest remote intents,
-//     otherwise it under-reports conflicts.
-//   - status / context / list-proposals: these are collaboration
-//     awareness surfaces; stale output hides active team work.
+// Membership criterion: a stale answer would be functionally wrong
+// for the command's primary use case.
+//
+//   - check  — phase1 must compare against the freshest remote
+//              intents, otherwise it under-reports conflicts.
+//   - status — rc7+ daily entry point. The Recent sealed intents
+//              block is "what just landed across the team", and
+//              the Suggestions block reads its own staleness state.
+//              A stale answer means "agent thinks team is idle when
+//              someone just shipped" — exactly the failure mode the
+//              command exists to prevent.
 //
 // Notably absent:
-//   - context, list-proposals, log: read-only displays. A stale answer
-//     is just slightly out of date, not wrong; users who need fresh
-//     team activity can run `mainline sync` first.
-//   - pin (v0.2): the user-surface is now the manual-fallback variant
-//     `pin <intent> <commit>` only. The user already knows which commit
-//     they want — auto-syncing would not change the answer.
+//
+//   - context, list-proposals — read-only displays often called from
+//     scripts where a network round-trip is unwelcome. Same case as
+//     status arguably applies; tracked as a future enhancement.
+//   - log — has its own opt-in `--sync` flag (logSync) so users who
+//     want fresh log opt in explicitly; default off keeps the
+//     command instant for repeated browsing.
+//   - pin — the v0.2 user-surface is the manual-fallback variant
+//     `pin <intent> <commit>`; the user already knows the target
+//     commit, sync would not change the answer.
+//
+// The freshness window (Sync.FreshnessSeconds, default 300s) caps
+// the cost: even when wrapped, repeated calls within 5 minutes
+// reuse the local view. Network failure is non-fatal — the wrapped
+// command falls through to local data with a stderr warning.
+// Users can always opt out per-call with `--no-sync`.
 var autoSyncCommands = map[string]bool{
-	"check": true,
+	"check":  true,
+	"status": true,
 }
 
 var rootCmd = &cobra.Command{
