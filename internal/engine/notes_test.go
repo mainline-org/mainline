@@ -316,7 +316,7 @@ func TestPropertyCommitNoteCanonicalHash(t *testing.T) {
 
 		// Mutating a field must change the hash.
 		mutated := note
-		mutated.Via = mutated.Via + "_mutated"
+		mutated.Via += "_mutated"
 		h3, _ := core.CanonicalHash(mutated)
 		if h3 == h1 {
 			t.Error("mutating .Via must change CanonicalHash")

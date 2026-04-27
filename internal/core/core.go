@@ -13,33 +13,29 @@ import (
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
-// GenerateIntentID returns a new intent ID of the form "int_<8 hex chars>".
-func GenerateIntentID() string {
+// randID8 returns 8 hex chars of crypto-secure randomness. Panics on
+// rand.Reader failure — for ID generation, silently producing all-zero
+// bytes would corrupt the audit trail (every "new" intent would
+// collide on a single id), so loud failure is the right semantic.
+func randID8() string {
 	b := make([]byte, 4)
-	rand.Read(b)
-	return "int_" + hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }
+
+// GenerateIntentID returns a new intent ID of the form "int_<8 hex chars>".
+func GenerateIntentID() string { return "int_" + randID8() }
 
 // GenerateTurnID returns a new turn ID of the form "turn_<8 hex chars>".
-func GenerateTurnID() string {
-	b := make([]byte, 4)
-	rand.Read(b)
-	return "turn_" + hex.EncodeToString(b)
-}
+func GenerateTurnID() string { return "turn_" + randID8() }
 
 // GenerateEventID returns a new event ID of the form "evt_<8 hex chars>".
-func GenerateEventID() string {
-	b := make([]byte, 4)
-	rand.Read(b)
-	return "evt_" + hex.EncodeToString(b)
-}
+func GenerateEventID() string { return "evt_" + randID8() }
 
 // GenerateActorID returns a new actor ID of the form "actor_<8 hex chars>".
-func GenerateActorID() string {
-	b := make([]byte, 4)
-	rand.Read(b)
-	return "actor_" + hex.EncodeToString(b)
-}
+func GenerateActorID() string { return "actor_" + randID8() }
 
 // Now returns the current UTC time as an ISO 8601 string.
 func Now() string {

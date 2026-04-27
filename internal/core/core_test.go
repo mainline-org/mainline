@@ -339,15 +339,16 @@ func randomObject(depth int) map[string]interface{} {
 	n := rand.Intn(5) + 1
 	for i := 0; i < n; i++ {
 		key := randomString(rand.Intn(8) + 1)
-		if depth > 0 && rand.Float64() < 0.3 {
+		switch {
+		case depth > 0 && rand.Float64() < 0.3:
 			obj[key] = randomObject(depth - 1)
-		} else if rand.Float64() < 0.3 {
+		case rand.Float64() < 0.3:
 			arr := make([]interface{}, rand.Intn(4))
 			for j := range arr {
 				arr[j] = rand.Intn(100)
 			}
 			obj[key] = arr
-		} else {
+		default:
 			obj[key] = rand.Intn(1000)
 		}
 	}

@@ -29,8 +29,6 @@ var (
 	hooksInstallBin      string
 	hooksUninstallAgent  string
 	hooksUninstallAll    bool
-	hooksDispatchAgent   string
-	hooksDispatchEvent   string
 )
 
 // hooksCmd is the root of the `mainline hooks ...` subtree. The

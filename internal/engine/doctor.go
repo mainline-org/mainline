@@ -23,11 +23,11 @@ type DoctorOptions struct {
 }
 
 type DoctorResult struct {
-	CheckedDrafts  int                  `json:"checked_drafts,omitempty"`
-	OrphanDrafts   []DoctorDraftFinding `json:"orphan_drafts,omitempty"`
-	StaleDrafts    []DoctorDraftFinding `json:"stale_drafts,omitempty"`
-	DeletedDrafts  []string             `json:"deleted_drafts,omitempty"`
-	Setup          *DoctorSetupReport   `json:"setup,omitempty"`
+	CheckedDrafts int                  `json:"checked_drafts,omitempty"`
+	OrphanDrafts  []DoctorDraftFinding `json:"orphan_drafts,omitempty"`
+	StaleDrafts   []DoctorDraftFinding `json:"stale_drafts,omitempty"`
+	DeletedDrafts []string             `json:"deleted_drafts,omitempty"`
+	Setup         *DoctorSetupReport   `json:"setup,omitempty"`
 }
 
 // DoctorSetupReport summarises every install / wiring check the doctor

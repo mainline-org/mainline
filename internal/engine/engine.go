@@ -220,9 +220,11 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	for _, p := range addPaths {
 		// Errors here are non-fatal: file may not exist or path may
 		// already be staged.
-		s.Git.Run("add", p)
+		_, _ = s.Git.Run("add", p)
 	}
-	s.Git.Run("commit", "-m", "mainline: init")
+	// `commit` may fail if there is nothing to commit (re-running init);
+	// that's the documented idempotent case, not a bug.
+	_, _ = s.Git.Run("commit", "-m", "mainline: init")
 
 	s.ensureLocalViews(&cfg)
 
@@ -262,25 +264,25 @@ func (s *Service) configureRemoteRefspecs(actorLogPrefix string) []string {
 
 	notesFetch := "+refs/notes/mainline/*:refs/notes/mainline/*"
 	if !strings.Contains(s.Git.ConfigGet(fetchKey), "refs/notes/mainline") {
-		s.Git.ConfigAdd(fetchKey, notesFetch)
+		_ = s.Git.ConfigAdd(fetchKey, notesFetch)
 		added = append(added, "fetch: "+notesFetch)
 	}
 	notesPush := "refs/notes/mainline/*:refs/notes/mainline/*"
 	if !strings.Contains(s.Git.ConfigGet(pushKey), "refs/notes/mainline") {
-		s.Git.ConfigAdd(pushKey, notesPush)
+		_ = s.Git.ConfigAdd(pushKey, notesPush)
 		added = append(added, "push: "+notesPush)
 	}
 
 	actorFetch := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*",
 		actorLogPrefix, remote, actorLogPrefix)
 	if !strings.Contains(s.Git.ConfigGet(fetchKey), "refs/heads/"+actorLogPrefix) {
-		s.Git.ConfigAdd(fetchKey, actorFetch)
+		_ = s.Git.ConfigAdd(fetchKey, actorFetch)
 		added = append(added, "fetch: "+actorFetch)
 	}
 	actorPush := fmt.Sprintf("refs/heads/%s/*:refs/heads/%s/*",
 		actorLogPrefix, actorLogPrefix)
 	if !strings.Contains(s.Git.ConfigGet(pushKey), "refs/heads/"+actorLogPrefix) {
-		s.Git.ConfigAdd(pushKey, actorPush)
+		_ = s.Git.ConfigAdd(pushKey, actorPush)
 		added = append(added, "push: "+actorPush)
 	}
 
@@ -324,7 +326,7 @@ func (s *Service) Rewire() (*RewireResult, error) {
 	r.RefspecsAdded = s.configureRemoteRefspecs(cfg.Mainline.ActorLogPrefix)
 
 	// Always re-apply notes.displayRef (idempotent ConfigAdd dedupes).
-	s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
+	_ = s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 	r.NotesDisplayed = true
 
 	// Re-apply .gitignore.
@@ -365,7 +367,9 @@ func (s *Service) ensureLocalViews(cfg *domain.TeamConfig) {
 		}
 		head, _ := s.Git.HeadCommit()
 		view.MainHead = head
-		s.Store.WriteMainlineView(view)
+		// Best-effort: this is the cold-start scaffold. If writing
+		// fails, the next sync rebuilds anyway.
+		_ = s.Store.WriteMainlineView(view)
 	}
 
 	if idx, _ := s.Store.ReadProposedIndex(); idx == nil {
@@ -373,53 +377,18 @@ func (s *Service) ensureLocalViews(cfg *domain.TeamConfig) {
 			SchemaVersion: 1,
 			RebuiltAt:     core.Now(),
 		}
-		s.Store.WriteProposedIndex(idx)
+		_ = s.Store.WriteProposedIndex(idx)
 	}
-}
-
-func mustReadFile(st *storage.Store, cfg domain.TeamConfig) string {
-	// Serialize config to TOML string for commit
-	return fmt.Sprintf(`[mainline]
-schema_version = %d
-main_branch = "%s"
-actor_log_prefix = "%s"
-require_seal_before = "%s"
-remote = "%s"
-
-[sync]
-auto_sync = %v
-interval = "%s"
-
-[check]
-auto_check = %v
-lookback = %d
-phase1_threshold = %v
-require_before_merge = %v
-
-[publish]
-auto_publish = %v
-
-[merge]
-strategy = "%s"
-
-[log]
-default_limit = %d
-`,
-		cfg.Mainline.SchemaVersion, cfg.Mainline.MainBranch, cfg.Mainline.ActorLogPrefix, cfg.Mainline.RequireSealBefore, cfg.Mainline.Remote,
-		cfg.Sync.AutoSync, cfg.Sync.Interval,
-		cfg.Check.AutoCheck, cfg.Check.Lookback, cfg.Check.Phase1Threshold, cfg.Check.RequireBeforeMerge,
-		cfg.Publish.AutoPublish,
-		cfg.Merge.Strategy,
-		cfg.Log.DefaultLimit,
-	)
 }
 
 // writeAgentsMD is the legacy thin wrapper retained for the Init code
 // path. Real logic moved to upsertAgentsMD (section-aware, preserves
 // user content, handles legacy section migration). See agents_md.go.
 func (s *Service) writeAgentsMD() {
-	upsertAgentsMD(s.Git.RepoRoot)
-	upsertAgentInstructionStubs(s.Git.RepoRoot)
+	// Failures are surfaced via doctor — Init does not abort just
+	// because the AGENTS.md template could not be written.
+	_, _ = upsertAgentsMD(s.Git.RepoRoot)
+	_, _ = upsertAgentInstructionStubs(s.Git.RepoRoot)
 }
 
 func (s *Service) writePRTemplate() {
@@ -427,7 +396,9 @@ func (s *Service) writePRTemplate() {
 	if _, err := os.Stat(path); err == nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	// Best-effort: PR template is a convenience for humans, not
+	// load-bearing for mainline correctness. Errors here fall through.
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	content := `## Summary
 
 <!-- Describe what this PR does -->
@@ -443,7 +414,7 @@ It is for human reviewers; Mainline does not parse it.
 
 <!-- How was this tested? -->
 `
-	os.WriteFile(path, []byte(content), 0o644)
+	_ = os.WriteFile(path, []byte(content), 0o644)
 }
 
 // -----------------------------------------------------------

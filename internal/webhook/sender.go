@@ -113,7 +113,10 @@ func (s *Sender) Dispatch(ctx context.Context, eventID string, bypassFilter bool
 		env.LastError = strings.Join(res.Failures, "; ")
 		failedPath := filepath.Join(s.Store.WebhookQueueDir(), eventID+".failed.json")
 		if buf, err := json.MarshalIndent(env, "", "  "); err == nil {
-			os.WriteFile(failedPath, buf, 0o644)
+			// Best-effort persistence — if writing the failure
+			// metadata itself fails (disk full, permission flip),
+			// the in-memory result still propagates to the caller.
+			_ = os.WriteFile(failedPath, buf, 0o644)
 		}
 		os.Remove(queuePath)
 		return res, fmt.Errorf("delivery failed: %s", env.LastError)
@@ -160,7 +163,10 @@ func (s *Sender) deliver(ctx context.Context, sub domain.WebhookSubscription, en
 		if err != nil {
 			lastErr = err
 		} else {
-			io.Copy(io.Discard, resp.Body)
+			// Drain so the connection can be reused; ignore copy
+			// errors (the body itself doesn't carry signal we'd
+			// retry on, only the status code does).
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			// 2xx == success; everything else is a delivery
 			// failure subject to retry. We don't try to be
