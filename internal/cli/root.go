@@ -48,7 +48,10 @@ var rootCmd = &cobra.Command{
 	Long:  "Mainline coordinates multiple AI coding agents by recording, checking, and merging their work intents.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if cwdPath != "" {
-			os.Chdir(cwdPath)
+			// If chdir fails, subsequent commands run in the original
+			// directory and surface their own clearer errors. No need
+			// to escalate here.
+			_ = os.Chdir(cwdPath)
 		}
 		maybeAutoSync(cmd)
 	},
@@ -225,7 +228,9 @@ func outputJSON(data interface{}) {
 	resp := domain.JSONResponse{OK: true, Data: data}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(resp)
+	// stdout encode is best-effort: a closed pipe is not a mainline
+	// failure and would already have prevented earlier output too.
+	_ = enc.Encode(resp)
 }
 
 func outputError(err error) {
@@ -234,7 +239,7 @@ func outputError(err error) {
 			resp := domain.JSONErrorResponse{OK: false, Error: mlErr}
 			enc := json.NewEncoder(os.Stderr)
 			enc.SetIndent("", "  ")
-			enc.Encode(resp)
+			_ = enc.Encode(resp)
 		} else {
 			fmt.Fprintf(os.Stderr, "error [%s]: %s\n", mlErr.Code, mlErr.Message)
 			for _, a := range mlErr.SuggestedActions {
@@ -248,7 +253,7 @@ func outputError(err error) {
 			}}
 			enc := json.NewEncoder(os.Stderr)
 			enc.SetIndent("", "  ")
-			enc.Encode(resp)
+			_ = enc.Encode(resp)
 		} else {
 			fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		}

@@ -306,7 +306,7 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 //   - `go run . hooks cursor ` covers --local-dev.
 func allManagedPrefixes() []string {
 	return []string{
-		`mainline hooks cursor `,
+		managedMarker,
 		`go run . hooks cursor `,
 	}
 }

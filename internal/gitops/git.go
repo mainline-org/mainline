@@ -600,10 +600,14 @@ func (g *Git) EnsureGitignore(patterns []string) error {
 	}
 	defer f.Close()
 	if existing != "" && !strings.HasSuffix(existing, "\n") {
-		f.WriteString("\n")
+		if _, err := f.WriteString("\n"); err != nil {
+			return fmt.Errorf("gitignore separator newline: %w", err)
+		}
 	}
 	for _, p := range toAdd {
-		f.WriteString(p + "\n")
+		if _, err := f.WriteString(p + "\n"); err != nil {
+			return fmt.Errorf("gitignore append %q: %w", p, err)
+		}
 	}
 	return nil
 }

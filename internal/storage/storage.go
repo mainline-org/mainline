@@ -361,8 +361,12 @@ func (s *Store) AppendTurn(turn *domain.Turn) error {
 		return err
 	}
 	defer f.Close()
-	f.Write(data)
-	f.WriteString("\n")
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("write turn: %w", err)
+	}
+	if _, err := f.WriteString("\n"); err != nil {
+		return fmt.Errorf("write turn newline: %w", err)
+	}
 	return nil
 }
 

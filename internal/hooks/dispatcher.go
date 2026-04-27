@@ -103,11 +103,11 @@ type Dispatcher struct {
 	// Cached SessionStart results so the agent renderer can build
 	// additional_context without re-running sync/status. Set by
 	// onSessionStart, consumed by RenderSessionStartContext.
-	lastSync       any
-	lastSyncErr    error
-	lastStatus     any
-	lastStaleness  any
-	lastSessionEv  *Event
+	lastSync      any
+	lastSyncErr   error
+	lastStatus    any
+	lastStaleness any
+	lastSessionEv *Event
 }
 
 // DispatchSettings mirror the [hooks] section of .mainline/config.toml.

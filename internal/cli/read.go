@@ -231,7 +231,7 @@ var canonicalHashCmd = &cobra.Command{
 
 		if jsonOutput {
 			enc := json.NewEncoder(os.Stdout)
-			enc.Encode(map[string]string{"hash": hash, "intent_id": args[0]})
+			_ = enc.Encode(map[string]string{"hash": hash, "intent_id": args[0]})
 		} else {
 			fmt.Println(hash)
 		}
