@@ -1,4 +1,4 @@
-<!-- mainline:begin -->
+<!-- mainline:agents:start version=7 checksum=sha256:0f5a8ba38d1bd308b9f157caec9b472cc955dd594425f3425d17449c85888541 -->
 ## Mainline
 
 <!-- mainline-agents-md-version: 7 -->
@@ -281,4 +281,4 @@ the audit trail.
 
 Always commit your code BEFORE `mainline seal --prepare`. Untracked
 files (planning docs, scratch notes) do **not** enter sealed evidence.
-<!-- mainline:end -->
+<!-- mainline:agents:end -->

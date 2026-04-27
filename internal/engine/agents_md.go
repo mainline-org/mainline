@@ -19,45 +19,90 @@ var agentsMDTemplate string
 //go:embed templates/agents-stub.md
 var agentsStubTemplate string
 
-// Mainline section markers. The marker pair makes the section
-// addressable so upsertAgentsMD can replace just the mainline block,
-// preserving any non-mainline content the user has added before or
-// after it. Using HTML comments keeps the markers invisible in
-// rendered Markdown.
-const (
-	mainlineSectionStart = "<!-- mainline:begin -->"
-	mainlineSectionEnd   = "<!-- mainline:end -->"
-)
+// Pre-v0.4 markers (`<!-- mainline:begin -->` / `<!-- mainline:end -->`)
+// and the very-old rc1..v0.2 `## Mainline` heading form are both
+// recognised by inspectManagedBlock for migration purposes. The new
+// versioned-marker form is in agents_managed.go; this file is kept
+// for the helpers below that init / rewire still call into.
 
 var (
-	// Matches the modern marker-wrapped block (case 1).
-	reMainlineBlock = regexp.MustCompile(
-		`(?s)<!-- mainline:begin -->.*?<!-- mainline:end -->`)
-
-	// Matches a legacy `## Mainline` heading + version marker.
-	// rc1..v0.2 wrote the section without begin/end markers; we
-	// detect those and migrate them in place.
-	reLegacyHeader = regexp.MustCompile(
-		`(?m)^## Mainline\s*\n+\s*<!-- mainline-agents-md-version: \d+ -->`)
+	// reAgentsMDVersion captures the integer N from
+	// `<!-- mainline-agents-md-version: N -->`. Used by version
+	// helpers below to compare embedded vs on-disk to detect a
+	// stale AGENTS.md after a binary upgrade.
+	reAgentsMDVersion = regexp.MustCompile(
+		`<!-- mainline-agents-md-version: (\d+) -->`)
 )
 
-// upsertAgentsMD writes or updates the mainline section of AGENTS.md
-// at the repo root. Three cases:
+// EmbeddedAgentsMDVersion returns the version integer baked into the
+// binary's template. This is the "current" version — what `mainline
+// init --rewire` would write today.
 //
-//  1. File missing — create it containing only the wrapped template.
-//  2. File exists with mainline:begin / mainline:end markers — replace
-//     the bytes between (and including) them. Surrounding user content
-//     is left exactly as-is.
-//  3. File exists with the legacy ## Mainline heading + version marker
-//     (rc1..v0.2 format) — find the section by walking from the
-//     heading to the next H2 (or EOF), replace it with the new wrapped
-//     block. This migrates pre-v0.3 files.
-//  4. File exists, no markers, no legacy heading — append the wrapped
-//     block at the end with one blank-line separator.
+// Discipline: any meaningful body change to templates/agents-md.md
+// must bump the version marker. The embedded version is the contract
+// that lets staleness detection notice when an on-disk AGENTS.md
+// diverges after a binary upgrade.
+func EmbeddedAgentsMDVersion() int {
+	return parseAgentsMDVersion(agentsMDTemplate)
+}
+
+// LocalAgentsMDVersion returns the version integer found in the
+// repo-root AGENTS.md. Returns:
 //
-// Surrounding non-mainline content is never modified. The function is
-// idempotent: calling it twice in a row produces no diff on the second
-// call.
+//	-1, false    file does not exist
+//	 0, false    file exists but no version marker
+//	 N, true     file exists and carries `version: N`
+//
+// Callers compare against EmbeddedAgentsMDVersion() to decide
+// "outdated".
+func LocalAgentsMDVersion(repoRoot string) (int, bool) {
+	data, err := os.ReadFile(filepath.Join(repoRoot, "AGENTS.md"))
+	if err != nil {
+		return -1, false
+	}
+	v := parseAgentsMDVersion(string(data))
+	return v, v >= 0
+}
+
+// AgentsMDOutdated reports whether the local AGENTS.md is older than
+// the embedded template. A missing file or a present-but-versionless
+// file both count as outdated — both should run through `mainline
+// init --rewire` to land on the current shape.
+func AgentsMDOutdated(repoRoot string) bool {
+	local, present := LocalAgentsMDVersion(repoRoot)
+	if !present {
+		return true
+	}
+	return local < EmbeddedAgentsMDVersion()
+}
+
+// parseAgentsMDVersion returns the captured integer from the version
+// marker, or -1 when the marker is absent. Helper kept private; its
+// only callers are the two exported wrappers above.
+func parseAgentsMDVersion(text string) int {
+	m := reAgentsMDVersion.FindStringSubmatch(text)
+	if len(m) != 2 {
+		return -1
+	}
+	var n int
+	for _, r := range m[1] {
+		if r < '0' || r > '9' {
+			return -1
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
+
+// upsertAgentsMD writes or updates the Mainline-managed block in
+// AGENTS.md at the repo root. Wraps writeManagedBlock with the
+// embedded template body and current version. Idempotent — repeated
+// calls leave the file byte-equal once it is in sync.
+//
+// User content above and below the markers is preserved byte-for-byte.
+// Legacy formats (pre-v0.4 begin/end markers, very-old `## Mainline`
+// heading) are migrated to the modern versioned+checksum marker form
+// the first time this runs.
 func upsertAgentsMD(repoRoot string) (changed bool, err error) {
 	return upsertSectionFile(
 		filepath.Join(repoRoot, "AGENTS.md"),
@@ -107,91 +152,41 @@ func upsertAgentInstructionStubs(repoRoot string) (written []string, err error) 
 }
 
 // upsertSectionFile is the file-IO layer shared by AGENTS.md and the
-// IDE stubs. It applies the four-case upsert algorithm documented on
-// upsertAgentsMD. body is the raw section content (no markers); the
-// function wraps it with mainlineSectionStart/End on write.
+// IDE stubs. Now delegates to writeManagedBlock so init / rewire
+// produce the modern versioned-marker form (with sha256 checksum)
+// from day one. The legacy-section migration paths handled here in
+// rc1..rc7 — `<!-- mainline:begin -->` markers and the very-old
+// `## Mainline` heading — are preserved by writeManagedBlock's
+// inspect-and-splice logic.
+//
+// Pre-condition expected by callers: body has no markers; this
+// function wraps it.
 func upsertSectionFile(path, body string) (bool, error) {
-	wrapped := wrapMainlineSection(body)
-	desired := wrapped + "\n"
-
-	existing, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return true, os.WriteFile(path, []byte(desired), 0o644)
+	version := EmbeddedAgentsMDVersion()
+	if version <= 0 {
+		// Embedded template missing the version marker — should not
+		// happen in shipped binaries; fall back to v1 to keep init
+		// from blocking. Doctor will surface the anomaly separately.
+		version = 1
 	}
-	if err != nil {
+	prevHash, prevExists := readBodyChecksum(path)
+	if err := writeManagedBlock(path, body, version); err != nil {
 		return false, err
 	}
-
-	text := string(existing)
-
-	// Case: modern markers present — replace just the wrapped block.
-	if reMainlineBlock.MatchString(text) {
-		updated := reMainlineBlock.ReplaceAllString(text, wrapped)
-		if updated == text {
-			return false, nil
-		}
-		return true, os.WriteFile(path, []byte(updated), 0o644)
-	}
-
-	// Case: legacy `## Mainline` + version marker present — find the
-	// section bounds and splice in the wrapped block.
-	if loc := reLegacyHeader.FindStringIndex(text); loc != nil {
-		updated := replaceLegacySection(text, loc[0], wrapped)
-		if updated == text {
-			return false, nil
-		}
-		return true, os.WriteFile(path, []byte(updated), 0o644)
-	}
-
-	// Case: no mainline content present — append at end with one
-	// blank-line separator.
-	sep := "\n\n"
-	switch {
-	case text == "":
-		sep = ""
-	case strings.HasSuffix(text, "\n\n"):
-		sep = ""
-	case strings.HasSuffix(text, "\n"):
-		sep = "\n"
-	}
-	return true, os.WriteFile(path, []byte(text+sep+desired), 0o644)
+	newHash := bodyChecksum(body)
+	changed := !prevExists || prevHash != newHash
+	return changed, nil
 }
 
-func wrapMainlineSection(body string) string {
-	return mainlineSectionStart + "\n" + body + "\n" + mainlineSectionEnd
+// readBodyChecksum returns the sha256 of the managed-block body
+// inside path's modern marker, or "" if no modern marker is present.
+// Used by upsertSectionFile to compute its `changed` return value
+// without re-reading the file twice.
+func readBodyChecksum(path string) (string, bool) {
+	blk := inspectManagedBlock(path, "", 0)
+	if blk.State == AgentsBlockStateNotInstalled || blk.State == AgentsBlockStateLegacy {
+		return "", false
+	}
+	return bodyChecksum(blk.BodyBytes), true
 }
 
-// replaceLegacySection finds the end of the pre-marker `## Mainline`
-// section starting at `start` (the index of `## Mainline`) and
-// returns the input with that whole region replaced by `wrapped`. The
-// section ends at the next `^## ` heading, or EOF.
-func replaceLegacySection(text string, start int, wrapped string) string {
-	rest := text[start:]
-	// Skip the heading line itself, then find the next H2.
-	lines := strings.SplitAfter(rest, "\n")
-	end := len(rest)
-	for i := 1; i < len(lines); i++ {
-		// `## ` exactly (not `### `).
-		if strings.HasPrefix(lines[i], "## ") {
-			// Compute the absolute end-byte position.
-			off := 0
-			for j := 0; j < i; j++ {
-				off += len(lines[j])
-			}
-			end = off
-			break
-		}
-	}
-	tail := text[start+end:]
-	// Trim a trailing newline from the section we are removing so we
-	// do not double-up blank lines around the new wrapped block.
-	prefix := strings.TrimRight(text[:start], " \n")
-	if prefix != "" {
-		prefix += "\n\n"
-	}
-	suffix := strings.TrimLeft(tail, "\n")
-	if suffix != "" {
-		suffix = "\n\n" + suffix
-	}
-	return prefix + wrapped + suffix
-}

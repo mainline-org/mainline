@@ -40,10 +40,10 @@ func TestUpsertAgentsMD_CreatesIfMissing(t *testing.T) {
 		t.Error("changed should be true on initial create")
 	}
 	got := readFileT(t, filepath.Join(dir, "AGENTS.md"))
-	if !strings.Contains(got, mainlineSectionStart) {
+	if !strings.Contains(got, managedMarkerStartPrefix) {
 		t.Errorf("missing start marker: %s", got)
 	}
-	if !strings.Contains(got, mainlineSectionEnd) {
+	if !strings.Contains(got, managedMarkerEnd) {
 		t.Errorf("missing end marker")
 	}
 	if !strings.Contains(got, "## Mainline") {
@@ -58,7 +58,7 @@ func TestUpsertAgentsMD_PreservesUserContentAroundMarkedSection(t *testing.T) {
 	path := filepath.Join(dir, "AGENTS.md")
 
 	header := "# Project conventions\n\nAlways prefer Go tests over shell hacks.\n\n"
-	staleMainline := wrapMainlineSection("STALE OLD CONTENT")
+	staleMainline := wrapManagedBlock("STALE OLD CONTENT", EmbeddedAgentsMDVersion())
 	footer := "\n\n## Other notes\n\nUnrelated user content here.\n"
 	writeFileT(t, path, header+staleMainline+footer)
 
@@ -114,11 +114,11 @@ func TestUpsertAgentsMD_MigratesLegacyVersionedSection(t *testing.T) {
 		t.Errorf("footer lost: %s", got)
 	}
 	// New marker block lives where the legacy section was.
-	if !strings.Contains(got, mainlineSectionStart) {
+	if !strings.Contains(got, managedMarkerStartPrefix) {
 		t.Errorf("new marker block missing")
 	}
-	// Old version marker is gone (replaced by v4 inside the new block).
-	if strings.Contains(got, "mainline-agents-md-version: 1") {
+	// Old version marker is gone (replaced by current version inside the new block).
+	if strings.Contains(got, "mainline-agents-md-version: 1\n") {
 		t.Errorf("old v1 version marker still present")
 	}
 }
@@ -139,7 +139,7 @@ func TestUpsertAgentsMD_AppendsToFileWithNoMainlineSection(t *testing.T) {
 	if !strings.HasPrefix(got, original) {
 		t.Errorf("user content not preserved as prefix")
 	}
-	if !strings.Contains(got, mainlineSectionStart) {
+	if !strings.Contains(got, managedMarkerStartPrefix) {
 		t.Errorf("mainline block not appended")
 	}
 }
@@ -192,7 +192,7 @@ func TestUpsertAgentInstructionStubs_WritesFourFilesIdempotently(t *testing.T) {
 			t.Errorf("expected %s to exist: %v", rel, err)
 		}
 		got := readFileT(t, full)
-		if !strings.Contains(got, mainlineSectionStart) {
+		if !strings.Contains(got, managedMarkerStartPrefix) {
 			t.Errorf("%s missing marker block", rel)
 		}
 	}
@@ -213,7 +213,7 @@ func TestUpsertAgentInstructionStubs_PreservesHandEdits(t *testing.T) {
 	cursorPath := filepath.Join(dir, ".cursor/rules/mainline.md")
 	writeFileT(t, cursorPath,
 		"# Custom cursor rule\n\nuse semicolons everywhere.\n\n"+
-			wrapMainlineSection("OLD STUB CONTENT")+
+			wrapManagedBlock("OLD STUB CONTENT", EmbeddedAgentsMDVersion())+
 			"\n\n## More custom stuff\n")
 
 	if _, err := upsertAgentInstructionStubs(dir); err != nil {
