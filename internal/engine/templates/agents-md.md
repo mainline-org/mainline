@@ -46,8 +46,14 @@ Filter by goal/title keywords matching the user's task. For each
 relevant hit, pull the full record:
 
 ```
-mainline show <intent_id> --json
+mainline show <intent_id> --json    # decisions / risks / fingerprint
+mainline trace <intent_id> --json   # turn timeline (when each turn
+                                    # was added, how long it took)
 ```
+
+`show` answers *what* the intent decided. `trace` answers *how* it
+unfolded over time — useful when you're trying to understand why a
+PR looks the way it does, or whether the agent got stuck and looped.
 
 Before designing a change, also see what is currently in flight so
 your work does not collide with someone else's proposed intent:

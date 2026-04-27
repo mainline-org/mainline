@@ -149,6 +149,7 @@ func init() {
 	abandonCmd.GroupID = groupDaily.ID
 	logCmd.GroupID = groupDaily.ID
 	showCmd.GroupID = groupDaily.ID
+	traceCmd.GroupID = groupDaily.ID
 	syncCmd.GroupID = groupDaily.ID
 	gapsCmd.GroupID = groupDaily.ID
 	checkCmd.GroupID = groupDaily.ID
@@ -182,6 +183,7 @@ func init() {
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
+		traceCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
 	)
 }
