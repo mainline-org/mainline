@@ -76,6 +76,18 @@ that without re-creating identity or team config.`,
 			fmt.Printf("  Actor ID:    %s\n", result.ActorID)
 			fmt.Printf("  Actor name:  %s\n", result.ActorName)
 			fmt.Printf("  Main branch: %s\n", result.MainBranch)
+			// Surface the default-actor-name fallback. Pre-this-fix
+			// the alpha walkthrough caught: a fresh user runs bare
+			// `mainline init` and silently becomes "default-agent"
+			// in every actor log + commit note, with no prompt to
+			// fix it. Now we say so loudly.
+			if initActorName == "" {
+				fmt.Println()
+				fmt.Println("⚠ No --actor-name passed; defaulted to 'default-agent'.")
+				fmt.Println("  Re-run with --actor-name \"<your name>\" to claim a")
+				fmt.Println("  recognisable identity (it shows up in `mainline log`,")
+				fmt.Println("  on commit notes, and in the audit trail).")
+			}
 			remote := svc.RemoteName()
 			if !svc.Git.HasRemote(remote) {
 				fmt.Println()

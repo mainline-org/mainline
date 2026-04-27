@@ -191,10 +191,17 @@ func DefaultTeamConfig() TeamConfig {
 				// Defaults cover the most common low-information commit
 				// shapes that would otherwise drown the gaps surface
 				// in noise. Teams customise via [mainline.skip].patterns.
+				//
+				// `^mainline: init` is the commit `mainline init` itself
+				// writes — it has no underlying agent intent and would
+				// otherwise show as uncovered on every fresh-repo status,
+				// which the alpha walkthrough flagged as a false-alarm
+				// first impression.
 				Patterns: []string{
 					"^Merge pull request ",
 					"^Merge branch ",
 					"^chore: bump version",
+					"^mainline: init",
 				},
 			},
 		},
