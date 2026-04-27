@@ -1,7 +1,7 @@
 <!-- mainline:begin -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 5 -->
+<!-- mainline-agents-md-version: 7 -->
 
 This project uses **Mainline** to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
@@ -9,6 +9,12 @@ review. The agent is expected to both **read** team intents (for context)
 and **write** its own intent (for the work it's doing). Both halves
 matter — intents capture *why* changes were made, which is information
 the diff alone cannot give you.
+
+> **v0.3 invariant**: every commit on `main` is in exactly one of three
+> states — `covered` (sealed intent claims it), `skipped` (`Mainline-Skip:`
+> trailer or matched config pattern), or `uncovered` (neither). Run
+> `mainline status` to see the rollup; `mainline gaps` to see uncovered
+> commits with rescue suggestions.
 
 ### At the start of a task
 
@@ -41,8 +47,14 @@ Filter by goal/title keywords matching the user's task. For each
 relevant hit, pull the full record:
 
 ```
-mainline show <intent_id> --json
+mainline show <intent_id> --json    # decisions / risks / fingerprint
+mainline trace <intent_id> --json   # turn timeline (when each turn
+                                    # was added, how long it took)
 ```
+
+`show` answers *what* the intent decided. `trace` answers *how* it
+unfolded over time — useful when you're trying to understand why a
+PR looks the way it does, or whether the agent got stuck and looped.
 
 Before designing a change, also see what is currently in flight so
 your work does not collide with someone else's proposed intent:
@@ -59,13 +71,48 @@ Use this aggressively. The cost is one or two CLI calls; the payoff
 is correct architectural decisions and not duplicating someone's
 just-finished work.
 
-### While working
+### Turns and intent history
 
-After each meaningful logical change (a feature added, a bug
-isolated, a test introduced), record one turn:
+Turns are a lightweight thinking scaffold used to prepare a good
+seal. They are **not** expected to be a real-time activity log.
+
+It is normal for several turns to be recorded together near seal
+time, especially when an agent summarizes its work before sealing.
+`mainline trace` will surface this honestly via the
+`append_turns_recorded_together` flag — that is informational, not a
+warning.
+
+Use:
 
 ```
-mainline append "<specific description of what changed>" --json
+mainline show <intent_id> --json
+```
+
+to inspect the structured conclusion of an intent: summary,
+decisions, risks, and fingerprint.
+
+Use:
+
+```
+mainline trace <intent_id> --json
+```
+
+to inspect how an intent unfolded over time: start, append, seal,
+abandon, or supersede events.
+
+`show` answers: *"What did this intent decide?"*
+`trace` answers: *"How did this intent unfold?"*
+
+### While working
+
+Record turns at points that will help you write a good seal — when
+a meaningful subtask completes, when you pivot, when a discovery
+changes the plan. Many short turns or a few long turns are both
+fine; what matters is that the seal author (you, later) has the
+material to compose a faithful summary:
+
+```
+mainline append "<what changed and why>" --json
 ```
 
 Turns are append-only. Don't try to amend or delete them — describe
@@ -124,6 +171,40 @@ mainline check --submit --json < judgment.json
 
 The verdict surfaces in `mainline log`'s `[check:X]` column.
 
+### Optional: agent hooks (opt-in context provider)
+
+If `mainline hooks install <agent>` has been run for your agent
+runtime (Cursor today; Codex / Claude Code reserved), the hook layer
+runs **two mechanical operations** at session start and injects a
+**status snapshot** into your system context — nothing more:
+
+- At `sessionStart` the hook runs `mainline sync` (refreshes the team
+  view) and `mainline status` (active intent, proposed count, synced
+  head). It feeds that snapshot back to you as system-prompt context
+  along with a pointer to this document. You no longer need to run
+  `mainline status` as the very first call of a session — it has
+  already run.
+- At every other lifecycle event (turn start, turn end, subagent
+  end, session end) the hook is a **no-op** for your reasoning. It
+  fires webhook notifications for external observers (CI dashboards,
+  pager integrations) and exits. It does NOT call `mainline start`,
+  `mainline append`, `mainline seal --prepare`, or any other command
+  that requires deciding what counts as a goal / a meaningful change /
+  a fingerprint — those are LLM judgments and you remain the only
+  party qualified to make them.
+
+Concretely: every step described above (start when there is real
+work, append after each meaningful logical change, commit, seal
+--prepare, fill SealResult, seal --submit, surface conflicts) you do
+yourself, hooks installed or not. The hook layer is a **context
+provider**, not a workflow driver.
+
+Run `mainline hooks status` to confirm whether hooks are wired and
+whether `auto_sync_on_session_start` is on (the only mechanical
+toggle). Disable it with `mainline hooks disable` if your network
+makes the session-start sync painful — you can still drive the rest
+of the workflow by hand.
+
 ### What you do NOT need to run
 
 - `mainline sync` — runs automatically inside `seal --submit` and
@@ -142,4 +223,62 @@ mainline merge --intent <id>        # non-PR pipeline only
 mainline init --rewire              # repo setup repair
 mainline doctor --setup --fix       # repo setup repair
 ```
+
+### Encountering an uncovered commit (v0.3 rescue)
+
+If `mainline status` or `mainline gaps` flags an uncovered commit (one
+that landed on main with no intent), pick the **best** path you still
+can — ordered by reversibility, cheapest first:
+
+1. **Unpushed** — undo and redo via the proper flow:
+
+   ```
+   git reset --soft HEAD^         # un-commit, keep changes
+   mainline start "<goal>"
+   <continue normal flow>
+   ```
+
+2. **Pushed** — backfill an intent that retroactively claims the commit:
+
+   ```
+   mainline start "<why this commit was made>" --commits <sha>
+   mainline append "<turn-by-turn description, post-hoc>"
+   mainline seal --prepare > seal.json
+   <fill seal.json>
+   mainline seal --submit < seal.json
+   ```
+
+   The seal flow auto-pins the new intent to the listed commit on next
+   `mainline sync`.
+
+3. **Routine** (chore / format / version bump) — mark as deliberately
+   skipped:
+
+   ```
+   git commit --amend             # add `Mainline-Skip: <reason>` trailer
+   ```
+
+   Or add a pattern in `.mainline/config.toml` under `[mainline.skip]`
+   so future similar commits classify automatically:
+
+   ```toml
+   [mainline.skip]
+   patterns = ["^chore: format", "^bump:"]
+   ```
+
+4. **Already distributed, regrettably** — accept uncovered. The
+   mainline log is a record of reality, not aspiration.
+
+### Seal snapshot contract (v0.3)
+
+`mainline seal --prepare` snapshots the worktree state (HEAD, branch,
+clean/dirty/untracked) and persists it. `mainline seal --submit`
+validates the live repo against that snapshot — HEAD drift, branch
+drift, or dirty worktree all fail by default with a typed error. The
+escape hatch is the explicit CLI flag `--allow-dirty`; even then, the
+sealed event permanently records `worktree_status` so reviewers see
+the audit trail.
+
+Always commit your code BEFORE `mainline seal --prepare`. Untracked
+files (planning docs, scratch notes) do **not** enter sealed evidence.
 <!-- mainline:end -->
