@@ -192,17 +192,32 @@ Pinning a `CommitNote` to a main-branch commit is what marks the intent **merged
 
 These are the commands a human or agent will actually run.
 
+The three intent-inspection commands form a clean trichotomy:
+
+| Command | Purpose |
+|---|---|
+| `mainline log` | List intents across actors |
+| `mainline show <id>` | Show the structured conclusion of an intent |
+| `mainline trace <id>` | Show the internal timeline of an intent |
+
+`log` answers *"what intents exist?"*, `show` answers *"what did this intent decide?"*, `trace` answers *"how did this intent unfold?"*.
+
+Full daily set:
+
 | Command | Use |
 |---|---|
 | `mainline init` | Initialise mainline in this repository |
-| `mainline status` | Current intent + sync staleness + counts |
+| `mainline status` | Current intent + sync staleness + counts + coverage rollup |
 | `mainline start "..."` | Start an intent on the current branch |
-| `mainline append "..."` | Record a turn against the active intent |
+| `mainline append "..."` | Record a turn against the active intent (see [Turns and intent history](#concepts) for what turns are and aren't) |
 | `mainline seal --prepare` | Generate the seal-prepare package (JSON) |
-| `mainline seal --submit` | Submit a SealResult; auto-syncs and runs phase 1. Use `--offline` to skip the network step. |
+| `mainline seal --submit` | Submit a SealResult; auto-syncs and runs phase 1. Use `--offline` to skip the network step. `--allow-dirty` to bypass the worktree-clean check (recorded in audit trail). |
+| `mainline abandon <id>` | Drop a drafting/sealed/proposed intent — drafts deleted, sealed/proposed get an abandon event published to the team |
 | `mainline sync` | Fetch remote state, rebuild views, **auto-pin merged commits**, surface new conflicts |
 | `mainline log` | Intent history with author, time, and `[check:?\|~\|ok\|!\|human?]` |
-| `mainline show <id>` | Full intent detail, including LastCheck summary |
+| `mainline show <id>` | Full intent detail (decisions, risks, fingerprint) |
+| `mainline trace <id>` | Turn timeline (start/append/seal/abandon/supersede with elapsed time) |
+| `mainline gaps` | List uncovered commits on main with reversibility-ranked rescue options |
 | `mainline context` | State dump for agent consumption |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |
 | `mainline check --submit` | Submit phase 2 judgment; result surfaces in log column |
