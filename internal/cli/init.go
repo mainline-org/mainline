@@ -2,9 +2,19 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+// envActorName is the env-var fallback for --actor-name. Wired here
+// so CI scripts that already export MAINLINE_ACTOR_NAME (a common
+// pattern from the seal-and-publish daemons) don't have to thread
+// the flag through every invocation, and so a forgetful first-time
+// user with the var exported in their shell still gets a real
+// identity instead of the silent "default-agent" fallback.
+const envActorName = "MAINLINE_ACTOR_NAME"
 
 var initActorName string
 var initRewire bool
@@ -63,7 +73,20 @@ that without re-creating identity or team config.`,
 			return
 		}
 
-		result, err := svc.Init(initActorName)
+		// Resolve actor name: explicit --actor-name wins; fall back
+		// to MAINLINE_ACTOR_NAME if exported; otherwise svc.Init
+		// will use its internal default ("default-agent") and we
+		// warn loudly below.
+		resolvedName := initActorName
+		usedEnvFallback := false
+		if resolvedName == "" {
+			if envName := strings.TrimSpace(os.Getenv(envActorName)); envName != "" {
+				resolvedName = envName
+				usedEnvFallback = true
+			}
+		}
+
+		result, err := svc.Init(resolvedName)
 		if err != nil {
 			outputError(err)
 			return
@@ -76,17 +99,20 @@ that without re-creating identity or team config.`,
 			fmt.Printf("  Actor ID:    %s\n", result.ActorID)
 			fmt.Printf("  Actor name:  %s\n", result.ActorName)
 			fmt.Printf("  Main branch: %s\n", result.MainBranch)
+			if usedEnvFallback {
+				fmt.Printf("  (actor name picked up from $%s)\n", envActorName)
+			}
 			// Surface the default-actor-name fallback. Pre-this-fix
 			// the alpha walkthrough caught: a fresh user runs bare
 			// `mainline init` and silently becomes "default-agent"
 			// in every actor log + commit note, with no prompt to
 			// fix it. Now we say so loudly.
-			if initActorName == "" {
+			if resolvedName == "" {
 				fmt.Println()
 				fmt.Println("⚠ No --actor-name passed; defaulted to 'default-agent'.")
 				fmt.Println("  Re-run with --actor-name \"<your name>\" to claim a")
-				fmt.Println("  recognisable identity (it shows up in `mainline log`,")
-				fmt.Println("  on commit notes, and in the audit trail).")
+				fmt.Println("  recognisable identity, or export $" + envActorName + " in your shell.")
+				fmt.Println("  (it shows up in `mainline log`, on commit notes, and in the audit trail).")
 			}
 			remote := svc.RemoteName()
 			if !svc.Git.HasRemote(remote) {
@@ -102,6 +128,6 @@ that without re-creating identity or team config.`,
 }
 
 func init() {
-	initCmd.Flags().StringVar(&initActorName, "actor-name", "", "name for this actor identity")
+	initCmd.Flags().StringVar(&initActorName, "actor-name", "", "name for this actor identity (or export "+envActorName+")")
 	initCmd.Flags().BoolVar(&initRewire, "rewire", false, "(re-)apply remote refspec config + AGENTS.md + PR template on an already-initialised repo")
 }
