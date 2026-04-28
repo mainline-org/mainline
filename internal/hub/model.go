@@ -29,6 +29,7 @@ type HubModel struct {
 	GeneratedAt string          `json:"generated_at"`
 	MainBranch  string          `json:"main_branch"`
 	MainHead    string          `json:"main_head"`
+	Dashboard   HubDashboard    `json:"dashboard"`
 	Intents     []HubIntent     `json:"intents"`
 	OpenIntents []HubOpenIntent `json:"open_intents,omitempty"`
 
@@ -39,6 +40,39 @@ type HubModel struct {
 	ActorIndex  []HubActorEntry  `json:"actor_index"`
 	RiskIntents []string         `json:"risk_intents"`
 	Relations   []HubRelationRow `json:"relations"`
+}
+
+// HubDashboard is the human-first landing view: small rollups and
+// prioritized links that answer "what should I inspect now?" without
+// forcing readers through raw tables.
+type HubDashboard struct {
+	TotalIntents    int              `json:"total_intents"`
+	OpenIntents     int              `json:"open_intents"`
+	ProposedIntents int              `json:"proposed_intents"`
+	MergedIntents   int              `json:"merged_intents"`
+	RiskIntents     int              `json:"risk_intents"`
+	FileCount       int              `json:"file_count"`
+	ActorCount      int              `json:"actor_count"`
+	StatusCounts    []HubStatusCount `json:"status_counts,omitempty"`
+	Focus           []HubFocusIntent `json:"focus,omitempty"`
+	HotFiles        []HubHotFile     `json:"hot_files,omitempty"`
+}
+
+type HubStatusCount struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+type HubFocusIntent struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+type HubHotFile struct {
+	Path        string `json:"path"`
+	IntentCount int    `json:"intent_count"`
 }
 
 // HubIntent is the per-intent record. Fields map 1:1 onto IntentView

@@ -10,19 +10,22 @@
   {{if .MergedMainCommit}}· merged into <code>{{shortCommit .MergedMainCommit}}</code>{{end}}
 </p>
 
-{{if .UserGoal}}<section><h2>User goal</h2><p>{{.UserGoal}}</p></section>{{end}}
-{{if .What}}<section><h2>What changed</h2><p>{{.What}}</p></section>{{end}}
-{{if .Why}}<section><h2>Why</h2><p>{{.Why}}</p></section>{{end}}
+<section class="intent-summary">
+  {{if .UserGoal}}<div><span class="summary-label">User goal</span><p>{{.UserGoal}}</p></div>{{end}}
+  {{if .What}}<div><span class="summary-label">What changed</span><p>{{.What}}</p></div>{{end}}
+  {{if .Why}}<div><span class="summary-label">Why</span><p>{{.Why}}</p></div>{{end}}
+</section>
 
 {{if .Decisions}}
 <section><h2>Decisions</h2>
-<ul class="decisions">
-{{range .Decisions}}<li>
-  <strong>{{.Point}}:</strong> {{.Chose}}
-  {{if .Rationale}}<div class="muted">{{.Rationale}}</div>{{end}}
+<div class="decision-list">
+{{range .Decisions}}<article class="decision">
+  <div class="decision-point">{{.Point}}</div>
+  <div class="decision-choice">{{.Chose}}</div>
+  {{if .Rationale}}<p class="muted">{{.Rationale}}</p>{{end}}
   {{if .Rejected}}<div class="rejected">Rejected: {{join .Rejected ", "}}</div>{{end}}
-</li>{{end}}
-</ul></section>
+</article>{{end}}
+</div></section>
 {{end}}
 
 {{if .Rejected}}
@@ -33,7 +36,7 @@
 
 {{if .Risks}}
 <section><h2>Risks</h2>
-<ul class="risks">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>
+<ul class="risks risk-list">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>
 </section>
 {{end}}
 

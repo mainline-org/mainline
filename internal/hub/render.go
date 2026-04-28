@@ -25,6 +25,9 @@ var tplFile string
 //go:embed templates/files.html
 var tplFiles string
 
+//go:embed templates/review.html
+var tplReview string
+
 //go:embed templates/actor.html
 var tplActor string
 
@@ -58,6 +61,9 @@ func renderAll(dir string, m *HubModel) error {
 		return err
 	}
 	if err := renderTo(filepath.Join(dir, "files.html"), tpl, "files", filesCtx(m)); err != nil {
+		return err
+	}
+	if err := renderTo(filepath.Join(dir, "review.html"), tpl, "review", reviewCtx(m)); err != nil {
 		return err
 	}
 	for i := range m.Intents {
@@ -99,7 +105,7 @@ func buildTemplates() (*template.Template, error) {
 		"hasPrefix":   strings.HasPrefix,
 	}
 	tpl := template.New("hub").Funcs(funcs)
-	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplActor, tplRisks, tplGraph} {
+	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplReview, tplActor, tplRisks, tplGraph} {
 		var err error
 		tpl, err = tpl.Parse(src)
 		if err != nil {
@@ -133,9 +139,11 @@ type pageCtx struct {
 	NavActive   string
 	RootPath    string
 
+	Dashboard   HubDashboard
 	Intents     []HubIntent
 	OpenIntents []HubOpenIntent
 	FileIndex   []HubFileEntry
+	ReviewRows  []HubIntent
 
 	Intent       *HubIntent
 	RelatedFiles []string
@@ -181,6 +189,7 @@ func indexCtx(m *HubModel) pageCtx {
 		MainHead:    m.MainHead,
 		NavActive:   "index",
 		RootPath:    "",
+		Dashboard:   m.Dashboard,
 		Intents:     m.Intents,
 		OpenIntents: m.OpenIntents,
 	}
@@ -207,6 +216,24 @@ func filesCtx(m *HubModel) pageCtx {
 		NavActive:   "files",
 		RootPath:    "",
 		FileIndex:   m.FileIndex,
+	}
+}
+
+func reviewCtx(m *HubModel) pageCtx {
+	rows := make([]HubIntent, 0)
+	for _, in := range m.Intents {
+		if in.Status == "proposed" {
+			rows = append(rows, in)
+		}
+	}
+	return pageCtx{
+		Title:       "Review queue",
+		GeneratedAt: m.GeneratedAt,
+		MainBranch:  m.MainBranch,
+		MainHead:    m.MainHead,
+		NavActive:   "review",
+		RootPath:    "",
+		ReviewRows:  rows,
 	}
 }
 
