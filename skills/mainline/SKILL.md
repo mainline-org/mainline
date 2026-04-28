@@ -1,6 +1,6 @@
 ---
 name: mainline
-description: Use for any coding-agent work in a Git repository that uses or may need Mainline intent tracking: before reading or editing code, fixing bugs, adding features, refactoring, deleting code, changing tests or CI, committing, pushing, opening PRs, reviewing intent conflicts, or setting up Mainline CLI/hooks/agent guidance.
+description: "Use for any coding-agent work in a Git repository that uses or may need Mainline intent tracking: before reading or editing code, fixing bugs, adding features, refactoring, deleting code, changing tests or CI, committing, pushing, opening PRs, reviewing intent conflicts, or setting up Mainline CLI/hooks/agent guidance."
 ---
 
 # Mainline
