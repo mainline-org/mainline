@@ -144,6 +144,57 @@ func TestStartAndAppend(t *testing.T) {
 	}
 }
 
+// First-touch UX guard: a literal-following user runs `git commit`
+// BEFORE `mainline start`. Without the merge-base base-commit logic,
+// the draft's BaseCommit equals HEAD, the diff at seal --prepare is
+// empty, and seal --submit rejects on empty fingerprint.files_touched.
+//
+// This test pins the fix: when HEAD is ahead of synced main at start
+// time, BaseCommit is the merge-base, so subsequent prepare's diff
+// includes the pre-start commits.
+func TestStartAfterCommit_BaseIsMergeBaseNotHead(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("trial-user"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Branch off main, commit, THEN start — the trial-user footgun.
+	gitCmd(t, dir, "checkout", "main")
+	mainHead, _ := svc.Git.HeadCommit()
+	gitCmd(t, dir, "checkout", "-b", "feature/before-start")
+	writeFile(t, dir, "x.go", "package main\n")
+	gitCmd(t, dir, "add", "x.go")
+	gitCmd(t, dir, "commit", "-m", "Add x.go")
+
+	res, err := svc.Start("Add x", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	draft, err := svc.Store.ReadDraft(res.IntentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.BaseCommit == "" {
+		t.Fatal("BaseCommit must be set")
+	}
+	// The base must not be HEAD (HEAD is the post-commit state); it
+	// should be the merge-base, which on this fresh branch equals the
+	// main HEAD captured before the branch was created.
+	headAfterCommit, _ := svc.Git.HeadCommit()
+	if draft.BaseCommit == headAfterCommit {
+		t.Errorf("BaseCommit should be the merge-base with main, not the post-commit HEAD: base=%s head=%s",
+			draft.BaseCommit, headAfterCommit)
+	}
+	if draft.BaseCommit != mainHead {
+		t.Errorf("BaseCommit should equal main HEAD on a fresh branch with one commit: got %s, want %s",
+			draft.BaseCommit, mainHead)
+	}
+}
+
 func TestStartIdempotent(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
