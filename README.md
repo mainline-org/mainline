@@ -1,6 +1,7 @@
 # Mainline
 
-**Distributed intent ledger for AI coding agents.**
+**Mainline is a git-native intent memory layer for AI-assisted engineering.**
+It gives coding agents the historical *why* before they inspect the current *what*.
 
 Mainline records *why* each AI-driven change was made and surfaces conflicts between intents before they reach `main`. It rides on top of your existing git + PR workflow — no special merge command, no commit-message magic. Intent metadata lives in dedicated git refs that ship with `git push` and `git fetch`.
 
@@ -79,20 +80,33 @@ mainline start "Add JWT auth"
 mainline append "Implemented JWT middleware"
 mainline append "Added refresh-token rotation"
 
-# 3. Seal at end of task — auto-syncs with team and runs phase1
+# 3. Before non-trivial edits, read prior intent
+mainline context --current --json
+# returns relevant historical intents with status, anti_patterns,
+# decisions; agents read these BEFORE grepping code
+
+# 4. Seal at end of task — auto-syncs with team and runs phase1
 mainline seal --prepare > seal.json
 # agent fills in seal.json
 mainline seal --submit < seal.json
-# response includes a `conflicts: [...]` array if phase1 finds overlap
+# response includes a `conflicts: [...]` array if phase1 finds overlap;
+# soft-lint summary appears inline if the seal has issues
 
-# 4. Open a PR on GitHub as usual; merge with the web UI
+# 5. (Optional) Quality-check the seal
+mainline lint <intent_id>
+# advisory; never blocks. Catches boilerplate "what" / missing
+# decisions / broken supersedes refs
 
-# 5. Anyone runs sync next
+# 6. Open a PR on GitHub as usual; merge with the web UI
+
+# 7. Anyone runs sync next
 mainline sync
 # tree-hash auto-pin links the squash commit to the intent
 ```
 
 That's the whole loop. No special merge command required.
+
+For human readers, `mainline hub open` builds a static HTML site over the local intent view (recent intents, per-file history, risks, supersedes graph) — useful for code review and onboarding.
 
 ## How it fits your workflow
 
@@ -218,7 +232,11 @@ Full daily set:
 | `mainline show <id>` | Full intent detail (decisions, risks, fingerprint) |
 | `mainline trace <id>` | Turn timeline (start/append/seal/abandon/supersede with elapsed time) |
 | `mainline gaps` | List uncovered commits on main with reversibility-ranked rescue options |
-| `mainline context` | State dump for agent consumption |
+| `mainline context --current` | Relevance-ranked prior intents for the active branch + diff-vs-main (read this BEFORE grepping) |
+| `mainline context --files <p>` | Same retrieval, scoped to specific files |
+| `mainline context --query "..."` | Same retrieval, keyword-driven |
+| `mainline lint [<id>]` | Advisory seal-quality checks (boilerplate, missing decisions, broken refs). Never blocks. |
+| `mainline hub open` | Build + open a static HTML site over the local intent view (humans, not agents) |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |
 | `mainline check --submit` | Submit phase 2 judgment; result surfaces in log column |
 | `mainline doctor --setup` | Verify installation: refspecs, identity, AGENTS.md, PR template, .gitignore |
