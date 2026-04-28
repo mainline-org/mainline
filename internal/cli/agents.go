@@ -20,31 +20,37 @@ import (
 
 var agentsCmd = &cobra.Command{
 	Use:   "agents",
-	Short: "Manage the Mainline-managed block in AGENTS.md and IDE stubs",
-	Long: `Maintain agent-facing guidance in AGENTS.md (and the four IDE
-pointer stubs) without ever overwriting user-edited content.
+	Short: "Manage Mainline's agent guidance (AGENTS.md, CLAUDE.md, IDE stubs)",
+	Long: `Manage Mainline's agent guidance for coding agents.
 
-The Mainline block is wrapped in version + checksum markers so:
+These commands install, check, diff, and update the Mainline-owned
+guidance block inside AGENTS.md, CLAUDE.md, Cursor rules, Windsurf
+rules, and Copilot instructions — without ever overwriting user-
+edited content outside the block.
+
+The guidance block is wrapped in version + checksum markers so:
 
   - Binary upgrades surface "update available" via mainline status.
-  - User edits inside the managed block prevent silent overwrite.
+  - Edits inside the block flag the file as locally modified —
+    update refuses to overwrite without --theirs.
   - Every diff/update is auditable before it lands.
 
 Subcommands:
 
-  mainline agents install          # add the block to AGENTS.md
+  mainline agents install          # add agent guidance to AGENTS.md
   mainline agents check            # report state per file
   mainline agents diff             # show old vs new body
-  mainline agents update           # update unmodified blocks; refuse modified
+  mainline agents update           # update unmodified files; refuse modified
   mainline agents update --theirs  # overwrite even when locally modified
 
-The five managed targets are AGENTS.md, CLAUDE.md, .cursor/rules/
-mainline.md, .windsurfrules, and .github/copilot-instructions.md.`,
+The five guidance surfaces are AGENTS.md, CLAUDE.md,
+.cursor/rules/mainline.md, .windsurfrules, and
+.github/copilot-instructions.md.`,
 }
 
 var agentsCheckCmd = &cobra.Command{
 	Use:   "check",
-	Short: "Report the state of every managed-block target",
+	Short: "Report the agent guidance state for every target",
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -60,7 +66,7 @@ var agentsCheckCmd = &cobra.Command{
 			outputJSON(res)
 			return
 		}
-		fmt.Printf("Mainline template version: %d\n\n", res.CurrentVersion)
+		fmt.Printf("Agent guidance template version: %d\n\n", res.CurrentVersion)
 		for _, f := range res.Files {
 			marker := "✓"
 			tail := ""
@@ -85,7 +91,7 @@ var agentsCheckCmd = &cobra.Command{
 
 var agentsInstallCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Add the Mainline managed block to AGENTS.md and IDE stubs",
+	Short: "Install Mainline's agent guidance into AGENTS.md and IDE stubs",
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -105,7 +111,7 @@ var agentsInstallCmd = &cobra.Command{
 		for _, c := range res.Files {
 			renderAgentsChange(c)
 		}
-		fmt.Println("\nNext: `mainline agents check` to confirm; `mainline agents diff` to review on future updates.")
+		fmt.Println("\nNext: `mainline agents check` to confirm; `mainline agents diff` to review future updates.")
 	},
 }
 
@@ -115,14 +121,14 @@ var (
 
 var agentsUpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update the Mainline managed block to the binary's template version",
-	Long: `Update the managed block in AGENTS.md and the IDE stubs.
+	Short: "Update Mainline's agent guidance to the binary's template version",
+	Long: `Update Mainline's agent guidance in AGENTS.md and the IDE stubs.
 
 Default policy:
 
-  - in_sync         skipped, no work to do
+  - in_sync          skipped, no work to do
   - update_available updated to the embedded template version
-  - legacy          migrated to the versioned marker form
+  - legacy           migrated to the versioned marker form
   - locally_modified REFUSED unless --theirs is passed
 
 User content outside the markers is never touched. Re-running update
@@ -142,7 +148,7 @@ is a no-op when everything is already in sync.`,
 			outputJSON(res)
 			return
 		}
-		fmt.Printf("Mainline agents update (template v%d)\n\n", res.CurrentVersion)
+		fmt.Printf("Agent guidance update (template v%d)\n\n", res.CurrentVersion)
 		anyRefused := false
 		for _, c := range res.Files {
 			renderAgentsChange(c)
@@ -151,7 +157,7 @@ is a no-op when everything is already in sync.`,
 			}
 		}
 		if anyRefused {
-			fmt.Println("\nSome files refused: managed block had local edits.")
+			fmt.Println("\nSome files refused: agent guidance had local edits.")
 			fmt.Println("Pass --theirs to overwrite, or hand-merge the changes after `mainline agents diff`.")
 		}
 	},
@@ -159,7 +165,7 @@ is a no-op when everything is already in sync.`,
 
 var agentsDiffCmd = &cobra.Command{
 	Use:   "diff",
-	Short: "Show old vs new body for every managed-block target that would change",
+	Short: "Show installed vs template body for every agent guidance target that would change",
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -176,7 +182,7 @@ var agentsDiffCmd = &cobra.Command{
 			return
 		}
 		if len(res.Files) == 0 {
-			fmt.Println("All managed blocks are in sync with the embedded template.")
+			fmt.Println("Agent guidance is in sync with the embedded template.")
 			return
 		}
 		for _, f := range res.Files {
@@ -229,7 +235,7 @@ func prefixLines(body, prefix string) string {
 
 func init() {
 	agentsUpdateCmd.Flags().BoolVar(&agentsUpdateTheirs, "theirs", false,
-		"overwrite locally-modified managed blocks (user edits inside markers are lost)")
+		"overwrite locally-modified agent guidance (edits inside the markers are lost)")
 
 	agentsCmd.AddCommand(agentsInstallCmd, agentsCheckCmd, agentsDiffCmd, agentsUpdateCmd)
 }

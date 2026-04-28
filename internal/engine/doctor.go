@@ -191,17 +191,17 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 		switch g.State {
 		case AgentsBlockStateNotInstalled:
 			rep.Issues = append(rep.Issues,
-				"AGENTS.md missing or has no Mainline managed block — run 'mainline agents install'")
+				"AGENTS.md missing or has no Mainline agent guidance — run 'mainline agents install'")
 		case AgentsBlockStateLegacy:
 			rep.Issues = append(rep.Issues,
-				"AGENTS.md has a legacy Mainline block (pre-v0.4 format) — run 'mainline agents update' to migrate")
+				"AGENTS.md has legacy agent guidance (pre-v0.4 format) — run 'mainline agents update' to migrate")
 		case AgentsBlockStateUpdateAvailable:
 			rep.Issues = append(rep.Issues, fmt.Sprintf(
-				"AGENTS.md managed block is v%d, this binary's template is v%d — run 'mainline agents diff' then 'agents update'",
+				"AGENTS.md agent guidance is v%d, this binary's template is v%d — run 'mainline agents diff' then 'agents update'",
 				g.InstalledVersion, g.CurrentVersion))
 		case AgentsBlockStateLocallyModified:
 			rep.Issues = append(rep.Issues,
-				"AGENTS.md managed block has local edits — run 'mainline agents check' to review")
+				"AGENTS.md agent guidance has local edits — run 'mainline agents check' to review")
 		}
 	}
 	rep.PRTemplateOK = fileExists(filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md"))
