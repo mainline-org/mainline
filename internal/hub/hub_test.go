@@ -184,18 +184,34 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	if err := store.WriteMainlineView(makeView(a, b)); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.WriteDraft(&domain.DraftIntent{
+		IntentID:       "int_draft",
+		Status:         domain.StatusDrafting,
+		Goal:           "draft the next hub fix",
+		Thread:         "fix/hub-draft",
+		GitBranch:      "fix/hub-draft",
+		CreatedAt:      "2026-04-28T03:00:00Z",
+		LastModifiedAt: "2026-04-28T03:10:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendTurn(&domain.Turn{IntentID: "int_draft", Index: 0, CreatedAt: "2026-04-28T03:05:00Z"}); err != nil {
+		t.Fatal(err)
+	}
 
 	out := filepath.Join(dir, "site")
 	res, err := Export(store, ExportOptions{OutputDir: out})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.IntentCount != 2 || res.FileCount != 1 || res.ActorCount != 2 || res.RiskCount != 1 {
+	if res.IntentCount != 2 || res.OpenCount != 1 || res.FileCount != 1 || res.ActorCount != 2 || res.RiskCount != 1 {
 		t.Errorf("counts off: %+v", res)
 	}
 
 	for _, want := range []string{
 		"index.html",
+		"open.html",
+		"files.html",
 		"risks.html",
 		"graph.html",
 		"intents/int_a.html",
@@ -224,14 +240,29 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	if len(roundTrip.Intents) != 2 {
 		t.Errorf("round-trip lost intents: got %d", len(roundTrip.Intents))
 	}
+	if len(roundTrip.OpenIntents) != 1 || roundTrip.OpenIntents[0].ID != "int_draft" || roundTrip.OpenIntents[0].TurnCount != 1 {
+		t.Errorf("round-trip lost open intents: %+v", roundTrip.OpenIntents)
+	}
 
 	// Spot-check that the index page mentions both intents — links
 	// across pages must resolve, and this confirms the main table is
 	// populated rather than just the chrome.
 	idx, _ := os.ReadFile(filepath.Join(out, "index.html"))
-	for _, fragment := range []string{"int_a", "int_b", "Alice"} {
+	for _, fragment := range []string{"int_a", "int_b", "Alice", "View in-flight work"} {
 		if !strings.Contains(string(idx), fragment) {
 			t.Errorf("index.html missing %q", fragment)
+		}
+	}
+	filesPage, _ := os.ReadFile(filepath.Join(out, "files.html"))
+	for _, fragment := range []string{"src/auth.go", "files/src__auth.go.html"} {
+		if !strings.Contains(string(filesPage), fragment) {
+			t.Errorf("files.html missing %q", fragment)
+		}
+	}
+	openPage, _ := os.ReadFile(filepath.Join(out, "open.html"))
+	for _, fragment := range []string{"int_draft", "draft the next hub fix", "1"} {
+		if !strings.Contains(string(openPage), fragment) {
+			t.Errorf("open.html missing %q", fragment)
 		}
 	}
 }
@@ -255,10 +286,52 @@ func TestExport_NoIntentsStillWritesIndex(t *testing.T) {
 	if res.IntentCount != 0 {
 		t.Errorf("expected 0 intents, got %d", res.IntentCount)
 	}
-	for _, want := range []string{"index.html", "risks.html", "graph.html"} {
+	for _, want := range []string{"index.html", "open.html", "files.html", "risks.html", "graph.html"} {
 		if _, err := os.Stat(filepath.Join(out, want)); err != nil {
 			t.Errorf("expected %s even with empty view: %v", want, err)
 		}
+	}
+}
+
+func TestBuildOpenIntents_SkipsStaleTerminalDrafts(t *testing.T) {
+	dir := t.TempDir()
+	repoRoot := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := storage.New(repoRoot, nil)
+	view := makeView(intent("int_landed", "actor", "2026-04-28T01:00:00Z", domain.StatusMerged))
+	if err := store.WriteMainlineView(view); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []*domain.DraftIntent{
+		{
+			IntentID:       "int_open",
+			Status:         domain.StatusDrafting,
+			Goal:           "still open",
+			Thread:         "fix/open",
+			GitBranch:      "fix/open",
+			CreatedAt:      "2026-04-28T02:00:00Z",
+			LastModifiedAt: "2026-04-28T02:10:00Z",
+		},
+		{
+			IntentID:       "int_landed",
+			Status:         domain.StatusSealedLocal,
+			Goal:           "stale local copy",
+			Thread:         "fix/landed",
+			GitBranch:      "fix/landed",
+			CreatedAt:      "2026-04-28T01:00:00Z",
+			LastModifiedAt: "2026-04-28T01:10:00Z",
+		},
+	} {
+		if err := store.WriteDraft(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	open := buildOpenIntents(store, view)
+	if len(open) != 1 || open[0].ID != "int_open" {
+		t.Fatalf("expected only non-terminal open draft, got %+v", open)
 	}
 }
 
