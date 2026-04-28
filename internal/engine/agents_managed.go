@@ -267,7 +267,7 @@ func (s *Service) AgentsUpdate(opts AgentsUpdateOptions) (*AgentsUpdateResult, e
 			if !opts.Theirs {
 				out.Files = append(out.Files, AgentsFileChange{
 					Path: t.relPath, From: blk.State, To: blk.State, Action: "refused",
-					Reason: "managed block has local edits; pass --theirs to overwrite",
+					Reason: "agent guidance has local edits; pass --theirs to overwrite",
 				})
 				continue
 			}

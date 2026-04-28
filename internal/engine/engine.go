@@ -795,13 +795,13 @@ func buildStatusSuggestions(r *StatusResult) []string {
 	if g := r.AgentsGuidance; g != nil {
 		switch g.State {
 		case AgentsBlockStateNotInstalled:
-			out = append(out, "mainline agents install   # add Mainline guidance block to AGENTS.md")
+			out = append(out, "mainline agents install   # install agent guidance into AGENTS.md")
 		case AgentsBlockStateUpdateAvailable:
 			out = append(out, "mainline agents diff   # see what changed; then `mainline agents update`")
 		case AgentsBlockStateLocallyModified:
-			out = append(out, "mainline agents check   # AGENTS.md managed block has local edits; review before update")
+			out = append(out, "mainline agents check   # agent guidance has local edits; review before update")
 		case AgentsBlockStateLegacy:
-			out = append(out, "mainline agents update   # migrate AGENTS.md to the versioned managed-block format")
+			out = append(out, "mainline agents update   # migrate agent guidance to the versioned marker format")
 		}
 	}
 	return out
