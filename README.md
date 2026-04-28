@@ -3,6 +3,8 @@
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the current *what*.
 
+> 中文版本: [README.zh.md](./README.zh.md)
+
 Stop your AI agent from silently undoing yesterday's decision, repeating an
 abandoned approach, or stepping on a teammate's in-flight work. Mainline
 records *why* each AI-driven change was made — decisions, risks, anti-patterns
