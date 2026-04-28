@@ -89,6 +89,16 @@ type InitResult struct {
 	ActorName  string `json:"actor_name"`
 	MainBranch string `json:"main_branch"`
 	Created    bool   `json:"created"`
+
+	// FilesStaged are the repo-relative paths Init successfully
+	// `git add`ed before its `mainline: init` commit. Empty when Init
+	// re-runs against a repo that already has all of them tracked.
+	FilesStaged []string `json:"files_staged,omitempty"`
+
+	// CommitHash is the SHA of the `mainline: init` commit, when
+	// Init created one. Empty when there was nothing new to commit
+	// (re-runs after the initial install).
+	CommitHash string `json:"commit_hash,omitempty"`
 }
 
 func (s *Service) Init(actorName string) (*InitResult, error) {
@@ -218,23 +228,36 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 		".github/PULL_REQUEST_TEMPLATE.md",
 		".github/copilot-instructions.md",
 	}
+	staged := []string{}
 	for _, p := range addPaths {
 		// Errors here are non-fatal: file may not exist or path may
-		// already be staged.
-		_, _ = s.Git.Run("add", p)
+		// already be staged. We track which adds succeeded so the
+		// CLI can tell users exactly what landed in their repo —
+		// the silent commit was a real first-touch surprise.
+		if _, err := s.Git.Run("add", p); err == nil {
+			staged = append(staged, p)
+		}
 	}
 	// `commit` may fail if there is nothing to commit (re-running init);
-	// that's the documented idempotent case, not a bug.
-	_, _ = s.Git.Run("commit", "-m", "mainline: init")
+	// that's the documented idempotent case, not a bug. When it does
+	// commit, capture the SHA so the user sees it on screen.
+	commitSHA := ""
+	if _, err := s.Git.Run("commit", "-m", "mainline: init"); err == nil {
+		if sha, err := s.Git.Run("rev-parse", "HEAD"); err == nil {
+			commitSHA = strings.TrimSpace(sha)
+		}
+	}
 
 	s.ensureLocalViews(&cfg)
 
 	return &InitResult{
-		RepoRoot:   s.Git.RepoRoot,
-		ActorID:    actorID,
-		ActorName:  actorName,
-		MainBranch: cfg.Mainline.MainBranch,
-		Created:    true,
+		RepoRoot:    s.Git.RepoRoot,
+		ActorID:     actorID,
+		ActorName:   actorName,
+		MainBranch:  cfg.Mainline.MainBranch,
+		Created:     true,
+		FilesStaged: staged,
+		CommitHash:  commitSHA,
 	}, nil
 }
 
