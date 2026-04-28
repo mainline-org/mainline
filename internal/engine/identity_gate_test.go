@@ -27,12 +27,67 @@ func freshCloneRepo(t *testing.T) (*Service, func()) {
 	// Wipe the local identity to simulate a peer clone that hasn't
 	// run `mainline init` yet. The team config + .gitignore + AGENTS.md
 	// remain — they are committed.
-	identityPath := filepath.Join(dir, ".ml-cache", "identity.json")
-	if err := os.Remove(identityPath); err != nil && !os.IsNotExist(err) {
-		cleanup()
-		t.Fatalf("simulate fresh clone (remove identity): %v", err)
+	for _, identityPath := range identityPathsForTest(dir) {
+		if err := os.Remove(identityPath); err != nil && !os.IsNotExist(err) {
+			cleanup()
+			t.Fatalf("simulate fresh clone (remove identity): %v", err)
+		}
 	}
 	return svc, cleanup
+}
+
+func TestIdentityGate_LinkedWorktreeUsesCloneIdentity(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	init, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	linked := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-linked")
+	defer os.RemoveAll(linked)
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/linked-identity", linked)
+
+	linkedSvc := NewServiceFromRoot(linked)
+	st, err := linkedSvc.Status()
+	if err != nil {
+		t.Fatalf("linked status: %v", err)
+	}
+	if !st.IdentityConfigured || st.ActorID != init.ActorID {
+		t.Fatalf("linked worktree should reuse clone identity, got configured=%v actor=%q want %q",
+			st.IdentityConfigured, st.ActorID, init.ActorID)
+	}
+	if _, err := linkedSvc.Start("work from linked worktree", ""); err != nil {
+		t.Fatalf("linked worktree start should pass identity gate: %v", err)
+	}
+}
+
+func TestIdentityGate_LinkedWorktreeFallsBackToLegacyMainWorktreeIdentity(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	init, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, ".git", "mainline", "identity.json")); err != nil {
+		t.Fatalf("remove shared identity: %v", err)
+	}
+
+	linked := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-legacy-linked")
+	defer os.RemoveAll(linked)
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/legacy-linked-identity", linked)
+
+	linkedSvc := NewServiceFromRoot(linked)
+	st, err := linkedSvc.Status()
+	if err != nil {
+		t.Fatalf("linked status: %v", err)
+	}
+	if !st.IdentityConfigured || st.ActorID != init.ActorID {
+		t.Fatalf("linked worktree should read legacy main worktree identity, got configured=%v actor=%q want %q",
+			st.IdentityConfigured, st.ActorID, init.ActorID)
+	}
 }
 
 func TestIdentityGate_StartRejectsBeforeCreatingDraft(t *testing.T) {
@@ -123,9 +178,10 @@ func TestIdentityGate_SealSubmitDoesNotCorruptDraftWhenIdentityMissing(t *testin
 
 	// Now wipe identity to simulate the user's repro: identity.json
 	// gone but draft already exists.
-	identityPath := filepath.Join(dir, ".ml-cache", "identity.json")
-	if err := os.Remove(identityPath); err != nil {
-		t.Fatalf("remove identity: %v", err)
+	for _, identityPath := range identityPathsForTest(dir) {
+		if err := os.Remove(identityPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove identity: %v", err)
+		}
 	}
 
 	sr := validSealResult(start.IntentID)
@@ -147,6 +203,13 @@ func TestIdentityGate_SealSubmitDoesNotCorruptDraftWhenIdentityMissing(t *testin
 	}
 	if draft.Status != domain.StatusDrafting {
 		t.Fatalf("draft must remain drafting after failed identity gate; got %s", draft.Status)
+	}
+}
+
+func identityPathsForTest(repoRoot string) []string {
+	return []string{
+		filepath.Join(repoRoot, ".ml-cache", "identity.json"),
+		filepath.Join(repoRoot, ".git", "mainline", "identity.json"),
 	}
 }
 

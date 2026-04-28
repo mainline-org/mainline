@@ -67,6 +67,28 @@ type Agent interface {
 	HookNames() []string
 }
 
+// InstallationStatusReporter is an optional extension for agents that
+// can explain whether their repo-local hook config is complete enough
+// to fire. The CLI uses this for `mainline hooks status`; dispatch does
+// not depend on it.
+type InstallationStatusReporter interface {
+	InstallationStatus(repoRoot string) (InstallationStatus, error)
+}
+
+// InstallationStatus is the agent-owned half of `hooks status`. The
+// CLI combines it with dispatcher settings from .mainline/config.toml
+// to compute whether hooks are effective for this repo.
+type InstallationStatus struct {
+	Installed         bool     `json:"installed"`
+	Scope             string   `json:"scope"`
+	Files             []string `json:"files,omitempty"`
+	HookCount         int      `json:"hook_count"`
+	ExpectedHookCount int      `json:"expected_hook_count"`
+	NeedsRepair       bool     `json:"needs_repair,omitempty"`
+	RepairReasons     []string `json:"repair_reasons,omitempty"`
+	RestartRequired   bool     `json:"restart_required,omitempty"`
+}
+
 // HookOutputRenderer is an OPTIONAL interface an Agent may implement
 // when its host protocol expects a JSON document on stdout (e.g.
 // cursor's sessionStart hook can carry an `additional_context`
@@ -121,6 +143,11 @@ type InstallOptions struct {
 // Empty Files is allowed (no-op idempotent install reports the
 // already-installed paths).
 type InstallReport struct {
+	// Scope describes where the agent integration was written.
+	// Current integrations are repo-local; global host config is not
+	// modified.
+	Scope string `json:"scope,omitempty"`
+
 	// Files are absolute paths the install touched. Used in CLI
 	// output ("wrote .cursor/hooks.json") and in `mainline hooks
 	// status` so the user can find the files manually.
@@ -136,6 +163,11 @@ type InstallReport struct {
 	// from "Files: nil" because Force=true on an already-installed
 	// agent still rewrites and returns the file list.
 	AlreadyInstalled bool `json:"already_installed,omitempty"`
+
+	// RestartRequired is true when the host agent typically reads the
+	// hook file at session/app startup, so existing sessions may need
+	// to be restarted before they observe this install.
+	RestartRequired bool `json:"restart_required,omitempty"`
 }
 
 // -----------------------------------------------------------

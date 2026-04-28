@@ -83,6 +83,66 @@ func TestInstallMergesClaudeSettings(t *testing.T) {
 	if !again.AlreadyInstalled {
 		t.Fatalf("second install should be idempotent: %#v", again)
 	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Installed || st.NeedsRepair || st.HookCount != st.ExpectedHookCount {
+		t.Fatalf("unexpected healthy install status: %#v", st)
+	}
+}
+
+func TestInstallationStatusDetectsMissingHookAndRepair(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top struct {
+		Hooks map[string][]hookGroup `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &top); err != nil {
+		t.Fatal(err)
+	}
+	delete(top.Hooks, "Stop")
+	next, err := json.MarshalIndent(top, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, append(next, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Installed || !st.NeedsRepair || !strings.Contains(strings.Join(st.RepairReasons, "\n"), "Stop") {
+		t.Fatalf("expected missing Stop hook to need repair: %#v", st)
+	}
+
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NeedsRepair {
+		t.Fatalf("install should repair missing hook: %#v", st)
+	}
+}
+
+func TestLocalDevWrapperFailsSoft(t *testing.T) {
+	got := wrapperCommand(hooks.InstallOptions{LocalDev: true}, HookStop)
+	if !strings.Contains(got, "|| exit 0") {
+		t.Fatalf("local-dev wrapper should fail soft: %q", got)
+	}
 }
 
 func TestUninstallRemovesOnlyManagedHooks(t *testing.T) {
