@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 10 -->
+<!-- mainline-agents-md-version: 11 -->
 
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the
@@ -331,9 +331,12 @@ You should suggest the hub when the user asks one of:
 Concretely:
 
 ```
-mainline hub open                     # builds .mainline/hub and opens it
+mainline hub open                     # build + open in the default browser
 mainline hub export ./hub-snapshot    # write a portable copy elsewhere
 ```
+
+Both commands default the output to `<os-temp>/mainline-hub/<repo>`
+so the static site never enters git.
 
 Hub is read-only and rebuildable from the synced view; it never
 modifies repo files outside the user-chosen output directory.
