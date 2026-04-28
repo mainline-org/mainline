@@ -1,4 +1,4 @@
-<!-- mainline:agents:start version=7 checksum=sha256:0f5a8ba38d1bd308b9f157caec9b472cc955dd594425f3425d17449c85888541 -->
+<!-- mainline:agents:start version=7 checksum=sha256:913513b610b57221cb9860b46dea5c8f7df5e7d3f5ea2e7c200f384f232f4d13 -->
 ## Mainline
 
 <!-- mainline-agents-md-version: 7 -->
@@ -28,6 +28,55 @@ when possible — it becomes the headline in `mainline log`):
 ```
 mainline start "<short description of the user's goal>" --json
 ```
+
+### Intent-first workflow (the load-bearing rule)
+
+Before making any non-trivial code change, retrieve relevant intent
+context **before** searching the codebase directly.
+
+The default agent order is:
+
+1. `mainline status` — overall state, identity, sync staleness, suggestions.
+2. `mainline context --current --json` — historical intents relevant to
+   your current branch + active draft + diff vs main.
+3. If the task names files: `mainline context --files <path>... --json`.
+4. If the task is semantic: `mainline context --query "<task summary>" --json`.
+5. Read the returned intents' `summary`, `decisions`, `risks`, and
+   `fingerprint`.
+6. **Only then** grep / read code to verify against the current
+   implementation.
+7. Edit.
+8. When sealing, reference relevant prior intent IDs in your decisions.
+
+Do not lead with `grep`, `rg`, or broad file reads for non-trivial
+changes unless Mainline is unavailable or the task is purely mechanical.
+
+`mainline context` does NOT replace code inspection. It provides the
+historical *why* before the agent inspects the current *what*.
+
+### Pre-edit checklist for agents
+
+Before editing code, answer:
+
+- Did I run `mainline status`?
+- Did I run `mainline context --current --json`?
+- If files are involved, did I run `mainline context --files ... --json`?
+- Did I read the relevant prior decisions and risks?
+- Did I verify those intents against the current code?
+- Am I about to repeat an abandoned or superseded approach?
+
+### Task priority — when intent-first matters most
+
+| Always mainline-first | Mainline-first preferred | Direct code OK |
+|---|---|---|
+| architecture changes / refactors | bug fixes | typo / formatting fixes |
+| migrations / deletions | new feature additions | one-line obvious syntax fixes |
+| auth / billing / data-model / permissions | API behaviour changes | mechanical rename, scoped |
+| test-strategy changes | config / CI / release tweaks | user explicitly asks to view ONE file |
+| any cross-file change | | |
+| user asks "why is this here?" | | |
+| user asks "can we delete this?" | | |
+| user asks "did we try this before?" | | |
 
 ### Read team intents for context (do this aggressively)
 
