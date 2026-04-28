@@ -1,11 +1,27 @@
 {{define "graph"}}{{template "header" .}}
 <h1>Intent relationships</h1>
-<p class="lead">Text adjacency list of supersedes / superseded-by links recorded in the local view.</p>
-{{if not .Relations}}<p class="muted">No intent relations recorded yet.</p>{{end}}
-<dl class="graph">
-{{range .Relations}}
-<dt><a href="intents/{{.From.ID}}.html"><code>{{shortID .From.ID}}</code></a> <span class="kind">{{.Kind}}</span> <a href="intents/{{.To.ID}}.html"><code>{{shortID .To.ID}}</code></a></dt>
-<dd>{{.From.Title}} → {{.To.Title}}</dd>
+<p class="lead">Edges between sealed intents. Three kinds, in order of how load-bearing the signal is.</p>
+
+{{if not .RelationGroups}}
+<p class="muted">No supersessions, no flagged conflicts, and no shared files yet.</p>
 {{end}}
-</dl>
+
+{{range .RelationGroups}}
+<section class="graph-section">
+  <h2>{{.Title}}</h2>
+  <p class="muted">{{.Lead}}</p>
+  <dl class="graph">
+  {{range .Rows}}
+    <dt>
+      <a href="intents/{{.From.ID}}.html"><code>{{shortID .From.ID}}</code></a>
+      <span class="kind kind-{{.Kind}}">{{.Kind}}</span>
+      <a href="intents/{{.To.ID}}.html"><code>{{shortID .To.ID}}</code></a>
+      {{if .Note}}<span class="muted graph-note">— {{.Note}}</span>{{end}}
+    </dt>
+    <dd>{{.From.Title}} → {{.To.Title}}</dd>
+  {{end}}
+  </dl>
+</section>
+{{end}}
+
 {{template "footer" .}}{{end}}
