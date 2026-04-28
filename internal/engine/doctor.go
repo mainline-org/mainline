@@ -49,7 +49,15 @@ type DoctorSetupReport struct {
 	NotesDisplayRefOK bool     `json:"notes_display_ref_ok"`
 	IdentityOK        bool     `json:"identity_ok"`
 	IdentityActorID   string   `json:"identity_actor_id,omitempty"`
-	AgentsMDOK        bool     `json:"agents_md_ok"`
+	AgentsMDOK bool `json:"agents_md_ok"`
+	// AgentsBlockState reports the state of the Mainline-managed
+	// block inside AGENTS.md (independent of file presence).
+	// Values: not_installed | legacy | in_sync | update_available |
+	// locally_modified. Use `mainline agents check` for the full
+	// per-file report including the IDE stubs.
+	AgentsBlockState        string `json:"agents_block_state,omitempty"`
+	AgentsBlockVersion      int    `json:"agents_block_version,omitempty"`
+	AgentsTemplateVersion   int    `json:"agents_template_version,omitempty"`
 	PRTemplateOK      bool     `json:"pr_template_ok"`
 	GitignoreOK       bool     `json:"gitignore_ok"`
 	Fixed             []string `json:"fixed,omitempty"` // refspecs added by --fix
@@ -172,10 +180,29 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 			"identity file missing — run 'mainline init --actor-name <name>'")
 	}
 
-	// AGENTS.md / PR template / .gitignore presence
+	// AGENTS.md / PR template / .gitignore presence + managed-block
+	// state. The managed block is the Mainline-owned section; user
+	// content above/below the markers is preserved across updates.
 	rep.AgentsMDOK = fileExists(filepath.Join(s.Git.RepoRoot, "AGENTS.md"))
-	if !rep.AgentsMDOK {
-		rep.Issues = append(rep.Issues, "AGENTS.md missing — run 'mainline init --rewire'")
+	if g := s.AgentsGuidanceState(); g != nil {
+		rep.AgentsBlockState = string(g.State)
+		rep.AgentsBlockVersion = g.InstalledVersion
+		rep.AgentsTemplateVersion = g.CurrentVersion
+		switch g.State {
+		case AgentsBlockStateNotInstalled:
+			rep.Issues = append(rep.Issues,
+				"AGENTS.md missing or has no Mainline managed block — run 'mainline agents install'")
+		case AgentsBlockStateLegacy:
+			rep.Issues = append(rep.Issues,
+				"AGENTS.md has a legacy Mainline block (pre-v0.4 format) — run 'mainline agents update' to migrate")
+		case AgentsBlockStateUpdateAvailable:
+			rep.Issues = append(rep.Issues, fmt.Sprintf(
+				"AGENTS.md managed block is v%d, this binary's template is v%d — run 'mainline agents diff' then 'agents update'",
+				g.InstalledVersion, g.CurrentVersion))
+		case AgentsBlockStateLocallyModified:
+			rep.Issues = append(rep.Issues,
+				"AGENTS.md managed block has local edits — run 'mainline agents check' to review")
+		}
 	}
 	rep.PRTemplateOK = fileExists(filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md"))
 	if !rep.PRTemplateOK {

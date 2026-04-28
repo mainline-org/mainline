@@ -1,4 +1,4 @@
-<!-- mainline:begin -->
+<!-- mainline:agents:start version=7 checksum=sha256:e477845c980e622967b731a19b369d0ea8fc1a3e276e83d420a3b2ca451f79e4 -->
 ## Mainline
 
 <!-- mainline-agents-md-version: 7 -->
@@ -35,4 +35,4 @@ the snapshot into your system context. Every other workflow step
 (start / append / commit / seal --prepare / seal --submit / check)
 remains agent-driven exactly as `AGENTS.md` describes. Hooks are a
 context provider, not a workflow driver.
-<!-- mainline:end -->
+<!-- mainline:agents:end -->

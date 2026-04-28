@@ -176,6 +176,7 @@ func init() {
 	// Setup & repair — one-time per repo or when something breaks.
 	initCmd.GroupID = groupSetup.ID
 	doctorCmd.GroupID = groupSetup.ID
+	agentsCmd.GroupID = groupSetup.ID
 
 	// Advanced — manual fallbacks. AGENTS.md instructs agents NOT to
 	// run these unless the user explicitly asks; the auto-flow
@@ -200,7 +201,7 @@ func init() {
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
-		traceCmd,
+		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
 	)
 }
