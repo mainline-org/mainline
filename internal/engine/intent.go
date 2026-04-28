@@ -66,7 +66,36 @@ func (s *Service) StartWithOptions(goal string, thread string, opts *StartOption
 		thread = branch
 	}
 
+	// Pick the intent's base commit. The diff seal --prepare reports
+	// is `base..HEAD`, so the choice here decides whether commits the
+	// user made *before* `mainline start` are visible to seal:
+	//
+	//   - If HEAD is already ahead of synced main (the user committed
+	//     work on this branch before running start), set base to the
+	//     merge-base with main so those commits show up in the diff.
+	//     Without this, a literal-following user who runs
+	//     `git commit -m ...` then `mainline start "..."` then
+	//     `seal --prepare` gets an empty fingerprint.files_touched
+	//     and the validator rejects.
+	//
+	//   - If HEAD == merge-base (no commits ahead yet, or main itself),
+	//     keep base = HEAD. Subsequent commits on the branch will then
+	//     populate the diff as expected.
 	base, _ := s.Git.HeadCommit()
+	if cfg, err := s.getTeamConfig(); err == nil {
+		mainRef := s.syncedMainRef(cfg.Mainline.MainBranch)
+		if mainHead := s.Git.ReadRef(mainRef); mainHead != "" && mainHead != base {
+			if mb, err := s.Git.MergeBase(base, mainHead); err == nil {
+				mb = strings.TrimSpace(mb)
+				// Only adopt the merge-base when it's strictly behind
+				// HEAD; otherwise we'd silently demote base to HEAD's
+				// own ancestor in the no-commits-yet case.
+				if mb != "" && mb != base {
+					base = mb
+				}
+			}
+		}
+	}
 	var backfill []string
 	if opts != nil && len(opts.BackfillCommits) > 0 {
 		// Backfill flow: base_commit is best-set to the parent of the
