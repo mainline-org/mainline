@@ -643,7 +643,11 @@ func (s *Store) WriteMainlineView(v *domain.MainlineView) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.mainlineViewPath(), data, 0o644)
+	if err := os.WriteFile(s.mainlineViewPath(), data, 0o644); err != nil {
+		return err
+	}
+	_ = s.RebuildMainlineIndex(v)
+	return nil
 }
 
 func (s *Store) ReadProposedIndex() (*domain.ProposedIndex, error) {
