@@ -246,6 +246,28 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 		t.Error("wrong kind")
 	}
 
+	// Starter contract: intent_id and fingerprint.files_touched are
+	// pre-populated, agent-judgment fields are empty (the agent
+	// fills them). This is what removes ~50% of the typing for a
+	// first-touch agent.
+	if pkg.Starter == nil {
+		t.Fatal("seal_result_starter must be present")
+	}
+	if pkg.Starter.IntentID != startResult.IntentID {
+		t.Errorf("starter intent_id should match draft: got %q want %q",
+			pkg.Starter.IntentID, startResult.IntentID)
+	}
+	if pkg.Starter.Summary.Title != "" {
+		t.Errorf("agent-judgment field summary.title should be empty in starter, got %q",
+			pkg.Starter.Summary.Title)
+	}
+	// FilesTouched mirrors DiffSummary.FilesChanged so the starter
+	// is consistent with what the package already documents.
+	if len(pkg.Starter.Fingerprint.FilesTouched) != len(pkg.DiffSummary.FilesChanged) {
+		t.Errorf("starter files_touched should mirror diff_summary.files_changed: starter=%v diff=%v",
+			pkg.Starter.Fingerprint.FilesTouched, pkg.DiffSummary.FilesChanged)
+	}
+
 	// Seal submit
 	sealResult := domain.SealResult{
 		IntentID: startResult.IntentID,
