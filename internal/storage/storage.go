@@ -39,6 +39,32 @@ func (s *Store) teamConfigPath() string  { return filepath.Join(s.mainlineDir(),
 func (s *Store) localConfigPath() string { return filepath.Join(s.mainlineDir(), "local.toml") }
 func (s *Store) identityPath() string    { return filepath.Join(s.cacheDir(), "identity.json") }
 
+func (s *Store) sharedIdentityPath() string {
+	if s.Git == nil {
+		return ""
+	}
+	common, err := s.Git.CommonDir()
+	if err != nil || common == "" {
+		return ""
+	}
+	return filepath.Join(common, "mainline", "identity.json")
+}
+
+func (s *Store) legacyMainWorktreeIdentityPath() string {
+	if s.Git == nil {
+		return ""
+	}
+	common, err := s.Git.CommonDir()
+	if err != nil || common == "" || filepath.Base(common) != ".git" {
+		return ""
+	}
+	mainWorktree := filepath.Dir(common)
+	if mainWorktree == "" || mainWorktree == s.RepoRoot {
+		return ""
+	}
+	return filepath.Join(mainWorktree, ".ml-cache", "identity.json")
+}
+
 // HooksDir is the per-repo working dir for hook state. Used by the
 // hooks package to persist e.g. the SessionStart→SessionEnd correlation
 // or the most-recent prompt that opted us into auto-start. Keep all
@@ -202,26 +228,55 @@ func (s *Store) WriteLocalConfig(cfg *domain.LocalConfig) error {
 // -----------------------------------------------------------
 
 func (s *Store) ReadIdentity() (*domain.Identity, error) {
-	data, err := os.ReadFile(s.identityPath())
-	if err != nil {
-		return nil, err
+	paths := []string{s.identityPath()}
+	if shared := s.sharedIdentityPath(); shared != "" {
+		paths = append(paths, shared)
 	}
-	var id domain.Identity
-	if err := json.Unmarshal(data, &id); err != nil {
-		return nil, err
+	if legacy := s.legacyMainWorktreeIdentityPath(); legacy != "" {
+		paths = append(paths, legacy)
 	}
-	return &id, nil
+
+	var firstErr error
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		var id domain.Identity
+		if err := json.Unmarshal(data, &id); err != nil {
+			return nil, err
+		}
+		return &id, nil
+	}
+	if firstErr == nil {
+		firstErr = os.ErrNotExist
+	}
+	return nil, firstErr
 }
 
 func (s *Store) WriteIdentity(id *domain.Identity) error {
-	if err := os.MkdirAll(s.cacheDir(), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(id, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.identityPath(), data, 0o644)
+
+	paths := []string{s.identityPath()}
+	if shared := s.sharedIdentityPath(); shared != "" {
+		paths = append(paths, shared)
+	}
+
+	for _, path := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // -----------------------------------------------------------
