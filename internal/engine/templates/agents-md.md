@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 8 -->
+<!-- mainline-agents-md-version: 9 -->
 
 This project uses **Mainline** to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
@@ -40,18 +40,39 @@ The default agent order is:
    your current branch + active draft + diff vs main.
 3. If the task names files: `mainline context --files <path>... --json`.
 4. If the task is semantic: `mainline context --query "<task summary>" --json`.
-5. Read the returned intents' `summary`, `decisions`, `risks`, and
-   `fingerprint`.
+5. Read the returned intents' `summary`, `decisions`, `risks`,
+   `anti_patterns`, and `fingerprint`.
 6. **Only then** grep / read code to verify against the current
    implementation.
 7. Edit.
-8. When sealing, reference relevant prior intent IDs in your decisions.
+8. When sealing, reference relevant prior intent IDs in your
+   decisions, and record any new `anti_patterns` future agents must
+   avoid in this area.
 
 Do not lead with `grep`, `rg`, or broad file reads for non-trivial
 changes unless Mainline is unavailable or the task is purely mechanical.
 
 `mainline context` does NOT replace code inspection. It provides the
 historical *why* before the agent inspects the current *what*.
+
+**Reading the retrieval output** — every returned intent carries a
+`status` field that tells you how to use it RIGHT NOW (distinct from
+its lifecycle status):
+
+| status | how to read it |
+|---|---|
+| `current` | the current effective decision; verify against current code, then apply |
+| `superseded` | replaced — read `superseded_by` instead and use this only for context |
+| `abandoned` | this approach was tried and abandoned; do not repeat without understanding why |
+| `stale` | files have churned or the intent is old; verify decisions still hold |
+
+Each intent also carries:
+
+- `risks` — soft warnings to weigh.
+- `anti_patterns` — **hard constraints**. Each one carries a `what`,
+  a `why`, and a `severity`. Do not violate them. The retrieval API
+  never truncates `anti_patterns`, so if you see one, it is in scope.
+- `guidance` — a single-line reminder derived from `status`.
 
 ### Pre-edit checklist for agents
 
@@ -188,6 +209,25 @@ the next state in a new turn.
    ```
    "tags": ["auth", "authentication", "security", "jwt", "session"]
    ```
+
+   When the work establishes constraints future agents must respect,
+   record them as `anti_patterns` (NOT as `risks`). Each entry MUST
+   carry both `what` and `why`; empty `why` is rejected at seal time.
+
+   ```json
+   "anti_patterns": [
+     {
+       "what": "Removing legacy session middleware on /oauth path",
+       "why":  "OAuth callback handler still requires session state",
+       "severity": "high"
+     }
+   ]
+   ```
+
+   Use `risks` for soft warnings the reviewer should weigh; use
+   `anti_patterns` for hard constraints the next agent must not
+   violate. Anti-patterns are surfaced uncapped in `mainline context`,
+   so future agents will always see them.
 
 4. Submit it:
 

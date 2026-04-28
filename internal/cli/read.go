@@ -347,11 +347,27 @@ func printContextRetrievalText(r *engine.ContextRetrievalResult) {
 			if ri.Title != "" {
 				fmt.Printf("    %s\n", ri.Title)
 			}
+			if ri.Guidance != "" {
+				fmt.Printf("    → %s\n", ri.Guidance)
+			}
 			if len(ri.Relevance.Reasons) > 0 {
 				fmt.Printf("    why: %s\n", strings.Join(ri.Relevance.Reasons, "; "))
 			}
 			if ri.Summary != "" {
 				fmt.Printf("    %s\n", ri.Summary)
+			}
+			if len(ri.AntiPatterns) > 0 {
+				fmt.Println("    anti-patterns (do NOT do):")
+				for _, ap := range ri.AntiPatterns {
+					sev := ""
+					if ap.Severity != "" {
+						sev = " [" + ap.Severity + "]"
+					}
+					fmt.Printf("      ✗ %s%s\n", ap.What, sev)
+					if ap.Why != "" {
+						fmt.Printf("         why: %s\n", ap.Why)
+					}
+				}
 			}
 			if len(ri.Decisions) > 0 {
 				fmt.Println("    decisions:")
@@ -374,10 +390,10 @@ func printContextRetrievalText(r *engine.ContextRetrievalResult) {
 		}
 	}
 
-	if len(r.Guidance) > 0 {
+	if len(r.Notes) > 0 {
 		fmt.Println()
-		for _, g := range r.Guidance {
-			fmt.Printf("⚠ %s\n", g)
+		for _, n := range r.Notes {
+			fmt.Printf("⚠ %s\n", n)
 		}
 	}
 }

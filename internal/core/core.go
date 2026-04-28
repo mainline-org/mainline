@@ -156,6 +156,19 @@ func ValidateSealResult(sr *domain.SealResult) error {
 	if sr.Confidence.Fingerprint < 0 || sr.Confidence.Fingerprint > 1 {
 		return fmt.Errorf("seal_result: confidence.fingerprint must be in [0,1]")
 	}
+	for i, ap := range sr.Summary.AntiPatterns {
+		if strings.TrimSpace(ap.What) == "" {
+			return fmt.Errorf("seal_result: summary.anti_patterns[%d].what is required", i)
+		}
+		if strings.TrimSpace(ap.Why) == "" {
+			return fmt.Errorf("seal_result: summary.anti_patterns[%d].why is required (anti-patterns without a load-bearing reason are too easy to ignore)", i)
+		}
+		switch ap.Severity {
+		case "", "low", "medium", "high":
+		default:
+			return fmt.Errorf("seal_result: summary.anti_patterns[%d].severity must be low|medium|high (got %q)", i, ap.Severity)
+		}
+	}
 	return nil
 }
 

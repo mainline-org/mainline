@@ -57,10 +57,14 @@ type ContextRetrievalRequest struct {
 
 // ContextRetrievalResult is the agent-friendly retrieval output.
 // Compact by design — every field carries decision-relevant signal.
+//
+// Notes is the top-level reminder list ("verify against current
+// code", etc.) — repo-wide guidance the agent should hold while
+// reading the result. Per-intent guidance lives on ContextRelevant.
 type ContextRetrievalResult struct {
-	Query           ContextQueryEcho   `json:"query"`
-	RelevantIntents []ContextRelevant  `json:"relevant_intents"`
-	Guidance        []string           `json:"guidance"`
+	Query           ContextQueryEcho  `json:"query"`
+	RelevantIntents []ContextRelevant `json:"relevant_intents"`
+	Notes           []string          `json:"notes"`
 }
 
 // ContextQueryEcho echoes back what mode/inputs were used so an agent
@@ -72,22 +76,52 @@ type ContextQueryEcho struct {
 }
 
 // ContextRelevant is one ranked intent in the retrieval result.
-// Decisions / Risks are truncated; Followups are command suggestions
-// the agent can copy-paste to drill into the full record.
+//
+// The Status field here is the *retrieval status* — one of four
+// values that tell the agent how to use this intent right now:
+//
+//   - "current"     this intent is the current effective decision;
+//                   verify against current code, then apply.
+//   - "superseded"  this intent was replaced by SupersededBy; read
+//                   that one instead and only use this for context.
+//   - "abandoned"   this approach was tried and abandoned; do not
+//                   repeat it without first understanding why.
+//   - "stale"       this intent is current but its files have been
+//                   churning or it is old enough that its decisions
+//                   may no longer hold; verify before acting.
+//
+// Decisions / Risks are top-N truncated; AntiPatterns are NEVER
+// truncated — they are the load-bearing safety surface. Followups
+// are command suggestions the agent can copy-paste to drill into
+// the full record. Guidance is the single-line advisory derived
+// from Status.
 type ContextRelevant struct {
-	IntentID  string            `json:"intent_id"`
-	Title     string            `json:"title"`
-	Status    string            `json:"status"`
-	Relevance ContextRelevance  `json:"relevance"`
-	Summary   string            `json:"summary"`
-	Decisions []string          `json:"decisions,omitempty"`
-	Risks     []string          `json:"risks,omitempty"`
-	Followups map[string]string `json:"followups,omitempty"`
+	IntentID     string              `json:"intent_id"`
+	Title        string              `json:"title"`
+	Status       string              `json:"status"`
+	Relevance    ContextRelevance    `json:"relevance"`
+	Summary      string              `json:"summary"`
+	Decisions    []string            `json:"decisions,omitempty"`
+	Risks        []string            `json:"risks,omitempty"`
+	AntiPatterns []domain.AntiPattern `json:"anti_patterns,omitempty"`
+	Guidance     string              `json:"guidance,omitempty"`
+	Followups    map[string]string   `json:"followups,omitempty"`
 
 	// Status-conditional surface:
 	AbandonedReason string `json:"abandoned_reason,omitempty"`
 	SupersededBy    string `json:"superseded_by,omitempty"`
 }
+
+// Retrieval-status constants. Distinct from domain.IntentStatus
+// (which is the lifecycle status: drafting / sealed_local / merged
+// / etc.) — the retrieval status is what the agent needs to decide
+// "should I trust this intent right now?".
+const (
+	RetrievalStatusCurrent    = "current"
+	RetrievalStatusSuperseded = "superseded"
+	RetrievalStatusAbandoned  = "abandoned"
+	RetrievalStatusStale      = "stale"
+)
 
 // ContextRelevance captures the score and human-readable reasons.
 // Scores are not normalised across calls — they're meant to be
@@ -115,6 +149,19 @@ const (
 	// with at least one weak signal (subsystem match or recency
 	// boost) and drops noise.
 	contextRelevanceThreshold = 0.05
+
+	// staleAge is the wall-clock threshold at which a non-superseded,
+	// non-abandoned intent is considered stale. Picked at 90 days
+	// because most repos see meaningful refactor cycles inside that
+	// window — anything older needs a verify-against-current-code
+	// nudge before the agent treats it as load-bearing truth.
+	staleAge = 90 * 24 * time.Hour
+
+	// staleFileChurnThreshold marks an intent as stale when any one
+	// of its FilesTouched has been re-touched by this many newer
+	// intents. Three is the heuristic ceiling: one re-touch is
+	// normal, two is signal, three says "the file has moved on".
+	staleFileChurnThreshold = 3
 )
 
 // RetrieveContext is the engine entry point for `mainline context`.
@@ -158,12 +205,23 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
 		return &ContextRetrievalResult{
-			Query:    ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
-			Guidance: contextGuidance(),
+			Query: ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
+			Notes: contextNotes(),
 		}, nil
 	}
 
+	// Pre-compute per-file churn for stale detection. Cheap: O(N×F)
+	// across the view, done once per call.
+	churn := buildFileChurnIndex(view)
+	now := time.Now()
+
 	// Score every non-drafting intent; rank; truncate to Limit.
+	// Abandoned and superseded intents stay in the result set —
+	// they are valuable signal ("this was tried", "this was
+	// replaced") — but ranked below current intents of comparable
+	// raw score by the multiplier in scoreIntentRelevance, and
+	// labelled with the retrieval status that tells the agent how
+	// to use them.
 	scored := make([]ContextRelevant, 0, len(view.Intents))
 	branch, _ := s.Git.CurrentBranch()
 	for _, iv := range view.Intents {
@@ -171,12 +229,6 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 			continue
 		}
 		score, reasons := scoreIntentRelevance(iv, files, query, branch)
-		// Mode-specific boost: in --current the user is implicitly
-		// asking about their working branch, so an intent on the
-		// same thread is materially more relevant. In --files /
-		// --query the user has named the target explicitly; thread
-		// match would let "I'm on this branch" outrank explicit
-		// matches.
 		if req.Mode == "current" && branch != "" && iv.Thread == branch {
 			score += 0.15
 			reasons = append(reasons, "same thread")
@@ -184,8 +236,17 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		if score < contextRelevanceThreshold {
 			continue
 		}
-		scored = append(scored, packRelevant(iv, score, reasons))
+		retrStatus := classifyRetrievalStatus(iv, churn, now)
+		scored = append(scored, packRelevant(iv, score, reasons, retrStatus))
 	}
+
+	// Apply Property 3 (Superseded 不上位): if A is in the result
+	// AND B (its superseder) is also in the result, A.score is
+	// pinned just below B.score so B always ranks above A. Without
+	// this, raw signal could let an old superseded intent outrank
+	// its replacement.
+	enforceSupersessionRanking(scored)
+
 	sort.SliceStable(scored, func(i, j int) bool {
 		return scored[i].Relevance.Score > scored[j].Relevance.Score
 	})
@@ -196,8 +257,134 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	return &ContextRetrievalResult{
 		Query:           ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
 		RelevantIntents: scored,
-		Guidance:        contextGuidance(),
+		Notes:           contextNotes(),
 	}, nil
+}
+
+// classifyRetrievalStatus maps a domain IntentView to one of four
+// retrieval-status values. This is what tells the agent how to
+// USE the intent now, distinct from the lifecycle status.
+//
+// Priority (first match wins):
+//
+//  1. abandoned   — domain status says abandoned/reverted
+//  2. superseded  — explicit StatusEvidence.SupersededByIntent
+//  3. stale       — wall-clock age >= staleAge OR any of its files
+//                    has been re-touched by >= staleFileChurnThreshold
+//                    later sealed intents
+//  4. current     — the default
+func classifyRetrievalStatus(iv domain.IntentView, churn map[string]int, now time.Time) string {
+	switch iv.Status {
+	case domain.StatusAbandoned, domain.StatusReverted:
+		return RetrievalStatusAbandoned
+	}
+	if iv.StatusEvidence.SupersededByIntent != "" {
+		return RetrievalStatusSuperseded
+	}
+	// Wall-clock stale: this intent is old enough that its
+	// surrounding code has likely moved.
+	if iv.SealedAt != "" {
+		if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil {
+			if now.Sub(t) >= staleAge {
+				return RetrievalStatusStale
+			}
+		}
+	}
+	// File-churn stale: at least one of this intent's files has been
+	// touched by `staleFileChurnThreshold` strictly-later intents.
+	if iv.Fingerprint != nil {
+		for _, f := range iv.Fingerprint.FilesTouched {
+			if churn[idForFile(iv.IntentID, f)] >= staleFileChurnThreshold {
+				return RetrievalStatusStale
+			}
+		}
+	}
+	return RetrievalStatusCurrent
+}
+
+// buildFileChurnIndex returns a map keyed by `<intentID>|<file>`
+// whose value is the number of *strictly-later* sealed intents that
+// also touched the same file. The strictly-later condition is what
+// makes this the stale-detection signal (an intent isn't stale
+// because of its own touches).
+//
+// We index by `<intentID>|<file>` rather than just `<file>` because
+// each intent's stale judgement depends on what came AFTER it, not
+// on the absolute count of touches.
+func buildFileChurnIndex(view *domain.MainlineView) map[string]int {
+	out := map[string]int{}
+	if view == nil {
+		return out
+	}
+	// Touches by file, with sealed-at timestamps so we can apply
+	// the strictly-later filter cheaply.
+	type touch struct {
+		intentID string
+		sealedAt time.Time
+	}
+	byFile := map[string][]touch{}
+	for _, iv := range view.Intents {
+		if iv.Fingerprint == nil {
+			continue
+		}
+		var ts time.Time
+		if iv.SealedAt != "" {
+			if parsed, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil {
+				ts = parsed
+			}
+		}
+		for _, f := range iv.Fingerprint.FilesTouched {
+			byFile[f] = append(byFile[f], touch{intentID: iv.IntentID, sealedAt: ts})
+		}
+	}
+	for f, list := range byFile {
+		for i, t := range list {
+			later := 0
+			for j, u := range list {
+				if i == j {
+					continue
+				}
+				// Strictly-later wins; ties (same sealedAt) do not.
+				if u.sealedAt.After(t.sealedAt) {
+					later++
+				}
+			}
+			out[idForFile(t.intentID, f)] = later
+		}
+	}
+	return out
+}
+
+func idForFile(intentID, file string) string {
+	return intentID + "|" + file
+}
+
+// enforceSupersessionRanking implements Property 3: any superseder
+// present in the result set ranks strictly above the intent it
+// supersedes. We pin the superseded intent's score to just below
+// its superseder so the stable sort places them in the right order
+// without changing the overall score budget.
+func enforceSupersessionRanking(scored []ContextRelevant) {
+	byID := map[string]int{}
+	for i, r := range scored {
+		byID[r.IntentID] = i
+	}
+	for i, r := range scored {
+		if r.SupersededBy == "" {
+			continue
+		}
+		j, ok := byID[r.SupersededBy]
+		if !ok {
+			continue
+		}
+		if scored[i].Relevance.Score >= scored[j].Relevance.Score {
+			scored[i].Relevance.Score = scored[j].Relevance.Score - 0.01
+			if scored[i].Relevance.Score < 0 {
+				scored[i].Relevance.Score = 0
+			}
+			scored[i].Relevance.Score = round2(scored[i].Relevance.Score)
+		}
+	}
 }
 
 // scoreIntentRelevance is the deterministic relevance ranker. Pure
@@ -322,11 +509,11 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 	return score, reasons
 }
 
-func packRelevant(iv domain.IntentView, score float64, reasons []string) ContextRelevant {
+func packRelevant(iv domain.IntentView, score float64, reasons []string, retrStatus string) ContextRelevant {
 	r := ContextRelevant{
 		IntentID: iv.IntentID,
 		Title:    "",
-		Status:   string(iv.Status),
+		Status:   retrStatus,
 		Relevance: ContextRelevance{
 			Score:   round2(score),
 			Reasons: reasons,
@@ -341,29 +528,57 @@ func packRelevant(iv domain.IntentView, score float64, reasons []string) Context
 		r.Summary = truncateForReason(iv.Summary.What, 240)
 		r.Decisions = topDecisions(iv.Summary.Decisions, contextDecisionLimit)
 		r.Risks = topItems(iv.Summary.Risks, contextRiskLimit)
+		// AntiPatterns are NEVER truncated — Property 5. Copy them
+		// through verbatim so the agent always sees every hard
+		// constraint the seal recorded.
+		if len(iv.Summary.AntiPatterns) > 0 {
+			r.AntiPatterns = append([]domain.AntiPattern(nil), iv.Summary.AntiPatterns...)
+		}
 	}
-	if iv.Status == domain.StatusSuperseded {
+	if iv.StatusEvidence.SupersededByIntent != "" {
 		r.SupersededBy = iv.StatusEvidence.SupersededByIntent
 	}
-	// Abandoned reason: not in StatusEvidence today (only the event
-	// carries it). When/if surfaced later, populate r.AbandonedReason
-	// from there. For now leave empty — show/trace expose it.
+	r.Guidance = guidanceFor(retrStatus, r.SupersededBy)
 	return r
 }
 
-// contextGuidance is the rc7+ "verify against current code" reminder.
-// Intentionally short; the agent reads JSON, not prose. Two lines
-// because both invariants matter:
+// guidanceFor returns the single-line advisory for a retrieval
+// status. Property 6: deterministic mapping. Anti-patterns and
+// risks are still surfaced as their own fields; this is the
+// orienting reminder.
+func guidanceFor(status, supersededBy string) string {
+	switch status {
+	case RetrievalStatusSuperseded:
+		if supersededBy != "" {
+			return "superseded by " + supersededBy + " — read that intent and use this only for context"
+		}
+		return "superseded — read the replacement intent before applying this"
+	case RetrievalStatusAbandoned:
+		return "this approach was abandoned — understand why before retrying"
+	case RetrievalStatusStale:
+		return "verify decisions still hold against current code; the surrounding files have moved"
+	default:
+		return "verify against current code before applying"
+	}
+}
+
+// contextNotes is the top-level "how to use this retrieval" reminder.
+// Intentionally short; the agent reads JSON, not prose. Three lines
+// because three invariants matter:
 //
 //   1. "use intents as historical context" — guard against
 //      ignoring the retrieval entirely (agent grep-first habit).
 //   2. "verify against current code before editing" — guard
 //      against the opposite extreme (agent trusting an intent
 //      whose code has been refactored since).
-func contextGuidance() []string {
+//   3. "anti_patterns are hard constraints" — surface the hard/soft
+//      distinction at the top of the result so the agent doesn't
+//      treat anti_patterns as more risks-to-weigh.
+func contextNotes() []string {
 	return []string{
 		"Use these intents as historical context, not as a replacement for reading current code.",
 		"Verify decisions against the current working tree before editing.",
+		"anti_patterns are hard constraints — do not violate them. risks are soft warnings to weigh.",
 	}
 }
 
