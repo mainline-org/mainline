@@ -1,0 +1,12 @@
+{{define "file"}}{{template "header" .}}
+{{with .File}}
+<h1><code>{{.Path}}</code></h1>
+<p class="lead">{{len .IntentIDs}} intents touched this file.</p>
+{{end}}
+<ul class="filelinks">
+{{range .IntentLinks}}<li><a href="../intents/{{.ID}}.html"><code>{{shortID .ID}}</code></a> — {{.Title}}</li>{{end}}
+</ul>
+<section class="commands"><h2>CLI</h2>
+<pre>mainline context --files {{.File.Path}}</pre>
+</section>
+{{template "footer" .}}{{end}}

@@ -1,0 +1,9 @@
+{{define "actor"}}{{template "header" .}}
+{{with .Actor}}
+<h1>{{if .ActorName}}{{.ActorName}}{{else}}{{.ActorID}}{{end}}</h1>
+<p class="meta"><code>{{.ActorID}}</code> · {{len .IntentIDs}} intents</p>
+{{end}}
+<ul class="filelinks">
+{{range .IntentLinks}}<li><a href="../intents/{{.ID}}.html"><code>{{shortID .ID}}</code></a> — {{.Title}}</li>{{end}}
+</ul>
+{{template "footer" .}}{{end}}

@@ -1,0 +1,67 @@
+{{define "intent"}}{{template "header" .}}
+{{with .Intent}}
+<h1>{{.Title}}</h1>
+<p class="meta">
+  <code>{{.ID}}</code>
+  <span class="status status-{{.Status}}">{{.Status}}</span>
+  {{if .ActorID}}· <a href="../actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a>{{end}}
+  · <code class="thread">{{.Thread}}</code>
+  {{if .SealedAt}}· sealed {{timeAgo .SealedAt}}{{end}}
+  {{if .MergedMainCommit}}· merged into <code>{{shortCommit .MergedMainCommit}}</code>{{end}}
+</p>
+
+{{if .UserGoal}}<section><h2>User goal</h2><p>{{.UserGoal}}</p></section>{{end}}
+{{if .What}}<section><h2>What changed</h2><p>{{.What}}</p></section>{{end}}
+{{if .Why}}<section><h2>Why</h2><p>{{.Why}}</p></section>{{end}}
+
+{{if .Decisions}}
+<section><h2>Decisions</h2>
+<ul class="decisions">
+{{range .Decisions}}<li>
+  <strong>{{.Point}}:</strong> {{.Chose}}
+  {{if .Rationale}}<div class="muted">{{.Rationale}}</div>{{end}}
+  {{if .Rejected}}<div class="rejected">Rejected: {{join .Rejected ", "}}</div>{{end}}
+</li>{{end}}
+</ul></section>
+{{end}}
+
+{{if .Rejected}}
+<section><h2>Rejected alternatives</h2>
+<ul>{{range .Rejected}}<li><strong>{{.Alternative}}</strong>{{if .Reason}} — {{.Reason}}{{end}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+{{if .Risks}}
+<section><h2>Risks</h2>
+<ul class="risks">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+{{if .Followups}}
+<section><h2>Follow-ups</h2>
+<ul>{{range .Followups}}<li>{{.}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+{{if .FilesTouched}}
+<section><h2>Files touched</h2>
+<ul class="files">
+{{range .FilesTouched}}<li><a href="../files/{{fileSlug .}}.html"><code>{{.}}</code></a></li>{{end}}
+</ul></section>
+{{end}}
+
+{{if .Subsystems}}<p class="tags">Subsystems: {{range .Subsystems}}<span class="tag">{{.}}</span> {{end}}</p>{{end}}
+{{if .Tags}}<p class="tags">Tags: {{range .Tags}}<span class="tag">{{.}}</span> {{end}}</p>{{end}}
+
+{{end}}{{if .IntentLinks}}
+<section><h2>Related</h2>
+<ul>{{range .IntentLinks}}<li><a href="{{.ID}}.html"><code>{{shortID .ID}}</code></a> — {{.Title}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+<section class="commands"><h2>CLI</h2>
+<pre>mainline show {{.Intent.ID}}
+mainline trace {{.Intent.ID}}{{if .Intent.FilesTouched}}
+mainline context --files {{index .Intent.FilesTouched 0}}{{end}}</pre>
+</section>
+{{template "footer" .}}{{end}}

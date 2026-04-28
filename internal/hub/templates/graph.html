@@ -1,0 +1,11 @@
+{{define "graph"}}{{template "header" .}}
+<h1>Intent relationships</h1>
+<p class="lead">Text adjacency list of supersedes / superseded-by links recorded in the local view.</p>
+{{if not .Relations}}<p class="muted">No intent relations recorded yet.</p>{{end}}
+<dl class="graph">
+{{range .Relations}}
+<dt><a href="intents/{{.From.ID}}.html"><code>{{shortID .From.ID}}</code></a> <span class="kind">{{.Kind}}</span> <a href="intents/{{.To.ID}}.html"><code>{{shortID .To.ID}}</code></a></dt>
+<dd>{{.From.Title}} → {{.To.Title}}</dd>
+{{end}}
+</dl>
+{{template "footer" .}}{{end}}
