@@ -214,6 +214,11 @@ func init() {
 	// not at the top of the help.
 	lintCmd.GroupID = groupSetup.ID
 
+	// Eval is the agent-eval harness — meta-tooling, not part of the
+	// daily agent loop. Setup group keeps it visible without
+	// crowding the daily commands.
+	evalCmd.GroupID = groupSetup.ID
+
 	rootCmd.AddCommand(
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
@@ -221,7 +226,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
-		hubCmd, lintCmd,
+		hubCmd, lintCmd, evalCmd,
 	)
 }
 
