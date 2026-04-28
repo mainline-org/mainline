@@ -1,12 +1,74 @@
 {{define "index"}}{{template "header" .}}
-<h1>Recent intents</h1>
-<p class="lead">{{len .Intents}} sealed intents on <code>{{.MainBranch}}</code>. Newest first.</p>
+<section class="hero">
+  <div>
+    <p class="eyebrow">Project intent map</p>
+    <h1>What changed, why it changed, and what needs attention.</h1>
+    <p class="lead">{{len .Intents}} sealed intents on <code>{{.MainBranch}}</code>, newest first. Use this page to jump to review work, risky changes, or files with the most history.</p>
+  </div>
+  <div class="health-panel">
+    <div class="health-number">{{.Dashboard.TotalIntents}}</div>
+    <div class="muted">sealed intents</div>
+    <div class="health-line"><span>{{.Dashboard.OpenIntents}}</span> open</div>
+    <div class="health-line"><span>{{.Dashboard.ProposedIntents}}</span> proposed</div>
+    <div class="health-line"><span>{{.Dashboard.RiskIntents}}</span> with risks</div>
+  </div>
+</section>
 {{if .OpenIntents}}
 <section class="notice">
-  <strong>{{len .OpenIntents}} open local intent{{if ne (len .OpenIntents) 1}}s{{end}}</strong>
+  <strong>{{len .OpenIntents}} open local intent{{if ne (len .OpenIntents) 1}}s{{end}} still in flight</strong>
   <a href="open.html">View in-flight work</a>
 </section>
 {{end}}
+<section class="metric-grid" aria-label="Project summary">
+  <a class="metric-card" href="open.html">
+    <span class="metric-value">{{.Dashboard.OpenIntents}}</span>
+    <span class="metric-label">Open work</span>
+  </a>
+  <a class="metric-card" href="review.html">
+    <span class="metric-value">{{.Dashboard.ProposedIntents}}</span>
+    <span class="metric-label">Review queue</span>
+  </a>
+  <a class="metric-card" href="risks.html">
+    <span class="metric-value">{{.Dashboard.RiskIntents}}</span>
+    <span class="metric-label">Risk-bearing intents</span>
+  </a>
+  <a class="metric-card" href="files.html">
+    <span class="metric-value">{{.Dashboard.FileCount}}</span>
+    <span class="metric-label">Files with history</span>
+  </a>
+</section>
+
+<section class="split-grid">
+  <div>
+    <h2>Needs attention</h2>
+    {{if not .Dashboard.Focus}}<p class="muted">No proposed, risky, or recently merged intents to highlight.</p>{{end}}
+    <div class="focus-list">
+    {{range .Dashboard.Focus}}
+      <a class="focus-item" href="intents/{{.ID}}.html">
+        <span>
+          <strong>{{.Title}}</strong>
+          <span class="focus-reason">{{.Reason}}</span>
+        </span>
+        <span class="status status-{{.Status}}">{{.Status}}</span>
+      </a>
+    {{end}}
+    </div>
+  </div>
+  <div>
+    <h2>Hot files</h2>
+    {{if not .Dashboard.HotFiles}}<p class="muted">No file fingerprints recorded yet.</p>{{end}}
+    <div class="hot-list">
+    {{range .Dashboard.HotFiles}}
+      <a class="hot-file" href="files/{{fileSlug .Path}}.html">
+        <code>{{.Path}}</code>
+        <span>{{.IntentCount}} intents</span>
+      </a>
+    {{end}}
+    </div>
+  </div>
+</section>
+
+<h2>Recent intents</h2>
 <div class="table-scroll">
 <table class="intents">
 <thead>
