@@ -102,6 +102,29 @@ that without re-creating identity or team config.`,
 			if usedEnvFallback {
 				fmt.Printf("  (actor name picked up from $%s)\n", envActorName)
 			}
+			// Surface what Init actually wrote to git. Pre-this-fix
+			// the success message was silent about the new commit;
+			// trial users ran `git status` next, saw a clean tree,
+			// and didn't know what had changed in their repo. Now we
+			// print the staged paths and the commit SHA so the
+			// before/after is visible without leaving the terminal.
+			if len(result.FilesStaged) > 0 {
+				fmt.Println()
+				fmt.Println("Files written and staged:")
+				for _, p := range result.FilesStaged {
+					fmt.Printf("  + %s\n", p)
+				}
+				if result.CommitHash != "" {
+					fmt.Printf("Committed as %s (\"mainline: init\").\n", shortHash(result.CommitHash))
+				}
+			} else if result.CommitHash == "" {
+				// Re-init against a repo where every managed file
+				// was already tracked: nothing to stage, nothing to
+				// commit. Tell the user explicitly so they don't
+				// wonder if init silently did nothing.
+				fmt.Println()
+				fmt.Println("(All Mainline-managed files were already tracked; no new commit.)")
+			}
 			// Surface the default-actor-name fallback. Pre-this-fix
 			// the alpha walkthrough caught: a fresh user runs bare
 			// `mainline init` and silently becomes "default-agent"
