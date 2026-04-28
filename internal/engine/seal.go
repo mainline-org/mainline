@@ -96,6 +96,14 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	pkg.DiffSummary.Removed = stats.Removed
 	pkg.DiffSummary.FilesChanged = changedFiles
 
+	// Pre-fill what we can derive deterministically. Agent-judgment
+	// fields stay empty so the schema is still a teaching aid, but
+	// fingerprint.files_touched / fingerprint.subsystems / intent_id
+	// are filled in — which removes ~50% of the typing for a
+	// first-touch agent and sets the JSON shape correctly so the
+	// validator's fingerprint checks pass on the first patch.
+	pkg.Starter = buildSealStarter(draft.IntentID, changedFiles)
+
 	// Persist the snapshot so SealSubmit can validate the live repo
 	// against what prepare claimed. Overwrite-safe: re-running --prepare
 	// updates the snapshot (intentional — agent may iterate).
@@ -168,9 +176,58 @@ func short(sha string) string {
 	return sha
 }
 
+// buildSealStarter pre-populates a SealResult with the fields the
+// engine can derive from the draft + diff:
+//
+//   - intent_id, fingerprint.files_touched, fingerprint.subsystems
+//
+// Agent-judgment fields stay zero/empty so the schema is visible
+// (the agent sees the field names + types and patches in their
+// content). One placeholder is included for AntiPatterns to teach
+// the shape — agents who have no anti-patterns to record set the
+// array to [].
+//
+// Subsystems are derived from path prefixes via the same helper
+// the conflict-detection layer uses, so seal-time and check-time
+// agree on what counts as a subsystem.
+func buildSealStarter(intentID string, files []string) *domain.SealResult {
+	subs := subsystemsFromFiles(files)
+	return &domain.SealResult{
+		IntentID: intentID,
+		Summary: domain.IntentSummary{
+			Title:     "",
+			What:      "",
+			Why:       "",
+			UserGoal:  "",
+			Decisions: []domain.Decision{},
+			Rejected:  []domain.RejectedAlternative{},
+			Risks:     []string{},
+			Followups: []string{},
+		},
+		Fingerprint: domain.SemanticFingerprint{
+			Subsystems:           subs,
+			FilesTouched:         append([]string(nil), files...),
+			ArchitecturalClaims:  []string{},
+			BehavioralChanges:    []string{},
+			SecurityImplications: []string{},
+			MigrationNotes:       []string{},
+			Tags:                 []string{},
+		},
+		Confidence: domain.SealConfidence{},
+	}
+}
+
 func sealInstruction() string {
-	return `Analyze this intent and produce a SealResult JSON object with:
-1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, followups
+	return `Analyze this intent and produce a SealResult JSON object.
+
+Tip: copy the seal_result_starter field from this package as your
+starting point — intent_id, fingerprint.files_touched, and
+fingerprint.subsystems are pre-filled deterministically from the
+diff. Patch in the agent-judgment fields (title, what, why,
+decisions, risks, anti_patterns, confidence) and submit.
+
+Required structure:
+1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups
 2. fingerprint: subsystems, files_touched, architectural_claims, behavioral_changes,
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)

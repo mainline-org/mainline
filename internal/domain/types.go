@@ -318,6 +318,17 @@ type SealPreparePackage struct {
 	ChangedFiles []FileChange  `json:"changed_files"`
 	Snapshot     *SealSnapshot `json:"snapshot,omitempty"`
 	Instruction  string        `json:"instruction"`
+
+	// Starter is a pre-populated SealResult skeleton an agent can
+	// mutate-and-submit instead of building from scratch. Fields
+	// the engine can derive deterministically (intent_id,
+	// fingerprint.files_touched, path-derived subsystems) come
+	// pre-filled; fields that need agent judgment (title, what,
+	// why, decisions, risks, anti_patterns) are present as empty
+	// strings / empty arrays so the schema is visible and the
+	// editing target is clear. Optional in the schema so older
+	// readers still parse the package.
+	Starter *SealResult `json:"seal_result_starter,omitempty"`
 }
 
 // SealSnapshot captures the worktree state at prepare time. SealSubmit
