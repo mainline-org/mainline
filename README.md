@@ -21,7 +21,7 @@ mainline status                          # at session start
 mainline context --current --json        # before non-trivial edits — read prior decisions / anti-patterns
 mainline start "<the user's goal>"       # claim work
 mainline append "<what changed>"         # after each meaningful turn
-mainline seal --prepare > seal.json      # → patch → mainline seal --submit < seal.json
+mainline seal --prepare > .ml-cache/seal.json   # → patch → mainline seal --submit < .ml-cache/seal.json
 ```
 
 You don't memorise this — `AGENTS.md` (which Mainline writes into your repo on
@@ -145,11 +145,13 @@ mainline append "Added refresh-token rotation"
 git add . && git commit -m "Add JWT auth"
 
 # [agent] seal at end of task
-mainline seal --prepare > seal.json
-# the package now contains a `seal_result_starter` field with intent_id
+mainline seal --prepare > .ml-cache/seal.json
+# (.ml-cache/ is gitignored by init, so this temp file does not
+# trip the dirty-worktree check)
+# the package contains a `seal_result_starter` field with intent_id
 # + files_touched + subsystems pre-filled; the agent patches in
 # title/what/why/decisions/risks/anti_patterns/confidence and submits
-mainline seal --submit < seal.json
+mainline seal --submit < .ml-cache/seal.json
 # inline soft-lint summary appears if the seal has issues; conflicts
 # (phase 1) print with explicit `mainline check --prepare` follow-up
 
