@@ -21,7 +21,7 @@ const hooksFileName = "hooks.json"
 // will not contain this substring (unless the user is deliberately
 // pretending to be mainline, in which case they get what they asked
 // for). Centralized so the same string is recognized by every helper.
-const managedMarker = "mainline hooks cursor "
+const managedMarker = "hooks cursor "
 
 // Install implements hooks.Agent. Writes / merges .cursor/hooks.json
 // so cursor invokes `mainline hooks cursor <event>` at the relevant
@@ -39,7 +39,7 @@ const managedMarker = "mainline hooks cursor "
 //   - Round-trip preserves any unknown hook event keys (e.g. the
 //     user's preToolUse) and any unknown top-level fields.
 func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallReport, error) {
-	report := hooks.InstallReport{}
+	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true}
 	hooksPath := filepath.Join(repoRoot, ".cursor", hooksFileName)
 
 	rawTop, rawHooks, fileExisted, err := loadHooksJSON(hooksPath)
@@ -177,23 +177,55 @@ func (Agent) Uninstall(repoRoot string) error {
 // because users can mix-and-match: cursor file may exist for unrelated
 // hooks, with no mainline integration installed.
 func (Agent) IsInstalled(repoRoot string) (bool, error) {
+	st, err := (Agent{}).InstallationStatus(repoRoot)
+	return st.Installed, err
+}
+
+func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, error) {
 	hooksPath := filepath.Join(repoRoot, ".cursor", hooksFileName)
+	st := hooks.InstallationStatus{
+		Scope:             "repo-local",
+		Files:             []string{hooksPath},
+		ExpectedHookCount: len(nativeHookKey),
+	}
 	_, rawHooks, fileExisted, err := loadHooksJSON(hooksPath)
 	if err != nil {
-		return false, err
+		return st, err
 	}
 	if !fileExisted {
-		return false, nil
+		return st, nil
 	}
 	prefixes := allManagedPrefixes()
-	for _, raw := range rawHooks {
+	expected := expectedNativeHookKeys()
+	for nativeKey, raw := range rawHooks {
+		managedForKey := 0
 		for _, e := range decodeEntries(raw) {
 			if isManagedEntry(e, prefixes) {
-				return true, nil
+				managedForKey++
 			}
 		}
+		if managedForKey == 0 {
+			continue
+		}
+		st.HookCount += managedForKey
+		if !expected[nativeKey] {
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("unexpected mainline hook under %s", nativeKey))
+		} else if managedForKey > 1 {
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("duplicate mainline hooks under %s", nativeKey))
+		}
 	}
-	return false, nil
+	for _, nativeKey := range nativeHookKey {
+		if countManagedCursor(rawHooks[nativeKey], prefixes) == 0 {
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("missing mainline hook under %s", nativeKey))
+		}
+	}
+	st.Installed = st.HookCount > 0
+	st.RestartRequired = st.Installed
+	if !st.Installed {
+		st.RepairReasons = nil
+	}
+	st.NeedsRepair = len(st.RepairReasons) > 0
+	return st, nil
 }
 
 // -----------------------------------------------------------
@@ -287,10 +319,28 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 		return fmt.Sprintf(`sh -c 'test -x %q && exec %q hooks cursor %s || exit 0'`,
 			opts.BinPath, opts.BinPath, hookID)
 	case opts.LocalDev:
-		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks cursor %s'`, hookID)
+		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks cursor %s || exit 0'`, hookID)
 	default:
 		return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks cursor %s || exit 0'`, hookID)
 	}
+}
+
+func expectedNativeHookKeys() map[string]bool {
+	out := make(map[string]bool, len(nativeHookKey))
+	for _, nativeKey := range nativeHookKey {
+		out[nativeKey] = true
+	}
+	return out
+}
+
+func countManagedCursor(raw json.RawMessage, prefixes []string) int {
+	count := 0
+	for _, e := range decodeEntries(raw) {
+		if isManagedEntry(e, prefixes) {
+			count++
+		}
+	}
+	return count
 }
 
 // allManagedPrefixes is the union of every wrapper-command substring
@@ -299,10 +349,9 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 // mainline-managed entries; IsInstalled detects ANY.
 //
 // Two shapes recognized:
-//   - `mainline hooks cursor ` covers both the PATH form
-//     (`exec mainline hooks cursor X`) and the absolute-path form
-//     written by --bin (`exec "/abs/path/mainline" hooks cursor X`,
-//     containing the literal "mainline hooks cursor" substring).
+//   - `hooks cursor ` covers the PATH form and the absolute-path
+//     --bin form, where the quoted binary path can interrupt the
+//     literal `mainline hooks cursor` substring.
 //   - `go run . hooks cursor ` covers --local-dev.
 func allManagedPrefixes() []string {
 	return []string{

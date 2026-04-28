@@ -50,6 +50,26 @@ func (g *Git) Run(args ...string) (string, error) {
 	return g.run(args...)
 }
 
+// CommonDir returns git's common directory for this checkout. In a
+// linked worktree this is the original repository's .git directory;
+// in a normal checkout it is usually ".git". Mainline uses it for
+// clone-local state that must be shared across worktrees without being
+// committed.
+func (g *Git) CommonDir() (string, error) {
+	out, err := g.run("rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimSpace(out)
+	if path == "" {
+		return "", fmt.Errorf("empty git common dir")
+	}
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	return filepath.Clean(filepath.Join(g.RepoRoot, path)), nil
+}
+
 func run(dir string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir

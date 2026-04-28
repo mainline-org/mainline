@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -131,7 +132,15 @@ var hooksInstallCmd = &cobra.Command{
 				}
 				fmt.Printf("    %s\n", rel)
 			}
+			if r.Report.Scope != "" {
+				fmt.Printf("    scope: %s\n", r.Report.Scope)
+			}
 		}
+		fmt.Println()
+		fmt.Println("Install scope: repo-local. Mainline writes this repository's agent config files")
+		fmt.Println("and does not inspect or modify global Cursor, Claude Code, or Codex settings.")
+		fmt.Println("Existing agent sessions may need a new session or app restart before they see")
+		fmt.Println("new repo-local hook config.")
 		fmt.Println()
 		fmt.Println("Hooks are enabled. At sessionStart the dispatcher will run `mainline sync`")
 		fmt.Println("and inject a status snapshot as agent context. All other workflow steps")
@@ -202,18 +211,12 @@ var hooksStatusCmd = &cobra.Command{
 			return err
 		}
 		type row struct {
-			Agent       string `json:"agent"`
-			DisplayName string `json:"display_name"`
-			Installed   bool   `json:"installed"`
-		}
-		var out []row
-		for _, a := range hooks.List() {
-			ok, _ := a.IsInstalled(root)
-			out = append(out, row{
-				Agent:       a.Name(),
-				DisplayName: a.DisplayName(),
-				Installed:   ok,
-			})
+			Agent             string                   `json:"agent"`
+			DisplayName       string                   `json:"display_name"`
+			Status            hooks.InstallationStatus `json:"status"`
+			DispatcherEnabled bool                     `json:"dispatcher_enabled"`
+			Effective         bool                     `json:"effective"`
+			Err               string                   `json:"error,omitempty"`
 		}
 
 		// Dispatcher toggles from config.toml so the user sees not
@@ -228,6 +231,21 @@ var hooksStatusCmd = &cobra.Command{
 				section = &h
 			}
 		}
+		dispatcherEnabled := section != nil && section.Enabled
+
+		var out []row
+		for _, a := range hooks.List() {
+			status, err := installationStatusFor(a, root)
+			effective := status.Installed && !status.NeedsRepair && dispatcherEnabled
+			out = append(out, row{
+				Agent:             a.Name(),
+				DisplayName:       a.DisplayName(),
+				Status:            status,
+				DispatcherEnabled: dispatcherEnabled,
+				Effective:         effective,
+				Err:               errString(err),
+			})
+		}
 
 		if jsonOutput {
 			outputJSON(map[string]any{
@@ -236,17 +254,49 @@ var hooksStatusCmd = &cobra.Command{
 			})
 			return nil
 		}
-		fmt.Println("Agent integrations:")
+		fmt.Println("Agent integrations (repo-local):")
 		if len(out) == 0 {
 			fmt.Println("  (no agents registered)")
 		}
 		for _, r := range out {
-			tag := "(not installed)"
-			if r.Installed {
-				tag = "✓ installed"
+			state := "not installed"
+			switch {
+			case r.Err != "":
+				state = "error"
+			case r.Effective:
+				state = "installed, effective"
+			case r.Status.Installed && r.Status.NeedsRepair:
+				state = "installed, needs repair"
+			case r.Status.Installed && !r.DispatcherEnabled:
+				state = "installed, dispatcher disabled"
+			case r.Status.Installed:
+				state = "installed, not effective"
 			}
-			fmt.Printf("  %-12s %s  %s\n", r.Agent, r.DisplayName, tag)
+			fmt.Printf("  %-12s %-12s %s", r.Agent, r.DisplayName, state)
+			if r.Status.ExpectedHookCount > 0 {
+				fmt.Printf("  hooks=%d/%d", r.Status.HookCount, r.Status.ExpectedHookCount)
+			}
+			if r.Status.Scope != "" {
+				fmt.Printf("  scope=%s", r.Status.Scope)
+			}
+			fmt.Println()
+			if r.Err != "" {
+				fmt.Printf("    error: %s\n", r.Err)
+			}
+			for _, f := range r.Status.Files {
+				rel, _ := filepath.Rel(root, f)
+				if rel == "" {
+					rel = f
+				}
+				fmt.Printf("    file: %s\n", rel)
+			}
+			if len(r.Status.RepairReasons) > 0 {
+				fmt.Printf("    repair: %s\n", strings.Join(r.Status.RepairReasons, "; "))
+			}
 		}
+		fmt.Println()
+		fmt.Println("Scope: repo-local only; global agent settings are not inspected or modified.")
+		fmt.Println("Effectiveness requires both a complete agent config and [hooks].enabled=true.")
 		fmt.Println()
 		if section == nil {
 			fmt.Println("Dispatcher: (mainline not initialized in this repo)")
@@ -455,6 +505,17 @@ func warnHook(format string, args ...any) {
 	if os.Getenv("MAINLINE_HOOKS_DEBUG") != "" {
 		fmt.Fprintf(os.Stderr, "mainline hooks: "+format+"\n", args...)
 	}
+}
+
+func installationStatusFor(a hooks.Agent, root string) (hooks.InstallationStatus, error) {
+	if reporter, ok := a.(hooks.InstallationStatusReporter); ok {
+		return reporter.InstallationStatus(root)
+	}
+	installed, err := a.IsInstalled(root)
+	return hooks.InstallationStatus{
+		Installed: installed,
+		Scope:     "repo-local",
+	}, err
 }
 
 // -----------------------------------------------------------
