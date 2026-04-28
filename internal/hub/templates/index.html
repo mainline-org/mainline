@@ -1,0 +1,23 @@
+{{define "index"}}{{template "header" .}}
+<h1>Recent intents</h1>
+<p class="lead">{{len .Intents}} sealed intents on <code>{{.MainBranch}}</code>. Newest first.</p>
+<table class="intents">
+<thead>
+<tr><th>ID</th><th>Title</th><th>Status</th><th>Actor</th><th>Thread</th><th>Sealed</th><th>Files</th><th>Risks</th></tr>
+</thead>
+<tbody>
+{{range .Intents}}
+<tr>
+  <td><a href="intents/{{.ID}}.html"><code>{{shortID .ID}}</code></a></td>
+  <td>{{.Title}}</td>
+  <td><span class="status status-{{.Status}}">{{.Status}}</span></td>
+  <td>{{if .ActorID}}<a href="actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a>{{end}}</td>
+  <td><code class="thread">{{.Thread}}</code></td>
+  <td class="muted" title="{{.SealedAt}}">{{timeAgo .SealedAt}}</td>
+  <td class="num">{{len .FilesTouched}}</td>
+  <td class="num{{if .Risks}} risk{{end}}">{{len .Risks}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{template "footer" .}}{{end}}
