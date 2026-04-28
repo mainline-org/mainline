@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
@@ -162,12 +164,12 @@ func TestContextRetrieval_GuidanceAlwaysPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	if len(res.Guidance) < 2 {
-		t.Fatalf("expected >=2 guidance lines (use-and-verify), got %v", res.Guidance)
+	if len(res.Notes) < 2 {
+		t.Fatalf("expected >=2 retrieval notes (use-and-verify), got %v", res.Notes)
 	}
-	gtext := strings.Join(res.Guidance, " ")
+	gtext := strings.Join(res.Notes, " ")
 	if !strings.Contains(gtext, "Verify") && !strings.Contains(gtext, "verify") {
-		t.Errorf("guidance must remind the agent to verify against current code: %v", res.Guidance)
+		t.Errorf("retrieval notes must remind the agent to verify against current code: %v", res.Notes)
 	}
 }
 
@@ -268,4 +270,296 @@ func mustStart(t *testing.T, svc *Service, goal string) string {
 		t.Fatalf("start: %v", err)
 	}
 	return r.IntentID
+}
+
+// -----------------------------------------------------------
+// Step 2: anti_patterns + retrieval status + guidance + ranking
+// -----------------------------------------------------------
+
+// AntiPatterns must reach the agent verbatim — they're the load-
+// bearing safety surface and must never be truncated by the top-N
+// caps that apply to decisions/risks. Property 5.
+func TestContextRetrieval_AntiPatternsPropagateAndAreNeverTruncated(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	id := sealedIntentTouchingWithAntiPatterns(t, dir, svc, "ap-test",
+		[]string{"src/auth/middleware.go"},
+		"Auth migration with constraints",
+		[]domain.AntiPattern{
+			{What: "Removing legacy session middleware on /oauth path", Why: "OAuth callback handler still requires session state", Severity: "high"},
+			{What: "Bypassing JWT validation in dev mode", Why: "Same code path runs in CI; bypass leaks", Severity: "medium"},
+			{What: "Calling internal token issuer from request handlers", Why: "Couples HTTP layer to crypto subsystem", Severity: "low"},
+			{What: "Storing session tokens in localStorage", Why: "XSS risk; we standardised on httpOnly cookies", Severity: "high"},
+			{What: "Using sync ops in the auth callback", Why: "Blocks event loop; we already had one outage", Severity: "medium"},
+		})
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "files",
+		Files: []string{"src/auth/middleware.go"},
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	var found *ContextRelevant
+	for i := range res.RelevantIntents {
+		if res.RelevantIntents[i].IntentID == id {
+			found = &res.RelevantIntents[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected intent %s in retrieval", id)
+	}
+	if len(found.AntiPatterns) != 5 {
+		t.Fatalf("anti_patterns must NOT be truncated; want 5, got %d", len(found.AntiPatterns))
+	}
+	for i, ap := range found.AntiPatterns {
+		if ap.What == "" || ap.Why == "" {
+			t.Errorf("anti_pattern[%d] missing what/why: %+v", i, ap)
+		}
+	}
+}
+
+// Status classification: a sealed intent older than staleAge with no
+// supersede / abandon mark should classify as "stale" and carry the
+// "verify decisions" guidance. Property 2 + Property 6.
+func TestContextRetrieval_OldIntentClassifiedStale(t *testing.T) {
+	now := time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC)
+	old := domain.IntentView{
+		IntentID: "int_old",
+		Status:   domain.StatusMerged,
+		SealedAt: now.Add(-100 * 24 * time.Hour).Format(time.RFC3339),
+		Fingerprint: &domain.SemanticFingerprint{
+			FilesTouched: []string{"src/x.go"},
+		},
+	}
+	churn := map[string]int{}
+
+	got := classifyRetrievalStatus(old, churn, now)
+	if got != RetrievalStatusStale {
+		t.Errorf("expected stale for 100-day-old intent, got %q", got)
+	}
+}
+
+// Status classification: a recent intent whose files have been
+// re-touched by 3+ later intents is stale (file-churn signal).
+func TestContextRetrieval_FileChurnTriggersStale(t *testing.T) {
+	now := time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC)
+	iv := domain.IntentView{
+		IntentID: "int_churned",
+		Status:   domain.StatusMerged,
+		SealedAt: now.Add(-7 * 24 * time.Hour).Format(time.RFC3339),
+		Fingerprint: &domain.SemanticFingerprint{
+			FilesTouched: []string{"src/hot.go"},
+		},
+	}
+	churn := map[string]int{
+		idForFile("int_churned", "src/hot.go"): staleFileChurnThreshold,
+	}
+	if got := classifyRetrievalStatus(iv, churn, now); got != RetrievalStatusStale {
+		t.Errorf("file churn at threshold should mark stale, got %q", got)
+	}
+
+	// One below the threshold: still current.
+	churnLight := map[string]int{
+		idForFile("int_churned", "src/hot.go"): staleFileChurnThreshold - 1,
+	}
+	if got := classifyRetrievalStatus(iv, churnLight, now); got != RetrievalStatusCurrent {
+		t.Errorf("churn below threshold should stay current, got %q", got)
+	}
+}
+
+// Property 6: guidance is a deterministic function of status. A
+// table-driven test pins the mapping so a future change to the
+// guidance text fails the test loudly rather than silently.
+func TestContextRetrieval_GuidanceIsDeterministicPerStatus(t *testing.T) {
+	cases := []struct {
+		status        string
+		supersededBy  string
+		mustContain   string
+	}{
+		{RetrievalStatusCurrent, "", "verify against current code"},
+		{RetrievalStatusSuperseded, "int_newer", "int_newer"},
+		{RetrievalStatusAbandoned, "", "abandoned"},
+		{RetrievalStatusStale, "", "verify decisions"},
+	}
+	for _, c := range cases {
+		got := guidanceFor(c.status, c.supersededBy)
+		if !strings.Contains(strings.ToLower(got), strings.ToLower(c.mustContain)) {
+			t.Errorf("status %q expected guidance containing %q, got %q",
+				c.status, c.mustContain, got)
+		}
+	}
+}
+
+// Property 3: when an intent A is superseded by B, B must rank
+// strictly above A in retrieval — even when A's raw signal is
+// stronger (older intent that touches more of the queried files).
+func TestContextRetrieval_SupersederAlwaysRanksAboveSuperseded(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	// Original sealed intent touches the file heavily.
+	oldID := sealedIntentTouching(t, dir, svc, "old-decision",
+		[]string{"src/auth/middleware.go", "src/auth/cookies.go", "src/auth/csrf.go"},
+		"Original auth approach")
+	// New sealed intent touches the same file once + supersedes the old.
+	newID := sealedIntentSupersedingWith(t, dir, svc, "new-decision",
+		[]string{"src/auth/middleware.go"},
+		"Replacement auth approach", oldID)
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "files",
+		Files: []string{"src/auth/middleware.go"},
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	var oldIdx, newIdx = -1, -1
+	for i, ri := range res.RelevantIntents {
+		switch ri.IntentID {
+		case oldID:
+			oldIdx = i
+		case newID:
+			newIdx = i
+		}
+	}
+	if newIdx < 0 || oldIdx < 0 {
+		t.Fatalf("both intents must appear; oldIdx=%d newIdx=%d", oldIdx, newIdx)
+	}
+	if newIdx >= oldIdx {
+		t.Errorf("superseder %s must rank above superseded %s; got newIdx=%d oldIdx=%d",
+			newID, oldID, newIdx, oldIdx)
+	}
+	if res.RelevantIntents[oldIdx].Status != RetrievalStatusSuperseded {
+		t.Errorf("superseded intent should carry superseded status, got %q",
+			res.RelevantIntents[oldIdx].Status)
+	}
+	if res.RelevantIntents[oldIdx].Guidance == "" ||
+		!strings.Contains(res.RelevantIntents[oldIdx].Guidance, newID) {
+		t.Errorf("superseded guidance must point at the replacement (%s), got %q",
+			newID, res.RelevantIntents[oldIdx].Guidance)
+	}
+}
+
+// Property 1: an anti_pattern with empty why is rejected at seal
+// time. This is what keeps the load-bearing safety property
+// honest — agents that paste anti_patterns without reasons get a
+// clear failure rather than silent acceptance.
+func TestValidateSealResult_RejectsAntiPatternWithEmptyWhy(t *testing.T) {
+	sr := &domain.SealResult{
+		IntentID: "int_x12345678",
+		Summary: domain.IntentSummary{
+			Title: "t", What: "w", Why: "y",
+			AntiPatterns: []domain.AntiPattern{
+				{What: "do X", Why: "", Severity: "high"},
+			},
+		},
+		Fingerprint: domain.SemanticFingerprint{
+			Subsystems:   []string{"s"},
+			FilesTouched: []string{"f.go"},
+		},
+		Confidence: domain.SealConfidence{Summary: 0.9, Fingerprint: 0.9},
+	}
+	if err := core.ValidateSealResult(sr); err == nil {
+		t.Fatal("expected rejection of anti_pattern with empty why")
+	} else if !strings.Contains(err.Error(), "anti_patterns") || !strings.Contains(err.Error(), "why") {
+		t.Errorf("error should mention anti_patterns + why, got: %v", err)
+	}
+
+	// Empty severity is fine; non-canonical severity is rejected.
+	sr.Summary.AntiPatterns[0].Why = "real reason"
+	sr.Summary.AntiPatterns[0].Severity = "catastrophic"
+	if err := core.ValidateSealResult(sr); err == nil {
+		t.Fatal("expected rejection of non-canonical severity")
+	}
+
+	sr.Summary.AntiPatterns[0].Severity = "high"
+	if err := core.ValidateSealResult(sr); err != nil {
+		t.Errorf("valid anti_pattern should pass: %v", err)
+	}
+}
+
+// Helper: like sealedIntentTouching but threads a SupersededBy
+// link from the new intent to a prior one. The prior intent's
+// status_evidence is updated post-hoc via the supersede event so
+// the view rebuild reflects the link.
+func sealedIntentSupersedingWith(t *testing.T, dir string, svc *Service, branchSuffix string,
+	files []string, summaryTitle string, supersedes string) string {
+	t.Helper()
+	gitCmd(t, dir, "checkout", "main")
+	gitCmd(t, dir, "checkout", "-b", "feature/"+branchSuffix)
+	start, err := svc.Start("ctx test "+branchSuffix, "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	for _, f := range files {
+		writeFile(t, dir, f, "// "+f+"\n")
+	}
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "ctx test "+branchSuffix)
+	if _, err := svc.Append("did the work"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	sr := validSealResult(start.IntentID)
+	sr.Summary.Title = summaryTitle
+	sr.Fingerprint.FilesTouched = files
+	sr.Fingerprint.Subsystems = subsystemsFromFiles(files)
+	data, _ := json.Marshal(sr)
+	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	// Mark the prior intent as superseded by this one. We patch the
+	// view directly so the test does not depend on a Supersede CLI
+	// command shape that may evolve; the rebuild after Sync would
+	// otherwise re-derive from events.
+	v, _ := svc.Store.ReadMainlineView()
+	for i := range v.Intents {
+		if v.Intents[i].IntentID == supersedes {
+			v.Intents[i].Status = domain.StatusSuperseded
+			v.Intents[i].StatusEvidence.SupersededByIntent = start.IntentID
+		}
+	}
+	if err := svc.Store.WriteMainlineView(v); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+	return start.IntentID
+}
+
+// Helper: seal an intent with a populated AntiPatterns slice.
+func sealedIntentTouchingWithAntiPatterns(t *testing.T, dir string, svc *Service, branchSuffix string,
+	files []string, summaryTitle string, antiPatterns []domain.AntiPattern) string {
+	t.Helper()
+	gitCmd(t, dir, "checkout", "main")
+	gitCmd(t, dir, "checkout", "-b", "feature/"+branchSuffix)
+	start, err := svc.Start("ctx test "+branchSuffix, "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	for _, f := range files {
+		writeFile(t, dir, f, "// "+f+"\n")
+	}
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "ctx test "+branchSuffix)
+	if _, err := svc.Append("did the work"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	sr := validSealResult(start.IntentID)
+	sr.Summary.Title = summaryTitle
+	sr.Summary.AntiPatterns = antiPatterns
+	sr.Fingerprint.FilesTouched = files
+	sr.Fingerprint.Subsystems = subsystemsFromFiles(files)
+	data, _ := json.Marshal(sr)
+	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if _, err := svc.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	return start.IntentID
 }
