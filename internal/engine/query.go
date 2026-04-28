@@ -66,28 +66,51 @@ func (s *Service) Log(limit int, statusFilter ...string) (*LogResult, error) {
 	// Build a single phase1-warning lookup for the whole render pass.
 	phase1Hit := buildPhase1Lookup(s.Store)
 
-	// Collect from mainline view
-	view, _ := s.Store.ReadMainlineView()
-	if view != nil {
-		for _, iv := range view.Intents {
+	if indexed, err := s.Store.ReadIndexedLogIntents(""); err == nil {
+		for _, iv := range indexed {
 			seenIntentIDs[iv.IntentID] = true
 			entry := LogIntentEntry{
 				IntentID:   iv.IntentID,
 				Status:     iv.Status,
+				Title:      iv.Title,
 				Goal:       iv.Goal,
 				Thread:     iv.Thread,
 				SealedAt:   iv.SealedAt,
-				ActivityAt: s.intentViewActivityAt(iv),
-				Author:     authorName(iv.ActorName, iv.ActorID),
+				ActivityAt: iv.ActivityAt,
+				Author:     iv.Author,
 				ActorID:    iv.ActorID,
 				ActorName:  iv.ActorName,
 				Check:      checkMarker(iv.Status, iv.LastCheck, phase1Hit[iv.IntentID]),
 			}
-			if iv.Summary != nil {
-				entry.Title = iv.Summary.Title
-			}
 			if logStatusMatches(entry.Status, filter) {
 				result.Intents = append(result.Intents, entry)
+			}
+		}
+	} else {
+		// Collect from the JSON view when the derived SQLite cache is missing
+		// or unreadable. The JSON view remains the compatibility fallback.
+		view, _ := s.Store.ReadMainlineView()
+		if view != nil {
+			for _, iv := range view.Intents {
+				seenIntentIDs[iv.IntentID] = true
+				entry := LogIntentEntry{
+					IntentID:   iv.IntentID,
+					Status:     iv.Status,
+					Goal:       iv.Goal,
+					Thread:     iv.Thread,
+					SealedAt:   iv.SealedAt,
+					ActivityAt: s.intentViewActivityAt(iv),
+					Author:     authorName(iv.ActorName, iv.ActorID),
+					ActorID:    iv.ActorID,
+					ActorName:  iv.ActorName,
+					Check:      checkMarker(iv.Status, iv.LastCheck, phase1Hit[iv.IntentID]),
+				}
+				if iv.Summary != nil {
+					entry.Title = iv.Summary.Title
+				}
+				if logStatusMatches(entry.Status, filter) {
+					result.Intents = append(result.Intents, entry)
+				}
 			}
 		}
 	}
