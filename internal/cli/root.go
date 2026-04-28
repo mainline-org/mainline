@@ -208,6 +208,12 @@ func init() {
 	// occasional use, not part of the daily agent loop.
 	hubCmd.GroupID = groupSetup.ID
 
+	// Lint is a setup/repair-style tool: occasional use, not part of
+	// the daily agent loop today (the agent loop already runs
+	// retrieval); ship under the setup group so it is visible but
+	// not at the top of the help.
+	lintCmd.GroupID = groupSetup.ID
+
 	rootCmd.AddCommand(
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
@@ -215,7 +221,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
-		hubCmd,
+		hubCmd, lintCmd,
 	)
 }
 
