@@ -34,24 +34,53 @@ does, Hub v2 becomes a hosted service.
 
 Subcommands:
 
-  mainline hub export <dir>        # write site under <dir>
-  mainline hub open                # open .mainline/hub/index.html
+  mainline hub export [dir]        # write site (default: OS temp dir)
+  mainline hub open                # build + open in the default browser
+
+The default output dir is <os-temp>/mainline-hub/<repo-basename>.
+This keeps the static site OUT of the repo (the prior default of
+.mainline/hub polluted the config dir) while remaining cheap to
+re-export and predictable across repos.
 
 Hub v1 is local, read-only, and rebuildable from the synced view.
 No server, no DB, no writes.`,
 }
 
+// defaultHubDir is the predictable per-repo location for hub output
+// when the user runs `mainline hub open` or `mainline hub export`
+// without an explicit path. We deliberately put it in os.TempDir()
+// rather than under the repo so:
+//
+//   - the static site never enters git;
+//   - multiple `hub` runs across repos don't clobber each other
+//     (basename namespace);
+//   - the OS reaps stale exports on its own schedule.
+//
+// Cross-platform: os.TempDir() resolves to /tmp on Linux, /var/tmp
+// or /private/tmp on macOS, %TEMP% on Windows.
+func defaultHubDir(repoRoot string) string {
+	return filepath.Join(os.TempDir(), "mainline-hub", filepath.Base(repoRoot))
+}
+
 var hubExportCmd = &cobra.Command{
-	Use:   "export <dir>",
+	Use:   "export [dir]",
 	Short: "Export the local intent view as a static HTML site",
-	Args:  cobra.ExactArgs(1),
+	Long: `Export the local intent view as a static HTML site.
+
+If [dir] is omitted, the site is written to
+<os-temp>/mainline-hub/<repo-basename>.`,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
 			outputError(err)
 			return
 		}
-		res, err := hub.Export(svc.Store, hub.ExportOptions{OutputDir: args[0]})
+		out := defaultHubDir(svc.Git.RepoRoot)
+		if len(args) == 1 {
+			out = args[0]
+		}
+		res, err := hub.Export(svc.Store, hub.ExportOptions{OutputDir: out})
 		if err != nil {
 			outputError(err)
 			return
@@ -72,14 +101,14 @@ var hubExportCmd = &cobra.Command{
 
 var hubOpenCmd = &cobra.Command{
 	Use:   "open",
-	Short: "Build (if needed) and open the default Hub at .mainline/hub/",
+	Short: "Build (if needed) and open the default Hub in your browser",
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
 			outputError(err)
 			return
 		}
-		out := filepath.Join(svc.Git.RepoRoot, ".mainline", "hub")
+		out := defaultHubDir(svc.Git.RepoRoot)
 		res, err := hub.Export(svc.Store, hub.ExportOptions{OutputDir: out})
 		if err != nil {
 			outputError(err)
