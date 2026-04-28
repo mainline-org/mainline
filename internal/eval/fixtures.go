@@ -17,10 +17,9 @@ func Fixtures() []Fixture {
 		abandonedApproach(),
 		supersededDecision(),
 		staleIntent(),
+		billingBoundary(),
 
 		// Stubs — populate as fixture authors ship ground truth.
-		{Name: "billing-boundary",
-			Description: "[stub] auth must not write billing state — cross-subsystem boundary"},
 		{Name: "risk-aware-tests",
 			Description: "[stub] must run specific regression tests when touching risk-tagged code"},
 		{Name: "docs-only-intent",
@@ -211,6 +210,78 @@ func supersededDecision() Fixture {
 		Forbidden: []string{
 			"add the new column to the CSV endpoint",
 			"treat the CSV plan as the current source of truth",
+		},
+	}
+}
+
+// billingBoundary: the auth subsystem must not write billing state.
+// Two intents establish the cross-subsystem rule. The agent task is
+// "make the trial-extension flow work" — the lazy implementation
+// reaches across the boundary; the right implementation calls the
+// billing service. Retrieval must surface the boundary anti-pattern
+// so the agent sees the constraint before drafting the change.
+func billingBoundary() Fixture {
+	return Fixture{
+		Name:        "billing-boundary",
+		Description: "Cross-subsystem boundary: auth must not write billing state directly",
+		Intents: []SeedIntent{
+			{
+				ID:    "int_billing_boundary",
+				Title: "Auth must not write billing state directly",
+				Goal:  "establish the auth ↔ billing boundary",
+				What:  "Auth code reads billing state via the billing service interface; never writes billing tables directly. All write paths go through billing.UpdateSubscription / billing.GrantTrialExtension.",
+				Why:   "Billing is the system-of-record for subscription state. Direct writes from auth bypass billing's invariants (proration, audit log, tax compliance) and have caused two prior incidents.",
+				Decisions: []domain.Decision{
+					{Point: "boundary direction", Chose: "auth → billing service interface only", Rationale: "billing owns its invariants"},
+				},
+				AntiPatterns: []domain.AntiPattern{
+					{
+						What:     "Calling db.UpdateBillingState / writing to the billing table from anything in src/auth/",
+						Why:      "Bypasses billing's audit log + proration logic; has caused two prod incidents (BILL-211, BILL-403). Always go through billing.<Action>() RPC.",
+						Severity: "high",
+					},
+					{
+						What:     "Importing src/billing/internal from src/auth/",
+						Why:      "Internal billing types should not leak into auth. Use the public billing service interface only.",
+						Severity: "high",
+					},
+				},
+				Files:      []string{"src/auth/middleware.go", "src/auth/session.go", "src/billing/service.go"},
+				Subsystems: []string{"auth", "billing"},
+				Status:     domain.StatusMerged,
+				AgeDays:    21,
+			},
+			{
+				ID:    "int_trial_extension_via_billing",
+				Title: "Trial extensions go through billing.GrantTrialExtension",
+				Goal:  "thread trial-extension flow through the billing service",
+				What:  "Auth side calls billing.GrantTrialExtension(userID, days); billing performs the database write, audit log entry, and proration.",
+				Why:   "Trial extensions are a billing event. Auth knows when (user clicks 'extend'); billing knows how (write + audit + tax).",
+				Decisions: []domain.Decision{
+					{Point: "extension API shape", Chose: "billing.GrantTrialExtension(userID, days) error", Rationale: "single billing-side entry, audit-logged"},
+				},
+				Files:      []string{"src/billing/service.go", "src/billing/trial.go", "src/auth/middleware.go"},
+				Subsystems: []string{"billing", "auth"},
+				Status:     domain.StatusMerged,
+				AgeDays:    7,
+			},
+		},
+		Task: "make the trial-extension flow work for the new free-tier upgrade button",
+		Expected: []ExpectedItem{
+			{
+				IntentID:         "int_billing_boundary",
+				AntiPatternMatch: "from anything in src/auth/",
+				Note:             "the boundary intent's anti_pattern must reach the agent before they draft the change",
+			},
+			{
+				IntentID: "int_trial_extension_via_billing",
+				Note:     "the chosen API for the exact task must surface so the agent uses it",
+			},
+		},
+		Forbidden: []string{
+			"write to the billing table from src/auth",
+			"call db.UpdateBillingState from auth",
+			"import src/billing/internal from src/auth",
 		},
 	}
 }
