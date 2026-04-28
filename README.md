@@ -3,23 +3,81 @@
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the current *what*.
 
-Mainline records *why* each AI-driven change was made and surfaces conflicts between intents before they reach `main`. It rides on top of your existing git + PR workflow — no special merge command, no commit-message magic. Intent metadata lives in dedicated git refs that ship with `git push` and `git fetch`.
+Stop your AI agent from silently undoing yesterday's decision, repeating an
+abandoned approach, or stepping on a teammate's in-flight work. Mainline
+records *why* each AI-driven change was made — decisions, risks, anti-patterns
+— and surfaces that record to the next agent (or human) at the moment they
+need it.
 
+## Who runs what?
+
+Mainline has two audiences in the same repo. They run different commands.
+
+**Your AI agent** (Cursor, Claude Code, Codex, etc.) reads intent before it
+edits and writes intent after it edits. The agent's loop:
+
+```bash
+mainline status                          # at session start
+mainline context --current --json        # before non-trivial edits — read prior decisions / anti-patterns
+mainline start "<the user's goal>"       # claim work
+mainline append "<what changed>"         # after each meaningful turn
+mainline seal --prepare > seal.json      # → patch → mainline seal --submit < seal.json
 ```
-$ mainline log
-int_d74f1892 [proposed] [check:~] 11:30 alice    Restructure README sections
-int_1b37b496 [merged]              11:08 alice    Make [check:X] log column actually useful
-int_1525611a [merged]              10:12 alice    rc5: conflict detection on sync+seal
-int_ca0f10f0 [merged]              01:22 alice    Rename reconcile → pin
-int_298b4476 [merged]              23:30 bob      Sync all actor logs
-                          ↑
-              "phase1 spotted an overlap with a teammate's intent —
-               run `mainline check` to investigate"
+
+You don't memorise this — `AGENTS.md` (which Mainline writes into your repo on
+init) tells the agent the protocol. Modern agents read `AGENTS.md` at every
+session.
+
+**You** (the human) review intent, browse history, and quality-check the
+team's record:
+
+```bash
+mainline log                             # what's been shipped recently
+mainline show <intent_id>                # full record of one decision
+mainline trace <intent_id>               # how a decision unfolded turn-by-turn
+mainline hub open                        # browse history in a browser
+mainline gaps                            # commits on main that have no recorded intent
+mainline lint <intent_id>                # quality-check a teammate's seal
 ```
+
+You don't have to type these — `mainline hub open` is the one to remember; the
+rest are there when you want them.
+
+## If you use Cursor (or Claude Code / Codex)
+
+You probably want hooks. One-time setup per repo:
+
+```bash
+mainline init --actor-name "<your name>"
+mainline hooks install --agent cursor      # or: --agent claudecode  /  --agent codex
+```
+
+That's it. Now at every Cursor session start, Mainline:
+
+1. Runs `mainline sync` (fetches the latest team intent).
+2. Runs `mainline status` (active intent, sync staleness, suggestions).
+3. Injects the snapshot into Cursor's system context as `additional_context`.
+
+Your agent now sees fresh team state at every session start without you
+typing anything. The agent itself drives the rest of the workflow (start /
+append / seal / check) per `AGENTS.md` — Mainline is a context provider, not
+a workflow driver.
+
+If you don't use a supported hook agent, your AI tool reads `AGENTS.md`
+manually and follows the same protocol — both paths work.
+
+## What problem this solves
+
+| Pain | Without Mainline | With Mainline |
+|---|---|---|
+| Agent re-removes the legacy `/oauth` middleware you kept on purpose | Silent rework, prod outage | Agent reads the anti-pattern and stops before the diff |
+| You forgot why you chose JWT over sessions 3 weeks ago | `git log` doesn't carry decisions | `mainline show <id>` returns title / what / why / decisions / risks |
+| Two agents on the same repo solving the same problem differently | Discovered at PR-review time | `mainline check` flags the overlap on `seal --submit` |
+| New maintainer asks "why is this code like this?" | Slack archaeology | `mainline context --files src/auth/middleware.go` |
+| You want to know which commits on `main` have no recorded intent | No signal | `mainline gaps` |
 
 ## Table of contents
 
-- [Why Mainline?](#why-mainline)
 - [Install](#install)
 - [Five-minute quick start](#five-minute-quick-start)
 - [How it fits your workflow](#how-it-fits-your-workflow)
@@ -35,14 +93,6 @@ int_298b4476 [merged]              23:30 bob      Sync all actor logs
 - [Development](#development)
 - [Project structure](#project-structure)
 - [Roadmap](#roadmap)
-
-## Why Mainline?
-
-Two AI agents working on the same codebase will, by default, silently overwrite each other's intent. The git layer catches *file* conflicts at merge time but never the deeper "we're solving the same problem in opposite directions" case — which is exactly when AI parallelism turns into rework.
-
-Mainline gives every change a structured **intent** — what's being done, why, what subsystem and files it touches — and runs a fast deterministic *phase 1* fingerprint check whenever new intents arrive. Surfaced overlaps are escalated to *phase 2*, where an agent reads the full summaries and judges whether the overlap is a real semantic conflict.
-
-In one sentence: **catch intent conflicts before they reach a PR review**.
 
 ## Install
 
@@ -65,48 +115,56 @@ mainline doctor --setup
 
 ## Five-minute quick start
 
-```bash
-# 1. Initialise (once per repo)
-cd your-repo
-mainline init --actor-name "alice"
-# If you add a git remote later (or this repo's remote was added after
-# init), run `mainline init --rewire` to wire up notes / actor-log
-# refspecs for cross-actor sync. `mainline doctor --setup` will tell
-# you when that's needed.
+The lines marked **[you]** are what you type. The rest are what the agent
+runs (driven by `AGENTS.md`, or auto-injected if you installed hooks).
 
-# 2. While the agent works
+```bash
+# [you] one-time per repo
+cd your-repo
+mainline init --actor-name "alice"     # or: export MAINLINE_ACTOR_NAME first
+# if you add a git remote later, run: mainline init --rewire
+
+# [you, optional] one-time per repo if you use Cursor/Claude/Codex
+mainline hooks install --agent cursor
+
+# [agent] at session start
+mainline status
+
+# [agent] before non-trivial edits — read prior intent
+mainline context --current --json
+# returns relevant historical intents with status / anti_patterns / decisions
+
+# [agent] claim work
 mainline start "Add JWT auth"
-# ... agent makes changes, commits ...
+
+# [agent] after each meaningful turn
 mainline append "Implemented JWT middleware"
 mainline append "Added refresh-token rotation"
 
-# 3. Before non-trivial edits, read prior intent
-mainline context --current --json
-# returns relevant historical intents with status, anti_patterns,
-# decisions; agents read these BEFORE grepping code
+# [you OR agent] commit code the normal way
+git add . && git commit -m "Add JWT auth"
 
-# 4. Seal at end of task — auto-syncs with team and runs phase1
+# [agent] seal at end of task
 mainline seal --prepare > seal.json
-# agent fills in seal.json
+# the package now contains a `seal_result_starter` field with intent_id
+# + files_touched + subsystems pre-filled; the agent patches in
+# title/what/why/decisions/risks/anti_patterns/confidence and submits
 mainline seal --submit < seal.json
-# response includes a `conflicts: [...]` array if phase1 finds overlap;
-# soft-lint summary appears inline if the seal has issues
+# inline soft-lint summary appears if the seal has issues; conflicts
+# (phase 1) print with explicit `mainline check --prepare` follow-up
 
-# 5. (Optional) Quality-check the seal
-mainline lint <intent_id>
-# advisory; never blocks. Catches boilerplate "what" / missing
-# decisions / broken supersedes refs
+# [you] open a PR on GitHub; merge with the web UI
 
-# 6. Open a PR on GitHub as usual; merge with the web UI
-
-# 7. Anyone runs sync next
+# [you or agent] next sync auto-pins the squash commit to the intent
 mainline sync
-# tree-hash auto-pin links the squash commit to the intent
 ```
 
 That's the whole loop. No special merge command required.
 
-For human readers, `mainline hub open` builds a static HTML site over the local intent view (recent intents, per-file history, risks, supersedes graph) — useful for code review and onboarding.
+After a few intents have landed, run `mainline hub open` (yours, or
+suggested by the agent) — Mainline opens a static HTML browser of recent
+intents, per-file history, risks, and supersedes/conflict graph. This is
+the human-reader surface; agents use the JSON commands above.
 
 ## How it fits your workflow
 
