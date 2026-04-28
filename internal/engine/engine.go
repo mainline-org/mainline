@@ -968,7 +968,8 @@ func (s *Service) requireInit() error {
 	if !s.Store.IsInitialized() {
 		return domain.NewRecoverableError(domain.ErrNotInitialized,
 			"mainline not initialized. Run 'mainline init' first.",
-			"mainline init")
+			"mainline init --actor-name \"<your name>\"",
+			"or, if init was run but state is unclear: mainline doctor --setup")
 	}
 	return nil
 }
@@ -1001,6 +1002,8 @@ func (s *Service) requireIdentity() (*domain.Identity, error) {
 			domain.ErrNotInitialized,
 			"this clone has no Mainline actor identity",
 			"mainline init --actor-name <your name>",
+			"or export $MAINLINE_ACTOR_NAME and run `mainline init` again",
+			"`mainline doctor --setup` will report the same diagnosis if you want a wider check",
 		)
 	}
 	return id, nil
