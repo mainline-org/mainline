@@ -7,7 +7,7 @@
 #   hooks/          — agent-hooks dispatcher bookkeeping
 .mainline/local.toml
 ./mainline
-mainline
+/mainline
 .claude/
 .codex/
 .idea/
