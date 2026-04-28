@@ -1,9 +1,13 @@
-<!-- mainline:agents:start version=9 checksum=sha256:1d3a5384ca9d40ea508676ed09a2c0d6acf145b8d1c763bd7755e636590d22db -->
+<!-- mainline:agents:start version=10 checksum=sha256:746db5acaab2b2ab6d52517a8d504cdee84d3ccd61870024857e414f0d311716 -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 9 -->
+<!-- mainline-agents-md-version: 10 -->
 
-This project uses **Mainline** to record the intent behind every AI-driven
+**Mainline is a git-native intent memory layer for AI-assisted engineering.**
+It gives coding agents the historical *why* before they inspect the
+current *what*.
+
+This project uses Mainline to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
 review. The agent is expected to both **read** team intents (for context)
 and **write** its own intent (for the work it's doing). Both halves
@@ -240,6 +244,21 @@ the next state in a new turn.
    against every other proposed/merged intent. If the JSON response
    carries a `conflicts` array, **surface those conflicts to the user
    verbatim** before continuing. Do not silently move on.
+
+5. (Optional but encouraged) Quality-check the seal:
+
+   ```
+   mainline lint <intent_id> --json
+   ```
+
+   `lint` runs deterministic checks against the sealed payload —
+   empty / boilerplate `what`, missing decisions, decision without
+   rationale, missing risks/anti_patterns, broken supersedes refs.
+   Errors mean the seal will be hard for future retrieval to use;
+   warnings are advisory. Lint is **not** wired into submit, so a
+   bad seal still goes through — but a low-quality seal pollutes
+   future `mainline context` results, which is the whole loop this
+   workflow exists to keep healthy.
 
 ### When the user asks you to phase-2 check an intent
 
