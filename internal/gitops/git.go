@@ -27,6 +27,10 @@ func New(dir string) (*Git, error) {
 		return nil, &domain.MainlineError{
 			Code:    domain.ErrNotInGitRepo,
 			Message: "not inside a git repository",
+			SuggestedActions: []string{
+				"`git init` here, or cd to an existing repo",
+				"then re-run `mainline init --actor-name \"<your name>\"`",
+			},
 		}
 	}
 	return &Git{RepoRoot: strings.TrimSpace(root)}, nil
