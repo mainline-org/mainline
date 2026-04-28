@@ -193,8 +193,16 @@ repository policy marks it skipped.
 After committing the code changes, prepare the seal:
 
 ```bash
-mainline seal --prepare --json
+mainline seal --prepare --json > .ml-cache/seal.json
 ```
+
+`.ml-cache/` is gitignored by `mainline init`, so the temp seal file
+stays out of git AND keeps the v0.3 worktree-clean check happy on
+submit. The package contains a `seal_result_starter` field with the
+deterministic bits (intent_id, fingerprint.files_touched,
+fingerprint.subsystems) pre-populated — patch in title / what / why /
+decisions / risks / anti_patterns / confidence rather than typing
+the JSON from scratch.
 
 Generate a SealResult JSON matching the returned schema. The fingerprint must
 be specific enough for conflict detection:
@@ -212,7 +220,7 @@ be specific enough for conflict detection:
 Submit the seal:
 
 ```bash
-mainline seal --submit --json < seal.json
+mainline seal --submit --json < .ml-cache/seal.json
 ```
 
 If the worktree has unrelated dirty or untracked files that cannot be cleaned
@@ -220,7 +228,7 @@ because they belong to the user, use `--allow-dirty` only after noting that
 Mainline will permanently record the dirty state:
 
 ```bash
-mainline seal --submit --allow-dirty --json < seal.json
+mainline seal --submit --allow-dirty --json < .ml-cache/seal.json
 ```
 
 If the response includes `conflicts`, surface them to the user verbatim before
