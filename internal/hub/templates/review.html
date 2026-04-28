@@ -1,0 +1,17 @@
+{{define "review"}}{{template "header" .}}
+<h1>Review queue</h1>
+<p class="lead">{{len .ReviewRows}} proposed intent{{if ne (len .ReviewRows) 1}}s{{end}} waiting for a human decision.</p>
+{{if not .ReviewRows}}<p class="muted">No proposed intents are waiting for review.</p>{{end}}
+{{range .ReviewRows}}
+<section class="riskcard">
+  <h2><a href="intents/{{.ID}}.html">{{.Title}}</a> <code class="muted">{{shortID .ID}}</code></h2>
+  <p class="meta">{{if .ActorID}}{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}} · {{end}}{{.Thread}} · sealed {{timeAgo .SealedAt}}</p>
+  {{if .Goal}}<p>{{.Goal}}</p>{{end}}
+  <p class="tags">
+    {{if .FilesTouched}}<span class="tag">{{len .FilesTouched}} files</span>{{end}}
+    {{if .Risks}}<span class="tag">{{len .Risks}} risks</span>{{end}}
+    {{if .Subsystems}}{{range .Subsystems}}<span class="tag">{{.}}</span>{{end}}{{end}}
+  </p>
+</section>
+{{end}}
+{{template "footer" .}}{{end}}

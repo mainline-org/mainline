@@ -50,6 +50,7 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	}
 	model := buildHubModel(view)
 	model.OpenIntents = buildOpenIntents(store, view)
+	model.Dashboard = buildDashboard(model)
 
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("hub: mkdir output: %w", err)
@@ -87,6 +88,7 @@ func buildHubModel(view *domain.MainlineView) *HubModel {
 	m.ActorIndex = buildActorIndex(m.Intents)
 	m.RiskIntents = buildRiskList(m.Intents)
 	m.Relations = buildRelations(m.Intents)
+	m.Dashboard = buildDashboard(m)
 	return m
 }
 
@@ -225,6 +227,81 @@ func buildRiskList(intents []HubIntent) []string {
 		}
 	}
 	return out
+}
+
+func buildDashboard(m *HubModel) HubDashboard {
+	d := HubDashboard{
+		TotalIntents: len(m.Intents),
+		OpenIntents:  len(m.OpenIntents),
+		RiskIntents:  len(m.RiskIntents),
+		FileCount:    len(m.FileIndex),
+		ActorCount:   len(m.ActorIndex),
+	}
+	counts := map[string]int{}
+	for _, in := range m.Intents {
+		counts[in.Status]++
+		switch in.Status {
+		case string(domain.StatusProposed):
+			d.ProposedIntents++
+		case string(domain.StatusMerged):
+			d.MergedIntents++
+		}
+	}
+	for _, status := range []string{
+		string(domain.StatusProposed),
+		string(domain.StatusMerged),
+		string(domain.StatusSuperseded),
+		string(domain.StatusAbandoned),
+		string(domain.StatusReverted),
+	} {
+		if n := counts[status]; n > 0 {
+			d.StatusCounts = append(d.StatusCounts, HubStatusCount{Status: status, Count: n})
+		}
+	}
+
+	seen := map[string]bool{}
+	addFocus := func(in HubIntent, reason string) {
+		if len(d.Focus) >= 6 || seen[in.ID] {
+			return
+		}
+		seen[in.ID] = true
+		d.Focus = append(d.Focus, HubFocusIntent{
+			ID:     in.ID,
+			Title:  in.Title,
+			Status: in.Status,
+			Reason: reason,
+		})
+	}
+	for _, in := range m.Intents {
+		if in.Status == string(domain.StatusProposed) {
+			addFocus(in, "waiting for review")
+		}
+	}
+	for _, in := range m.Intents {
+		if len(in.Risks) > 0 {
+			addFocus(in, fmt.Sprintf("%d recorded risk", len(in.Risks)))
+		}
+	}
+	for _, in := range m.Intents {
+		if in.Status == string(domain.StatusMerged) {
+			addFocus(in, "recently merged")
+		}
+	}
+
+	files := append([]HubFileEntry(nil), m.FileIndex...)
+	sort.SliceStable(files, func(i, j int) bool {
+		if len(files[i].IntentIDs) != len(files[j].IntentIDs) {
+			return len(files[i].IntentIDs) > len(files[j].IntentIDs)
+		}
+		return files[i].Path < files[j].Path
+	})
+	for _, f := range files {
+		if len(d.HotFiles) >= 8 {
+			break
+		}
+		d.HotFiles = append(d.HotFiles, HubHotFile{Path: f.Path, IntentCount: len(f.IntentIDs)})
+	}
+	return d
 }
 
 // buildRelations turns the SupersededByIntent links into the simple
