@@ -19,7 +19,7 @@ const (
 )
 
 func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallReport, error) {
-	report := hooks.InstallReport{}
+	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true}
 	settingsPath := filepath.Join(repoRoot, claudeDirName, settingsFileName)
 
 	rawTop, rawHooks, fileExisted, err := loadSettingsJSON(settingsPath)
@@ -134,24 +134,56 @@ func (Agent) Uninstall(repoRoot string) error {
 }
 
 func (Agent) IsInstalled(repoRoot string) (bool, error) {
+	st, err := (Agent{}).InstallationStatus(repoRoot)
+	return st.Installed, err
+}
+
+func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, error) {
 	settingsPath := filepath.Join(repoRoot, claudeDirName, settingsFileName)
+	st := hooks.InstallationStatus{
+		Scope:             "repo-local",
+		Files:             []string{settingsPath},
+		ExpectedHookCount: len(nativeHookKey),
+	}
 	_, rawHooks, fileExisted, err := loadSettingsJSON(settingsPath)
 	if err != nil {
-		return false, err
+		return st, err
 	}
 	if !fileExisted {
-		return false, nil
+		return st, nil
 	}
-	for _, raw := range rawHooks {
+	expected := expectedNativeHookKeys()
+	for nativeKey, raw := range rawHooks {
+		managedForKey := 0
 		for _, g := range decodeGroups(raw) {
 			for _, h := range g.Hooks {
 				if isManagedHook(h) {
-					return true, nil
+					managedForKey++
 				}
 			}
 		}
+		if managedForKey == 0 {
+			continue
+		}
+		st.HookCount += managedForKey
+		if !expected[nativeKey] {
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("unexpected mainline hook under %s", nativeKey))
+		} else if managedForKey > 1 {
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("duplicate mainline hooks under %s", nativeKey))
+		}
 	}
-	return false, nil
+	for _, nativeKey := range nativeHookKey {
+		if countManagedClaude(rawHooks[nativeKey]) == 0 {
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("missing mainline hook under %s", nativeKey))
+		}
+	}
+	st.Installed = st.HookCount > 0
+	st.RestartRequired = st.Installed
+	if !st.Installed {
+		st.RepairReasons = nil
+	}
+	st.NeedsRepair = len(st.RepairReasons) > 0
+	return st, nil
 }
 
 type hookGroup struct {
@@ -234,10 +266,30 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 		return fmt.Sprintf(`sh -c 'test -x %q && exec %q hooks claudecode %s || exit 0'`,
 			opts.BinPath, opts.BinPath, hookID)
 	case opts.LocalDev:
-		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks claudecode %s'`, hookID)
+		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks claudecode %s || exit 0'`, hookID)
 	default:
 		return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks claudecode %s || exit 0'`, hookID)
 	}
+}
+
+func expectedNativeHookKeys() map[string]bool {
+	out := make(map[string]bool, len(nativeHookKey))
+	for _, nativeKey := range nativeHookKey {
+		out[nativeKey] = true
+	}
+	return out
+}
+
+func countManagedClaude(raw json.RawMessage) int {
+	count := 0
+	for _, g := range decodeGroups(raw) {
+		for _, h := range g.Hooks {
+			if isManagedHook(h) {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func allManagedPrefixes() []string {

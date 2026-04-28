@@ -84,6 +84,51 @@ func TestInstallMergesHooksAndEnablesFeature(t *testing.T) {
 	if !again.AlreadyInstalled {
 		t.Fatalf("second install should be idempotent: %#v", again)
 	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Installed || st.NeedsRepair || st.HookCount != st.ExpectedHookCount {
+		t.Fatalf("unexpected healthy install status: %#v", st)
+	}
+}
+
+func TestInstallationStatusDetectsDisabledFeatureAndRepair(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, ".codex", "config.toml")
+	if err := os.WriteFile(configPath, []byte("[features]\ncodex_hooks = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Installed || !st.NeedsRepair || !strings.Contains(strings.Join(st.RepairReasons, "\n"), "codex_hooks") {
+		t.Fatalf("expected disabled codex_hooks to need repair: %#v", st)
+	}
+
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NeedsRepair {
+		t.Fatalf("install should repair disabled codex_hooks: %#v", st)
+	}
+}
+
+func TestLocalDevWrapperFailsSoft(t *testing.T) {
+	got := wrapperCommand(hooks.InstallOptions{LocalDev: true}, HookStop)
+	if !strings.Contains(got, "|| exit 0") {
+		t.Fatalf("local-dev wrapper should fail soft: %q", got)
+	}
 }
 
 func TestUninstallRemovesOnlyManagedHooks(t *testing.T) {
