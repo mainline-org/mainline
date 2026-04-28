@@ -101,7 +101,13 @@ ul.risks li { color: #7a2525; }
 
 dl.graph dt { font-weight: 500; margin-top: 12px; }
 dl.graph dd { margin-left: 24px; color: var(--muted); font-size: 0.9em; }
-.kind { font-size: 0.85em; color: var(--muted); margin: 0 4px; }
+section.graph-section + section.graph-section { margin-top: 32px; }
+section.graph-section > p.muted { margin-top: -4px; margin-bottom: 12px; }
+.kind { display: inline-block; font-size: 0.78em; padding: 1px 6px; border-radius: 10px; margin: 0 6px; font-weight: 600; }
+.kind-supersedes, .kind-superseded_by { background: #fff1e0; color: #c4730d; }
+.kind-conflicts_with { background: var(--risk-soft); color: var(--risk); }
+.kind-shares_file { background: var(--accent-soft); color: var(--accent); }
+.graph-note { margin-left: 6px; }
 
 section.commands { margin-top: 32px; }
 section.commands pre { background: var(--panel); border: 1px solid var(--line); }

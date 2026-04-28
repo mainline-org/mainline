@@ -154,7 +154,8 @@ type pageCtx struct {
 
 	RiskRows []riskRow
 
-	Relations []relationRow
+	Relations      []relationRow
+	RelationGroups []relationGroup
 }
 
 type intentLink struct {
@@ -171,6 +172,17 @@ type relationRow struct {
 	From intentLink
 	Kind string
 	To   intentLink
+	Note string
+}
+
+// relationGroup is a kind-bucketed list of relationRows so the
+// template can render each kind under its own heading without
+// running stateful kind-transition logic in template syntax.
+type relationGroup struct {
+	Kind  string
+	Title string
+	Lead  string
+	Rows  []relationRow
 }
 
 func indexByID(intents []HubIntent) map[string]HubIntent {
@@ -318,17 +330,70 @@ func graphCtx(m *HubModel, byID map[string]HubIntent) pageCtx {
 			From: linkFor(byID, r.From, ""),
 			Kind: r.Kind,
 			To:   linkFor(byID, r.To, ""),
+			Note: r.Note,
 		})
 	}
+	groups := groupRelations(rows)
 	return pageCtx{
-		Title:       "Intent relationships",
-		GeneratedAt: m.GeneratedAt,
-		MainBranch:  m.MainBranch,
-		MainHead:    m.MainHead,
-		NavActive:   "graph",
-		RootPath:    "",
-		Relations:   rows,
+		Title:          "Intent relationships",
+		GeneratedAt:    m.GeneratedAt,
+		MainBranch:     m.MainBranch,
+		MainHead:       m.MainHead,
+		NavActive:      "graph",
+		RootPath:       "",
+		Relations:      rows,
+		RelationGroups: groups,
 	}
+}
+
+// groupRelations buckets relation rows by kind so the template can
+// render each kind under its own heading. Within each group rows
+// keep the deterministic order produced by buildRelations.
+//
+// `superseded_by` and `supersedes` are merged into one user-facing
+// "Supersessions" group because the page already shows both ends of
+// every link; splitting them just doubles the heading without
+// adding information.
+func groupRelations(rows []relationRow) []relationGroup {
+	specs := []struct {
+		kinds []string
+		title string
+		lead  string
+	}{
+		{[]string{"supersedes", "superseded_by"}, "Supersessions",
+			"Explicit replaces / replaced-by recorded by the engine. Strongest signal — the agent wrote this."},
+		{[]string{"conflicts_with"}, "Conflicts (latest check)",
+			"Phase-2 check judgments. Investigate before merging either side."},
+		{[]string{"shares_file"}, "Shared files",
+			"Implicit overlap. Often benign, but useful to spot competing work on the same surface."},
+	}
+	groups := make([]relationGroup, 0, len(specs))
+	for _, sp := range specs {
+		var bucket []relationRow
+		for _, r := range rows {
+			for _, k := range sp.kinds {
+				if r.Kind == k {
+					// shares_file is symmetric; keep only one
+					// direction so the page shows each pair once.
+					if r.Kind == "shares_file" && r.From.ID >= r.To.ID {
+						break
+					}
+					bucket = append(bucket, r)
+					break
+				}
+			}
+		}
+		if len(bucket) == 0 {
+			continue
+		}
+		groups = append(groups, relationGroup{
+			Kind:  sp.kinds[0],
+			Title: sp.title,
+			Lead:  sp.lead,
+			Rows:  bucket,
+		})
+	}
+	return groups
 }
 
 func linkFor(byID map[string]HubIntent, id, prefix string) intentLink {

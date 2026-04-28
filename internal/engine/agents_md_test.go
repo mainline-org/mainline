@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,9 +79,12 @@ func TestUpsertAgentsMD_PreservesUserContentAroundMarkedSection(t *testing.T) {
 	if strings.Contains(got, "STALE OLD CONTENT") {
 		t.Errorf("stale block was not replaced")
 	}
-	// New template content must be present.
-	if !strings.Contains(got, "<!-- mainline-agents-md-version: 7 -->") {
-		t.Errorf("new template body missing")
+	// New template content must be present. Asserts on the
+	// embedded version rather than a hard-coded number so a routine
+	// version bump does not require touching this test.
+	wantMarker := fmt.Sprintf("<!-- mainline-agents-md-version: %d -->", EmbeddedAgentsMDVersion())
+	if !strings.Contains(got, wantMarker) {
+		t.Errorf("new template body missing version marker %q", wantMarker)
 	}
 }
 

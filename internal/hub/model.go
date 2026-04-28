@@ -110,6 +110,23 @@ type HubIntent struct {
 	Tags                []string `json:"tags,omitempty"`
 
 	SupersededByIntent string `json:"superseded_by_intent,omitempty"`
+
+	// LastCheck mirrors IntentView.LastCheck so the graph view can
+	// surface phase-2 conflict edges. Nil means no agent has run
+	// `mainline check --submit` against this intent yet.
+	LastCheck *HubCheckSummary `json:"last_check,omitempty"`
+}
+
+// HubCheckSummary is the per-intent rollup of the latest phase-2
+// judgment. Mirrors domain.CheckSummary, intentionally narrow — the
+// Hub only needs the conflict signal + the IDs of the intents the
+// check ruled against, not the full Evidence blob.
+type HubCheckSummary struct {
+	HasConflict      bool     `json:"has_conflict"`
+	HighestSeverity  string   `json:"highest_severity,omitempty"`
+	NeedsHumanReview bool     `json:"needs_human_review,omitempty"`
+	AgainstIntents   []string `json:"against_intents,omitempty"`
+	AtTime           string   `json:"at,omitempty"`
 }
 
 type HubDecision struct {
@@ -140,14 +157,21 @@ type HubActorEntry struct {
 	IntentIDs []string `json:"intent_ids"`
 }
 
-// HubRelationRow is the simple text-adjacency representation of
-// intent-to-intent links. Hub v1 only carries supersedes /
-// superseded-by — those are the only links the domain currently
-// records explicitly. "relates" is a future-Hub concern.
+// HubRelationRow is the text-adjacency representation of intent-to-
+// intent links. Three kinds:
+//
+//   - supersedes / superseded_by — bidirectional, written from
+//     IntentView.StatusEvidence.SupersededByIntent.
+//   - conflicts_with — bidirectional, written from
+//     IntentView.LastCheck.AgainstIntents (phase-2 check judgments).
+//   - shares_file — bidirectional implicit edge, emitted when two
+//     intents touched the same file. Note carries the file count so
+//     the renderer can rank by overlap weight.
 type HubRelationRow struct {
 	From string `json:"from"`
-	Kind string `json:"kind"` // "supersedes" | "superseded_by"
+	Kind string `json:"kind"` // "supersedes" | "superseded_by" | "conflicts_with" | "shares_file"
 	To   string `json:"to"`
+	Note string `json:"note,omitempty"`
 }
 
 // HubOpenIntent is local in-flight work that is not yet represented
@@ -200,6 +224,15 @@ func hubIntentFromView(v *domain.IntentView) HubIntent {
 				Alternative: a.Alternative,
 				Reason:      a.Reason,
 			})
+		}
+	}
+	if c := v.LastCheck; c != nil {
+		out.LastCheck = &HubCheckSummary{
+			HasConflict:      c.HasConflict,
+			HighestSeverity:  c.HighestSeverity,
+			NeedsHumanReview: c.NeedsHumanReview,
+			AgainstIntents:   append([]string(nil), c.AgainstIntents...),
+			AtTime:           c.AtTime,
 		}
 	}
 	if f := v.Fingerprint; f != nil {

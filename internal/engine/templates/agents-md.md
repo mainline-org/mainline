@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 7 -->
+<!-- mainline-agents-md-version: 8 -->
 
 This project uses **Mainline** to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
@@ -252,6 +252,32 @@ whether `auto_sync_on_session_start` is on (the only mechanical
 toggle). Disable it with `mainline hooks disable` if your network
 makes the session-start sync painful — you can still drive the rest
 of the workflow by hand.
+
+### Hub: human reader surface (you don't run this; you suggest it)
+
+`mainline hub export <dir>` and `mainline hub open` build a static
+HTML site over the local synced intent view. It is for **humans**, not
+agents — agents use `context` / `show` / `trace` / `gaps`.
+
+You should suggest the hub when the user asks one of:
+
+- *"What's the history of `<file>`?"* → hub's per-file page lists
+  every intent that touched it.
+- *"Who's been working on what lately?"* → hub's index shows the
+  recent intents table; the actor pages give per-author rollups.
+- *"Are there any conflicts or risky changes I should review?"* →
+  hub's risks page and graph (supersessions, conflicts_with,
+  shares_file edges) put the answer one click away.
+
+Concretely:
+
+```
+mainline hub open                     # builds .mainline/hub and opens it
+mainline hub export ./hub-snapshot    # write a portable copy elsewhere
+```
+
+Hub is read-only and rebuildable from the synced view; it never
+modifies repo files outside the user-chosen output directory.
 
 ### What you do NOT need to run
 

@@ -304,23 +304,183 @@ func buildDashboard(m *HubModel) HubDashboard {
 	return d
 }
 
-// buildRelations turns the SupersededByIntent links into the simple
-// text-graph rows used by graph.html. Both directions are emitted so
-// either intent's page can show the link without a second lookup.
+// buildRelations emits the per-intent edges that the graph view
+// renders. Three kinds, in priority order:
+//
+//  1. supersedes / superseded_by — explicit, recorded by the engine
+//     in StatusEvidence. Rendered first because it's the only edge
+//     the agent actively wrote.
+//  2. conflicts_with — sourced from each intent's LastCheck.
+//     AgainstIntents (the phase-2 check judgments). Bidirectional.
+//     Skipped if HasConflict is false (a clean check still produces a
+//     CheckSummary but should not pollute the graph).
+//  3. shares_file — implicit overlap. Emitted when two intents
+//     touched ≥1 of the same file. Note carries the count of shared
+//     files so the renderer can rank. We cap to the top sharesFileCap
+//     overlaps per intent so a fingerprint-heavy repo does not blow
+//     up the page; the cap is generous enough for v1 readers and
+//     v2 hosted will replace this with a queryable index anyway.
 func buildRelations(intents []HubIntent) []HubRelationRow {
 	out := make([]HubRelationRow, 0)
+	seen := map[string]bool{}
+	emit := func(from, kind, to, note string) {
+		if from == "" || to == "" || from == to {
+			return
+		}
+		key := from + "|" + kind + "|" + to
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, HubRelationRow{From: from, Kind: kind, To: to, Note: note})
+	}
+
 	for _, in := range intents {
 		if to := in.SupersededByIntent; to != "" {
-			out = append(out, HubRelationRow{From: in.ID, Kind: "superseded_by", To: to})
-			out = append(out, HubRelationRow{From: to, Kind: "supersedes", To: in.ID})
+			emit(in.ID, "superseded_by", to, "")
+			emit(to, "supersedes", in.ID, "")
+		}
+		if c := in.LastCheck; c != nil && c.HasConflict {
+			for _, against := range c.AgainstIntents {
+				note := ""
+				if c.HighestSeverity != "" {
+					note = c.HighestSeverity
+				}
+				emit(in.ID, "conflicts_with", against, note)
+				emit(against, "conflicts_with", in.ID, note)
+			}
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
+
+	for _, row := range buildSharedFileRows(intents) {
+		emit(row.From, row.Kind, row.To, row.Note)
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return relationKindRank(out[i].Kind) < relationKindRank(out[j].Kind)
+		}
 		if out[i].From != out[j].From {
 			return out[i].From < out[j].From
 		}
-		return out[i].Kind < out[j].Kind
+		return out[i].To < out[j].To
 	})
+	return out
+}
+
+// sharesFileCap bounds the number of shares_file rows emitted from
+// any single intent. Picked low enough to keep the graph readable on
+// repos where many intents touch a hot file (e.g. internal/cli/root.go);
+// raise once the page has client-side sort/filter.
+const sharesFileCap = 3
+
+// sharesFileMinOverlap is the minimum number of shared files required
+// to emit a shares_file edge. One shared file is too weak a signal —
+// every PR touches root.go or AGENTS.md eventually. Two or more is a
+// real co-occurrence pattern worth surfacing.
+const sharesFileMinOverlap = 2
+
+func relationKindRank(k string) int {
+	switch k {
+	case "supersedes", "superseded_by":
+		return 0
+	case "conflicts_with":
+		return 1
+	case "shares_file":
+		return 2
+	}
+	return 3
+}
+
+// sharedPair is the (a,b,count) triple buildSharedFileRows uses to
+// rank file overlaps. Package-level so the per-intent sort closure
+// can take *sharedPair values without an anonymous-struct type
+// mismatch.
+type sharedPair struct {
+	a, b  string
+	count int
+}
+
+func (p *sharedPair) other(id string) string {
+	if p.a == id {
+		return p.b
+	}
+	return p.a
+}
+
+// buildSharedFileRows finds intent pairs that touched at least one
+// common file and emits one bidirectional `shares_file` edge per
+// pair, with the shared-file count carried in Note. Pairs are sorted
+// by descending overlap weight; we keep up to sharesFileCap pairs
+// per intent so a hot file does not produce O(n²) noise.
+func buildSharedFileRows(intents []HubIntent) []HubRelationRow {
+	pairs := map[string]*sharedPair{}
+	files := map[string][]string{}
+	for _, in := range intents {
+		for _, f := range in.FilesTouched {
+			files[f] = append(files[f], in.ID)
+		}
+	}
+	for _, ids := range files {
+		if len(ids) < 2 {
+			continue
+		}
+		for i := 0; i < len(ids); i++ {
+			for j := i + 1; j < len(ids); j++ {
+				a, b := ids[i], ids[j]
+				if a > b {
+					a, b = b, a
+				}
+				key := a + "|" + b
+				p, ok := pairs[key]
+				if !ok {
+					p = &sharedPair{a: a, b: b}
+					pairs[key] = p
+				}
+				p.count++
+			}
+		}
+	}
+
+	// Drop pairs that don't clear the minimum-overlap threshold.
+	// One-shared-file pairs are dominant noise on real repos.
+	for k, p := range pairs {
+		if p.count < sharesFileMinOverlap {
+			delete(pairs, k)
+		}
+	}
+
+	// Bucket pair lists per intent so we can cap fan-out per node.
+	perIntent := map[string][]*sharedPair{}
+	for _, p := range pairs {
+		perIntent[p.a] = append(perIntent[p.a], p)
+		perIntent[p.b] = append(perIntent[p.b], p)
+	}
+	keep := map[*sharedPair]bool{}
+	for id, list := range perIntent {
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].count != list[j].count {
+				return list[i].count > list[j].count
+			}
+			return list[i].other(id) < list[j].other(id)
+		})
+		for i, p := range list {
+			if i >= sharesFileCap {
+				break
+			}
+			keep[p] = true
+		}
+	}
+
+	out := make([]HubRelationRow, 0, len(keep)*2)
+	for p := range keep {
+		note := fmt.Sprintf("%d shared files", p.count)
+		if p.count == 1 {
+			note = "1 shared file"
+		}
+		out = append(out, HubRelationRow{From: p.a, Kind: "shares_file", To: p.b, Note: note})
+		out = append(out, HubRelationRow{From: p.b, Kind: "shares_file", To: p.a, Note: note})
+	}
 	return out
 }
 
