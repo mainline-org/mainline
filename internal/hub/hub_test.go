@@ -146,6 +146,38 @@ func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 	}
 }
 
+func TestBuildDashboard_PrioritizesHumanReviewQueues(t *testing.T) {
+	proposed := intent("int_proposed", "a", "2026-04-28T03:00:00Z", domain.StatusProposed, "src/hub.go")
+	risky := intent("int_risky", "a", "2026-04-28T02:00:00Z", domain.StatusMerged, "src/hub.go", "src/model.go")
+	risky.Summary.Risks = []string{"needs careful rollout"}
+	merged := intent("int_merged", "a", "2026-04-28T01:00:00Z", domain.StatusMerged, "src/model.go")
+	v := makeView(proposed, risky, merged)
+
+	m := buildHubModel(v)
+	if m.Dashboard.TotalIntents != 3 || m.Dashboard.ProposedIntents != 1 || m.Dashboard.MergedIntents != 2 || m.Dashboard.RiskIntents != 1 {
+		t.Fatalf("dashboard counts wrong: %+v", m.Dashboard)
+	}
+	if len(m.Dashboard.Focus) < 3 {
+		t.Fatalf("expected proposed, risky, and recent merged focus rows, got %+v", m.Dashboard.Focus)
+	}
+	if m.Dashboard.Focus[0].ID != "int_proposed" || m.Dashboard.Focus[0].Reason != "waiting for review" {
+		t.Errorf("proposed intent should lead focus queue, got %+v", m.Dashboard.Focus[0])
+	}
+	if len(m.Dashboard.HotFiles) == 0 || m.Dashboard.HotFiles[0].Path != "src/hub.go" || m.Dashboard.HotFiles[0].IntentCount != 2 {
+		t.Errorf("hot files should sort by intent count, got %+v", m.Dashboard.HotFiles)
+	}
+}
+
+func TestBuildDashboard_IncludesOpenIntentCount(t *testing.T) {
+	m := buildHubModel(makeView(intent("int_a", "a", "2026-04-28T01:00:00Z", domain.StatusMerged)))
+	m.OpenIntents = []HubOpenIntent{{ID: "int_open"}, {ID: "int_other"}}
+
+	d := buildDashboard(m)
+	if d.OpenIntents != 2 {
+		t.Fatalf("expected 2 open intents, got %+v", d)
+	}
+}
+
 func TestBuildRelations_EmitsBothDirections(t *testing.T) {
 	a := intent("int_a", "act", "2026-04-28T01:00:00Z", domain.StatusSuperseded)
 	a.StatusEvidence.SupersededByIntent = "int_b"
@@ -211,6 +243,7 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	for _, want := range []string{
 		"index.html",
 		"open.html",
+		"review.html",
 		"files.html",
 		"risks.html",
 		"graph.html",
@@ -253,6 +286,10 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 			t.Errorf("index.html missing %q", fragment)
 		}
 	}
+	reviewPage, _ := os.ReadFile(filepath.Join(out, "review.html"))
+	if !strings.Contains(string(reviewPage), "No proposed intents are waiting for review.") {
+		t.Errorf("review.html should render the empty queue state")
+	}
 	filesPage, _ := os.ReadFile(filepath.Join(out, "files.html"))
 	for _, fragment := range []string{"src/auth.go", "files/src__auth.go.html"} {
 		if !strings.Contains(string(filesPage), fragment) {
@@ -286,7 +323,7 @@ func TestExport_NoIntentsStillWritesIndex(t *testing.T) {
 	if res.IntentCount != 0 {
 		t.Errorf("expected 0 intents, got %d", res.IntentCount)
 	}
-	for _, want := range []string{"index.html", "open.html", "files.html", "risks.html", "graph.html"} {
+	for _, want := range []string{"index.html", "open.html", "review.html", "files.html", "risks.html", "graph.html"} {
 		if _, err := os.Stat(filepath.Join(out, want)); err != nil {
 			t.Errorf("expected %s even with empty view: %v", want, err)
 		}

@@ -7,17 +7,21 @@
 </head>
 <body>
 <header class="topbar">
-  <span class="brand">Mainline Hub</span>
-  <span class="meta">main: <code>{{shortCommit .MainHead}}</code> · generated {{timeAgo .GeneratedAt}}</span>
+  <div>
+    <div class="brand">Mainline Hub</div>
+    <div class="meta">Human view of the local intent history</div>
+  </div>
+  <span class="meta build-meta">main: <code>{{shortCommit .MainHead}}</code> · generated {{timeAgo .GeneratedAt}}</span>
 </header>
 <div class="layout">
   <nav class="sidebar">
-    <a href="{{.RootPath}}index.html"   class="{{if eq .NavActive "index"}}active{{end}}">Recent</a>
-    <a href="{{.RootPath}}open.html"    class="{{if eq .NavActive "open"}}active{{end}}">Open</a>
+    <a href="{{.RootPath}}index.html"   class="{{if eq .NavActive "index"}}active{{end}}">Dashboard</a>
+    <a href="{{.RootPath}}open.html"    class="{{if eq .NavActive "open"}}active{{end}}">Open work</a>
+    <a href="{{.RootPath}}review.html"  class="{{if eq .NavActive "review"}}active{{end}}">Review queue</a>
     <a href="{{.RootPath}}files.html"   class="{{if eq .NavActive "files"}}active{{end}}">Files</a>
-    <a href="{{.RootPath}}risks.html"   class="{{if eq .NavActive "risks"}}active{{end}}">Risks</a>
-    <a href="{{.RootPath}}graph.html"   class="{{if eq .NavActive "graph"}}active{{end}}">Graph</a>
-    <div class="navgroup">Browse</div>
+    <a href="{{.RootPath}}risks.html"   class="{{if eq .NavActive "risks"}}active{{end}}">Risk review</a>
+    <a href="{{.RootPath}}graph.html"   class="{{if eq .NavActive "graph"}}active{{end}}">Relationships</a>
+    <div class="navgroup">Data</div>
     <a href="{{.RootPath}}data/intents.json" class="muted">data/intents.json</a>
   </nav>
   <main class="content">{{end}}
