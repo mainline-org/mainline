@@ -36,6 +36,13 @@ var (
 //              A stale answer means "agent thinks team is idle when
 //              someone just shipped" — exactly the failure mode the
 //              command exists to prevent.
+//   - gaps   — reads main HEAD's last 30 commits against the local
+//              view's intent list. When `git fetch` has pulled in a
+//              new merge commit + its note but the view rebuild has
+//              not run yet, the note's intent is not in liveIntents
+//              and the commit reports as uncovered. Auto-sync (gated
+//              by freshness) keeps that false-uncovered window
+//              within the 300s budget.
 //
 // Notably absent:
 //
@@ -57,6 +64,7 @@ var (
 var autoSyncCommands = map[string]bool{
 	"check":  true,
 	"status": true,
+	"gaps":   true,
 }
 
 var rootCmd = &cobra.Command{
