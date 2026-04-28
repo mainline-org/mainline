@@ -25,6 +25,7 @@ type ExportOptions struct {
 type ExportResult struct {
 	OutputDir   string `json:"output_dir"`
 	IntentCount int    `json:"intent_count"`
+	OpenCount   int    `json:"open_count"`
 	FileCount   int    `json:"file_count"`
 	ActorCount  int    `json:"actor_count"`
 	RiskCount   int    `json:"risk_count"`
@@ -48,6 +49,7 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 		return nil, fmt.Errorf("hub: read view: %w", err)
 	}
 	model := buildHubModel(view)
+	model.OpenIntents = buildOpenIntents(store, view)
 
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("hub: mkdir output: %w", err)
@@ -59,6 +61,7 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	return &ExportResult{
 		OutputDir:   opts.OutputDir,
 		IntentCount: len(model.Intents),
+		OpenCount:   len(model.OpenIntents),
 		FileCount:   len(model.FileIndex),
 		ActorCount:  len(model.ActorIndex),
 		RiskCount:   len(model.RiskIntents),
@@ -85,6 +88,78 @@ func buildHubModel(view *domain.MainlineView) *HubModel {
 	m.RiskIntents = buildRiskList(m.Intents)
 	m.Relations = buildRelations(m.Intents)
 	return m
+}
+
+func buildOpenIntents(store *storage.Store, view *domain.MainlineView) []HubOpenIntent {
+	ids, err := store.ListDrafts()
+	if err != nil || len(ids) == 0 {
+		return nil
+	}
+	viewStatus := make(map[string]domain.IntentStatus)
+	if view != nil {
+		for _, iv := range view.Intents {
+			viewStatus[iv.IntentID] = iv.Status
+		}
+	}
+
+	out := make([]HubOpenIntent, 0)
+	for _, id := range ids {
+		d, err := store.ReadDraft(id)
+		if err != nil || d == nil {
+			continue
+		}
+		if !hubOpenStatus(d.Status) {
+			continue
+		}
+		if vs, ok := viewStatus[id]; ok && hubTerminalStatus(vs) {
+			continue
+		}
+		turns, _ := store.ReadTurns(id)
+		updatedAt := d.LastModifiedAt
+		if updatedAt == "" {
+			updatedAt = d.CreatedAt
+		}
+		out = append(out, HubOpenIntent{
+			ID:             d.IntentID,
+			Goal:           d.Goal,
+			Status:         string(d.Status),
+			Thread:         d.Thread,
+			GitBranch:      d.GitBranch,
+			CreatedAt:      d.CreatedAt,
+			LastModifiedAt: updatedAt,
+			TurnCount:      len(turns),
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ki := openSortKey(out[i])
+		kj := openSortKey(out[j])
+		if ki != kj {
+			return ki > kj
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func hubOpenStatus(s domain.IntentStatus) bool {
+	return s == domain.StatusDrafting || s == domain.StatusSealedLocal || s == domain.StatusProposed
+}
+
+func hubTerminalStatus(s domain.IntentStatus) bool {
+	return s == domain.StatusMerged ||
+		s == domain.StatusAbandoned ||
+		s == domain.StatusSuperseded ||
+		s == domain.StatusReverted
+}
+
+func openSortKey(i HubOpenIntent) string {
+	if i.LastModifiedAt != "" {
+		return i.LastModifiedAt
+	}
+	if i.CreatedAt != "" {
+		return i.CreatedAt
+	}
+	return i.ID
 }
 
 // intentSortKey returns the timestamp string we sort intents by

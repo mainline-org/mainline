@@ -1,0 +1,27 @@
+{{define "open"}}{{template "header" .}}
+<h1>Open work</h1>
+<p class="lead">{{len .OpenIntents}} local in-flight intents from the drafts cache.</p>
+{{if not .OpenIntents}}<p class="muted">No local drafting or sealed-local intents found.</p>{{end}}
+{{if .OpenIntents}}
+<div class="table-scroll">
+<table class="intents">
+<thead>
+<tr><th>ID</th><th>Goal</th><th>Status</th><th>Branch</th><th>Thread</th><th>Updated</th><th>Turns</th></tr>
+</thead>
+<tbody>
+{{range .OpenIntents}}
+<tr>
+  <td><code>{{shortID .ID}}</code></td>
+  <td>{{.Goal}}</td>
+  <td><span class="status status-{{.Status}}">{{.Status}}</span></td>
+  <td><code class="thread">{{.GitBranch}}</code></td>
+  <td><code class="thread">{{.Thread}}</code></td>
+  <td class="muted" title="{{.LastModifiedAt}}">{{timeAgo .LastModifiedAt}}</td>
+  <td class="num">{{.TurnCount}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}
+{{template "footer" .}}{{end}}

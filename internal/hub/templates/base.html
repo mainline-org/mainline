@@ -13,6 +13,8 @@
 <div class="layout">
   <nav class="sidebar">
     <a href="{{.RootPath}}index.html"   class="{{if eq .NavActive "index"}}active{{end}}">Recent</a>
+    <a href="{{.RootPath}}open.html"    class="{{if eq .NavActive "open"}}active{{end}}">Open</a>
+    <a href="{{.RootPath}}files.html"   class="{{if eq .NavActive "files"}}active{{end}}">Files</a>
     <a href="{{.RootPath}}risks.html"   class="{{if eq .NavActive "risks"}}active{{end}}">Risks</a>
     <a href="{{.RootPath}}graph.html"   class="{{if eq .NavActive "graph"}}active{{end}}">Graph</a>
     <div class="navgroup">Browse</div>

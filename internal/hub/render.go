@@ -22,8 +22,14 @@ var tplIntent string
 //go:embed templates/file.html
 var tplFile string
 
+//go:embed templates/files.html
+var tplFiles string
+
 //go:embed templates/actor.html
 var tplActor string
+
+//go:embed templates/open.html
+var tplOpen string
 
 //go:embed templates/risks.html
 var tplRisks string
@@ -46,6 +52,12 @@ func renderAll(dir string, m *HubModel) error {
 	intentByID := indexByID(m.Intents)
 
 	if err := renderTo(filepath.Join(dir, "index.html"), tpl, "index", indexCtx(m)); err != nil {
+		return err
+	}
+	if err := renderTo(filepath.Join(dir, "open.html"), tpl, "open", openCtx(m)); err != nil {
+		return err
+	}
+	if err := renderTo(filepath.Join(dir, "files.html"), tpl, "files", filesCtx(m)); err != nil {
 		return err
 	}
 	for i := range m.Intents {
@@ -87,7 +99,7 @@ func buildTemplates() (*template.Template, error) {
 		"hasPrefix":   strings.HasPrefix,
 	}
 	tpl := template.New("hub").Funcs(funcs)
-	for _, src := range []string{tplBase, tplIndex, tplIntent, tplFile, tplActor, tplRisks, tplGraph} {
+	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplActor, tplRisks, tplGraph} {
 		var err error
 		tpl, err = tpl.Parse(src)
 		if err != nil {
@@ -121,7 +133,9 @@ type pageCtx struct {
 	NavActive   string
 	RootPath    string
 
-	Intents []HubIntent
+	Intents     []HubIntent
+	OpenIntents []HubOpenIntent
+	FileIndex   []HubFileEntry
 
 	Intent       *HubIntent
 	RelatedFiles []string
@@ -146,9 +160,9 @@ type riskRow struct {
 }
 
 type relationRow struct {
-	From  intentLink
-	Kind  string
-	To    intentLink
+	From intentLink
+	Kind string
+	To   intentLink
 }
 
 func indexByID(intents []HubIntent) map[string]HubIntent {
@@ -168,6 +182,31 @@ func indexCtx(m *HubModel) pageCtx {
 		NavActive:   "index",
 		RootPath:    "",
 		Intents:     m.Intents,
+		OpenIntents: m.OpenIntents,
+	}
+}
+
+func openCtx(m *HubModel) pageCtx {
+	return pageCtx{
+		Title:       "Open work",
+		GeneratedAt: m.GeneratedAt,
+		MainBranch:  m.MainBranch,
+		MainHead:    m.MainHead,
+		NavActive:   "open",
+		RootPath:    "",
+		OpenIntents: m.OpenIntents,
+	}
+}
+
+func filesCtx(m *HubModel) pageCtx {
+	return pageCtx{
+		Title:       "Files",
+		GeneratedAt: m.GeneratedAt,
+		MainBranch:  m.MainBranch,
+		MainHead:    m.MainHead,
+		NavActive:   "files",
+		RootPath:    "",
+		FileIndex:   m.FileIndex,
 	}
 }
 
