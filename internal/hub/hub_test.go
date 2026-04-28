@@ -199,6 +199,92 @@ func TestBuildRelations_EmitsBothDirections(t *testing.T) {
 	}
 }
 
+// Phase-2 check judgments are persisted in IntentView.LastCheck.
+// Hub must surface them as conflicts_with edges (bidirectional) and
+// must NOT emit edges when the latest check came back clean.
+func TestBuildRelations_EmitsConflictsFromLastCheck(t *testing.T) {
+	a := intent("int_a", "act", "2026-04-28T01:00:00Z", domain.StatusProposed, "src/auth.go")
+	a.LastCheck = &domain.CheckSummary{
+		HasConflict:     true,
+		HighestSeverity: "high",
+		AgainstIntents:  []string{"int_b"},
+	}
+	b := intent("int_b", "act", "2026-04-28T02:00:00Z", domain.StatusMerged, "src/auth.go")
+	clean := intent("int_clean", "act", "2026-04-28T03:00:00Z", domain.StatusMerged)
+	clean.LastCheck = &domain.CheckSummary{HasConflict: false, AgainstIntents: []string{"int_b"}}
+	v := makeView(a, b, clean)
+
+	m := buildHubModel(v)
+
+	var fwd, rev bool
+	for _, r := range m.Relations {
+		if r.Kind != "conflicts_with" {
+			continue
+		}
+		if r.From == "int_clean" || r.To == "int_clean" {
+			t.Errorf("clean check should not produce conflict edges: %+v", r)
+		}
+		if r.From == "int_a" && r.To == "int_b" {
+			fwd = true
+			if r.Note != "high" {
+				t.Errorf("expected severity in note, got %q", r.Note)
+			}
+		}
+		if r.From == "int_b" && r.To == "int_a" {
+			rev = true
+		}
+	}
+	if !fwd || !rev {
+		t.Errorf("expected bidirectional conflicts_with rows, got %+v", m.Relations)
+	}
+}
+
+// Pairs sharing 2+ files emit shares_file edges (bidirectional) with
+// the count in Note. Pairs sharing exactly 1 file are dropped — that
+// signal is too weak to surface on most repos (every PR eventually
+// touches root.go).
+func TestBuildRelations_EmitsSharedFileEdges(t *testing.T) {
+	a := intent("int_a", "act", "2026-04-28T01:00:00Z", domain.StatusMerged, "src/auth.go", "src/db.go")
+	b := intent("int_b", "act", "2026-04-28T02:00:00Z", domain.StatusMerged, "src/auth.go", "src/db.go", "src/web.go")
+	c := intent("int_c", "act", "2026-04-28T03:00:00Z", domain.StatusMerged, "src/web.go")
+	v := makeView(a, b, c)
+
+	m := buildHubModel(v)
+	pairs := map[string]string{}
+	for _, r := range m.Relations {
+		if r.Kind == "shares_file" {
+			pairs[r.From+"|"+r.To] = r.Note
+		}
+	}
+	if pairs["int_a|int_b"] == "" || pairs["int_b|int_a"] == "" {
+		t.Errorf("expected shares_file edges between int_a and int_b (2 shared files), got %+v", pairs)
+	}
+	if !strings.Contains(pairs["int_a|int_b"], "2 shared files") {
+		t.Errorf("expected 2 shared files in note, got %q", pairs["int_a|int_b"])
+	}
+	if pairs["int_b|int_c"] != "" {
+		t.Errorf("expected NO shares_file edge for single-file overlap (b/c only share src/web.go), got %+v", pairs)
+	}
+}
+
+func TestBuildRelations_OrdersKindsByLoadBearing(t *testing.T) {
+	a := intent("int_a", "act", "2026-04-28T01:00:00Z", domain.StatusSuperseded, "x.go")
+	a.StatusEvidence.SupersededByIntent = "int_b"
+	a.LastCheck = &domain.CheckSummary{HasConflict: true, AgainstIntents: []string{"int_b"}}
+	b := intent("int_b", "act", "2026-04-28T02:00:00Z", domain.StatusMerged, "x.go")
+	v := makeView(a, b)
+
+	m := buildHubModel(v)
+	if len(m.Relations) == 0 {
+		t.Fatal("expected at least one relation")
+	}
+	// Supersession should rank before conflict, conflict before shares_file.
+	first := m.Relations[0].Kind
+	if first != "supersedes" && first != "superseded_by" {
+		t.Errorf("expected supersession first, got %q", first)
+	}
+}
+
 func TestExport_ProducesAllPageTypes(t *testing.T) {
 	dir := t.TempDir()
 	repoRoot := filepath.Join(dir, "repo")
