@@ -1,0 +1,12 @@
+{{define "risks"}}{{template "header" .}}
+<h1>Risk-heavy intents</h1>
+<p class="lead">{{len .RiskRows}} sealed intents flagged risks at seal time.</p>
+{{if not .RiskRows}}<p class="muted">No intents have recorded risks yet.</p>{{end}}
+{{range .RiskRows}}
+<section class="riskcard">
+  <h2><a href="intents/{{.Intent.ID}}.html">{{.Intent.Title}}</a> <code class="muted">{{shortID .Intent.ID}}</code></h2>
+  <p class="meta">{{.Intent.Status}} · {{timeAgo .Intent.SealedAt}}</p>
+  <ul class="risks">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>
+</section>
+{{end}}
+{{template "footer" .}}{{end}}

@@ -196,6 +196,10 @@ func init() {
 	hooksCmd.GroupID = groupSetup.ID
 	webhookCmd.GroupID = groupSetup.ID
 
+	// Hub is a human-reader surface over the local intent view —
+	// occasional use, not part of the daily agent loop.
+	hubCmd.GroupID = groupSetup.ID
+
 	rootCmd.AddCommand(
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
@@ -203,6 +207,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
+		hubCmd,
 	)
 }
 
