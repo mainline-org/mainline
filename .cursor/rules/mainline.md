@@ -1,7 +1,7 @@
-<!-- mainline:agents:start version=11 checksum=sha256:e477845c980e622967b731a19b369d0ea8fc1a3e276e83d420a3b2ca451f79e4 -->
+<!-- mainline:agents:start version=12 checksum=sha256:bb93a86dcc1512ce1f81dfd84c14e6714261d252997e36eda3e1041a515273ba -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 7 -->
+<!-- mainline-agents-md-version: 8 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -21,8 +21,8 @@ mainline list-proposals --json                       # what's in flight
 mainline start "<goal>"                              # claim work
 mainline append "<what changed>"                     # after each turn
 git add ... && git commit -m ...                     # commit code
-mainline seal --prepare > seal.json                  # then fill seal.json
-mainline seal --submit < seal.json                   # auto syncs + checks
+mainline seal --prepare > .ml-cache/seal.json        # patch the starter
+mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
 ```
 
 Sync, pin, merge are automatic — do not invoke them.
