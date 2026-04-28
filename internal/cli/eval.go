@@ -36,7 +36,10 @@ compares outcomes.
 Subcommands:
 
   mainline eval list             # show every fixture (populated + stubs)
-  mainline eval run [name]       # run all (or one); exit 2 on any failure`,
+  mainline eval run [name]       # precondition scorer (does retrieval surface the constraints?)
+  mainline eval agent --runner <path> [name]
+                                  # LLM runner: drive code-first vs intent-first prompts
+                                  # against your runner binary; score forbidden-list violations`,
 }
 
 var evalListCmd = &cobra.Command{
@@ -223,6 +226,118 @@ func renderEvalSummary(s eval.Summary) {
 	}
 }
 
+var (
+	evalAgentRunnerPath string
+	evalAgentScratchDir string
+)
+
+var evalAgentCmd = &cobra.Command{
+	Use:   "agent [name]",
+	Short: "Drive code-first vs intent-first prompts against your runner binary",
+	Long: `For each populated fixture, invoke your runner binary twice
+(once with the code-first prompt, once with the intent-first prompt)
+and score forbidden-list violations + ContextRetrieved.
+
+The runner binary's contract:
+
+  - stdin: a JSON envelope { "fixture": <Fixture>, "prompt": "<full
+    prompt text>", "prompt_key": "code_first"|"intent_first",
+    "scratch_dir": "<absolute path>" }
+  - stdout: either an AgentRunResult JSON object or free-form text;
+    text containing "mainline context" infers ContextRetrieved=true.
+
+This is the seam any LLM CLI plugs into — write a small wrapper that
+reads stdin, drives your favourite LLM, writes stdout.`,
+	Args: cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		if evalAgentRunnerPath == "" {
+			outputError(fmt.Errorf("eval agent: --runner <path> is required"))
+			return
+		}
+		fs := eval.Fixtures()
+		if len(args) == 1 {
+			matched := []eval.Fixture{}
+			for _, f := range fs {
+				if f.Name == args[0] {
+					matched = append(matched, f)
+				}
+			}
+			if len(matched) == 0 {
+				outputError(fmt.Errorf("eval: fixture %q not found", args[0]))
+				return
+			}
+			fs = matched
+		}
+		runner := &eval.CommandRunner{Path: evalAgentRunnerPath}
+		scratch := evalAgentScratchDir
+		if scratch == "" {
+			scratch = filepath.Join(os.TempDir(), "mainline-eval-agent")
+		}
+		_ = os.MkdirAll(scratch, 0o755)
+		scores := eval.RunWithAgent(fs, runner, scratch)
+		if jsonOutput {
+			outputJSON(scores)
+		} else {
+			renderAgentScores(scores)
+		}
+		// Exit 2 if any score has forbidden violations OR run errors.
+		for _, s := range scores {
+			if len(s.ForbiddenViolations) > 0 || s.RunError != "" {
+				os.Exit(2)
+			}
+		}
+	},
+}
+
+// renderAgentScores prints a per-(fixture, prompt) table comparing
+// code-first to intent-first. The headline question this answers is
+// "did intent-first avoid the forbidden actions code-first hit?"
+func renderAgentScores(scores []eval.AgentScore) {
+	byFixture := map[string]map[eval.AgentRunPrompt]eval.AgentScore{}
+	order := []string{}
+	for _, s := range scores {
+		if _, seen := byFixture[s.Fixture]; !seen {
+			order = append(order, s.Fixture)
+			byFixture[s.Fixture] = map[eval.AgentRunPrompt]eval.AgentScore{}
+		}
+		byFixture[s.Fixture][s.Prompt] = s
+	}
+	for _, name := range order {
+		row := byFixture[name]
+		cf := row[eval.AgentPromptCodeFirst]
+		intf := row[eval.AgentPromptIntentFirst]
+		fmt.Printf("\n%s\n", name)
+		fmt.Printf("  code-first    violations=%d  context_retrieved=%v  ms=%d\n",
+			len(cf.ForbiddenViolations), cf.ContextRetrieved, cf.DurationMillis)
+		fmt.Printf("  intent-first  violations=%d  context_retrieved=%v  ms=%d\n",
+			len(intf.ForbiddenViolations), intf.ContextRetrieved, intf.DurationMillis)
+		if len(cf.ForbiddenViolations) > 0 {
+			fmt.Println("  code-first violations:")
+			for _, v := range cf.ForbiddenViolations {
+				fmt.Printf("    ✗ %s\n", v)
+			}
+		}
+		if len(intf.ForbiddenViolations) > 0 {
+			fmt.Println("  intent-first violations:")
+			for _, v := range intf.ForbiddenViolations {
+				fmt.Printf("    ✗ %s\n", v)
+			}
+		}
+		if cf.RunError != "" || intf.RunError != "" {
+			if cf.RunError != "" {
+				fmt.Printf("  code-first error: %s\n", cf.RunError)
+			}
+			if intf.RunError != "" {
+				fmt.Printf("  intent-first error: %s\n", intf.RunError)
+			}
+		}
+	}
+}
+
 func init() {
-	evalCmd.AddCommand(evalListCmd, evalRunCmd)
+	evalAgentCmd.Flags().StringVar(&evalAgentRunnerPath, "runner", "",
+		"path to a runner binary (reads JSON envelope on stdin, writes agent response on stdout)")
+	evalAgentCmd.Flags().StringVar(&evalAgentScratchDir, "scratch", "",
+		"scratch directory for runner artifacts (default: <os-temp>/mainline-eval-agent)")
+	evalCmd.AddCommand(evalListCmd, evalRunCmd, evalAgentCmd)
 }
