@@ -175,6 +175,18 @@ func sealInstruction() string {
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)
 
+Risk discipline:
+- Put an item in summary.risks only when it names a concrete failure mode,
+  compatibility break, data loss/corruption possibility, security/privacy issue,
+  performance/scale regression, user-visible misbehavior, or maintenance hazard
+  that a future reviewer should audit.
+- Do not put verification notes, "tests not run", review guidance, cosmetic
+  concerns, generic unknown-risk disclaimers, implementation summaries, scope
+  limitations, or ordinary follow-up work in risks.
+- If there is no concrete risk, use an empty risks array.
+- Put deferred work in followups, and put evidence of testing or review context
+  outside risks unless it directly describes one of the concrete hazards above.
+
 Return ONLY valid JSON matching the SealResult schema.`
 }
 
