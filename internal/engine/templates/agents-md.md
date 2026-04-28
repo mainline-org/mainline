@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 11 -->
+<!-- mainline-agents-md-version: 12 -->
 
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the
@@ -202,8 +202,18 @@ the next state in a new turn.
 2. Ask Mainline to prepare a seal package:
 
    ```
-   mainline seal --prepare --json
+   mainline seal --prepare --json > .ml-cache/seal.json
    ```
+
+   The package includes a `seal_result_starter` field — a partially-
+   filled `SealResult` with the deterministic bits (intent_id,
+   fingerprint.files_touched, fingerprint.subsystems) pre-populated.
+   Patch in the agent-judgment fields rather than typing the JSON
+   from scratch.
+
+   Why `.ml-cache/`? Init writes that directory to `.gitignore`, so
+   the temporary seal file stays out of git and does not trip the
+   v0.3 worktree-clean snapshot contract on submit.
 
 3. Generate a `SealResult` JSON matching the schema returned by
    `--prepare`. Populate the fingerprint generously — primary subsystem,
@@ -236,7 +246,7 @@ the next state in a new turn.
 4. Submit it:
 
    ```
-   mainline seal --submit --json < seal.json
+   mainline seal --submit --json < .ml-cache/seal.json
    ```
 
    Submit auto-syncs with the team and runs phase-1 conflict detection
@@ -379,9 +389,9 @@ can — ordered by reversibility, cheapest first:
    ```
    mainline start "<why this commit was made>" --commits <sha>
    mainline append "<turn-by-turn description, post-hoc>"
-   mainline seal --prepare > seal.json
-   <fill seal.json>
-   mainline seal --submit < seal.json
+   mainline seal --prepare > .ml-cache/seal.json
+   <fill .ml-cache/seal.json>
+   mainline seal --submit < .ml-cache/seal.json
    ```
 
    The seal flow auto-pins the new intent to the listed commit on next
