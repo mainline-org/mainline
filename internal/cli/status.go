@@ -26,12 +26,18 @@ var statusCmd = &cobra.Command{
 			outputJSON(result)
 		} else {
 			if !result.Initialized {
-				fmt.Println("Mainline not initialized. Run 'mainline init'.")
+				fmt.Println("Mainline not initialized in this repo.")
+				fmt.Println()
+				fmt.Println("Next:")
+				fmt.Println("  · `mainline init --actor-name \"<your name>\"`")
+				fmt.Println("  · or export $MAINLINE_ACTOR_NAME and run `mainline init`")
+				fmt.Println("  · once initialized, `mainline doctor --setup` verifies refspecs / identity / agent guidance")
 				return
 			}
 			if !result.IdentityConfigured {
 				fmt.Println("⚠ This clone has no Mainline actor identity.")
-				fmt.Println("  Run `mainline init --actor-name <your name>` before starting work.")
+				fmt.Println("  Run `mainline init --actor-name <your name>` (or export $MAINLINE_ACTOR_NAME) before starting work.")
+				fmt.Println("  `mainline doctor --setup` will confirm once it's fixed.")
 				fmt.Println()
 			}
 			fmt.Printf("Branch:    %s\n", result.Branch)
