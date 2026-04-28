@@ -1,0 +1,70 @@
+/* Mainline Hub v1 — deliberately plain. Throwaway when v2 hosted lands. */
+
+:root {
+  --fg: #1a1a1a;
+  --muted: #6a6a6a;
+  --bg: #fafafa;
+  --line: #e5e5e5;
+  --accent: #1f6feb;
+  --risk: #d83a3a;
+  --merged: #1a7f37;
+  --proposed: #4d4d8a;
+  --abandoned: #8a8a8a;
+  --code-bg: #f0f0f0;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; background: var(--code-bg); padding: 1px 4px; border-radius: 3px; }
+pre { padding: 8px 12px; overflow-x: auto; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar { padding: 12px 24px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; background: white; }
+.brand { font-weight: 600; }
+.meta { color: var(--muted); font-size: 0.9em; }
+
+.layout { display: flex; min-height: calc(100vh - 50px); }
+.sidebar { width: 200px; padding: 20px 16px; border-right: 1px solid var(--line); background: white; }
+.sidebar a { display: block; padding: 4px 8px; border-radius: 4px; color: var(--fg); }
+.sidebar a:hover, .sidebar a.active { background: #eef3fc; color: var(--accent); }
+.sidebar .navgroup { font-size: 0.75em; color: var(--muted); margin: 16px 8px 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+.sidebar a.muted { color: var(--muted); font-size: 0.9em; }
+
+.content { flex: 1; padding: 24px 32px; max-width: 1100px; }
+h1 { margin: 0 0 8px; font-size: 1.6em; }
+h2 { margin: 24px 0 8px; font-size: 1.1em; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.lead { color: var(--muted); margin: 0 0 16px; }
+.muted { color: var(--muted); }
+
+table.intents { width: 100%; border-collapse: collapse; }
+table.intents th, table.intents td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.intents th { color: var(--muted); font-weight: 500; font-size: 0.85em; }
+table.intents .num { text-align: right; }
+table.intents .num.risk { color: var(--risk); font-weight: 600; }
+.thread { font-size: 0.85em; color: var(--muted); }
+
+.status { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 0.75em; font-weight: 600; }
+.status-merged    { background: #ddf4e3; color: var(--merged); }
+.status-proposed  { background: #e9e9f3; color: var(--proposed); }
+.status-abandoned { background: #ececec; color: var(--abandoned); }
+.status-superseded{ background: #fff1e0; color: #c4730d; }
+.status-reverted  { background: #fde2e2; color: var(--risk); }
+.status-drafting  { background: #e6f2ff; color: var(--accent); }
+.status-sealed_local { background: #e6f2ff; color: var(--accent); }
+
+ul.decisions li, ul.risks li, ul.files li, ul.filelinks li { margin: 4px 0; }
+ul.risks li { color: #722; }
+.rejected { font-size: 0.9em; color: var(--muted); margin-top: 2px; }
+
+.tag { display: inline-block; background: #ececec; color: #444; padding: 1px 6px; border-radius: 3px; font-size: 0.85em; margin-right: 4px; }
+.tags { color: var(--muted); margin: 12px 0; }
+
+.riskcard { border: 1px solid var(--line); border-radius: 4px; padding: 12px 16px; margin: 16px 0; background: white; }
+
+dl.graph dt { font-weight: 500; margin-top: 12px; }
+dl.graph dd { margin-left: 24px; color: var(--muted); font-size: 0.9em; }
+.kind { font-size: 0.85em; color: var(--muted); margin: 0 4px; }
+
+section.commands { margin-top: 32px; }
+section.commands pre { background: white; border: 1px solid var(--line); }

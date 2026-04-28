@@ -1,0 +1,26 @@
+{{define "header"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{.Title}} · Mainline Hub</title>
+<link rel="stylesheet" href="{{.RootPath}}assets/style.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">Mainline Hub</span>
+  <span class="meta">main: <code>{{shortCommit .MainHead}}</code> · generated {{timeAgo .GeneratedAt}}</span>
+</header>
+<div class="layout">
+  <nav class="sidebar">
+    <a href="{{.RootPath}}index.html"   class="{{if eq .NavActive "index"}}active{{end}}">Recent</a>
+    <a href="{{.RootPath}}risks.html"   class="{{if eq .NavActive "risks"}}active{{end}}">Risks</a>
+    <a href="{{.RootPath}}graph.html"   class="{{if eq .NavActive "graph"}}active{{end}}">Graph</a>
+    <div class="navgroup">Browse</div>
+    <a href="{{.RootPath}}data/intents.json" class="muted">data/intents.json</a>
+  </nav>
+  <main class="content">{{end}}
+
+{{define "footer"}}  </main>
+</div>
+</body>
+</html>{{end}}
