@@ -31,13 +31,14 @@ a:hover { text-decoration: underline; }
 .sidebar .navgroup { font-size: 0.75em; color: var(--muted); margin: 16px 8px 4px; text-transform: uppercase; letter-spacing: 0.05em; }
 .sidebar a.muted { color: var(--muted); font-size: 0.9em; }
 
-.content { flex: 1; padding: 24px 32px; max-width: 1100px; }
+.content { flex: 1; padding: 24px 32px; max-width: 1100px; min-width: 0; }
 h1 { margin: 0 0 8px; font-size: 1.6em; }
 h2 { margin: 24px 0 8px; font-size: 1.1em; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 .lead { color: var(--muted); margin: 0 0 16px; }
 .muted { color: var(--muted); }
 
-table.intents { width: 100%; border-collapse: collapse; }
+.table-scroll { width: 100%; overflow-x: auto; }
+table.intents { width: 100%; min-width: 760px; border-collapse: collapse; }
 table.intents th, table.intents td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.intents th { color: var(--muted); font-weight: 500; font-size: 0.85em; }
 table.intents .num { text-align: right; }
@@ -61,6 +62,7 @@ ul.risks li { color: #722; }
 .tags { color: var(--muted); margin: 12px 0; }
 
 .riskcard { border: 1px solid var(--line); border-radius: 4px; padding: 12px 16px; margin: 16px 0; background: white; }
+.notice { border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; margin: 12px 0 16px; background: white; display: flex; justify-content: space-between; gap: 16px; }
 
 dl.graph dt { font-weight: 500; margin-top: 12px; }
 dl.graph dd { margin-left: 24px; color: var(--muted); font-size: 0.9em; }
@@ -68,3 +70,14 @@ dl.graph dd { margin-left: 24px; color: var(--muted); font-size: 0.9em; }
 
 section.commands { margin-top: 32px; }
 section.commands pre { background: white; border: 1px solid var(--line); }
+
+@media (max-width: 720px) {
+  .topbar { padding: 10px 16px; flex-wrap: wrap; }
+  .layout { display: block; }
+  .sidebar { width: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 12px; }
+  .sidebar a { display: inline-block; margin-right: 4px; }
+  .sidebar .navgroup { display: inline-block; margin: 0 8px 0 12px; }
+  .content { padding: 20px 16px; }
+  .notice { display: block; }
+  .notice a { display: block; margin-top: 4px; }
+}
