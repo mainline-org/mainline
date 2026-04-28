@@ -1,0 +1,20 @@
+{{define "files"}}{{template "header" .}}
+<h1>Files</h1>
+<p class="lead">{{len .FileIndex}} files with intent history.</p>
+{{if not .FileIndex}}<p class="muted">No file fingerprints recorded yet.</p>{{end}}
+<div class="table-scroll">
+<table class="intents">
+<thead>
+<tr><th>File</th><th>Intents</th></tr>
+</thead>
+<tbody>
+{{range .FileIndex}}
+<tr>
+  <td><a href="files/{{fileSlug .Path}}.html"><code>{{.Path}}</code></a></td>
+  <td class="num">{{len .IntentIDs}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{template "footer" .}}{{end}}

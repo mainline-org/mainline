@@ -1,6 +1,13 @@
 {{define "index"}}{{template "header" .}}
 <h1>Recent intents</h1>
 <p class="lead">{{len .Intents}} sealed intents on <code>{{.MainBranch}}</code>. Newest first.</p>
+{{if .OpenIntents}}
+<section class="notice">
+  <strong>{{len .OpenIntents}} open local intent{{if ne (len .OpenIntents) 1}}s{{end}}</strong>
+  <a href="open.html">View in-flight work</a>
+</section>
+{{end}}
+<div class="table-scroll">
 <table class="intents">
 <thead>
 <tr><th>ID</th><th>Title</th><th>Status</th><th>Actor</th><th>Thread</th><th>Sealed</th><th>Files</th><th>Risks</th></tr>
@@ -20,4 +27,5 @@
 {{end}}
 </tbody>
 </table>
+</div>
 {{template "footer" .}}{{end}}

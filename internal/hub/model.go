@@ -9,9 +9,9 @@
 // To make that pivot cheap, this package is split:
 //
 //   - model.go   the Hub view-model — survives into Hub v2 as the
-//                JSON DTO the API would return.
+//     JSON DTO the API would return.
 //   - export.go  derivation of the model from engine read APIs +
-//                static-site directory layout. Throwaway.
+//     static-site directory layout. Throwaway.
 //   - render.go  Go-template HTML rendering. Throwaway.
 //
 // Internal vocabulary stays close to the domain types (IntentView /
@@ -26,10 +26,11 @@ import "github.com/mainline-org/mainline/internal/domain"
 // JSON-serialisable so we can drop a copy at hub/data/intents.json
 // for inspection / future ingestion.
 type HubModel struct {
-	GeneratedAt string      `json:"generated_at"`
-	MainBranch  string      `json:"main_branch"`
-	MainHead    string      `json:"main_head"`
-	Intents     []HubIntent `json:"intents"`
+	GeneratedAt string          `json:"generated_at"`
+	MainBranch  string          `json:"main_branch"`
+	MainHead    string          `json:"main_head"`
+	Intents     []HubIntent     `json:"intents"`
+	OpenIntents []HubOpenIntent `json:"open_intents,omitempty"`
 
 	// Derived indexes. These are pure functions of Intents; they live
 	// on the model so the renderer doesn't have to recompute them and
@@ -60,13 +61,13 @@ type HubIntent struct {
 	BaseCommit       string `json:"base_commit,omitempty"`
 	CodeCommit       string `json:"code_commit,omitempty"`
 
-	What      string             `json:"what,omitempty"`
-	Why       string             `json:"why,omitempty"`
-	UserGoal  string             `json:"user_goal,omitempty"`
-	Decisions []HubDecision      `json:"decisions,omitempty"`
-	Rejected  []HubAlternative   `json:"rejected,omitempty"`
-	Risks     []string           `json:"risks,omitempty"`
-	Followups []string           `json:"followups,omitempty"`
+	What      string           `json:"what,omitempty"`
+	Why       string           `json:"why,omitempty"`
+	UserGoal  string           `json:"user_goal,omitempty"`
+	Decisions []HubDecision    `json:"decisions,omitempty"`
+	Rejected  []HubAlternative `json:"rejected,omitempty"`
+	Risks     []string         `json:"risks,omitempty"`
+	Followups []string         `json:"followups,omitempty"`
 
 	Subsystems          []string `json:"subsystems,omitempty"`
 	FilesTouched        []string `json:"files_touched,omitempty"`
@@ -115,21 +116,34 @@ type HubRelationRow struct {
 	To   string `json:"to"`
 }
 
+// HubOpenIntent is local in-flight work that is not yet represented
+// as a sealed intent in the mainline view.
+type HubOpenIntent struct {
+	ID             string `json:"id"`
+	Goal           string `json:"goal"`
+	Status         string `json:"status"`
+	Thread         string `json:"thread"`
+	GitBranch      string `json:"git_branch,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+	LastModifiedAt string `json:"last_modified_at,omitempty"`
+	TurnCount      int    `json:"turn_count"`
+}
+
 // hubIntentFromView flattens an IntentView (+ embedded summary +
 // fingerprint) into a HubIntent. Pure, no I/O — easy to unit-test.
 func hubIntentFromView(v *domain.IntentView) HubIntent {
 	out := HubIntent{
-		ID:               v.IntentID,
-		Status:           string(v.Status),
-		Goal:             v.Goal,
-		Thread:           v.Thread,
-		GitBranch:        v.GitBranch,
-		ActorID:          v.ActorID,
-		ActorName:        v.ActorName,
-		SealedAt:         v.SealedAt,
-		MergedMainCommit: v.StatusEvidence.MergedMainCommit,
-		BaseCommit:       v.BaseCommit,
-		CodeCommit:       v.CodeCommit,
+		ID:                 v.IntentID,
+		Status:             string(v.Status),
+		Goal:               v.Goal,
+		Thread:             v.Thread,
+		GitBranch:          v.GitBranch,
+		ActorID:            v.ActorID,
+		ActorName:          v.ActorName,
+		SealedAt:           v.SealedAt,
+		MergedMainCommit:   v.StatusEvidence.MergedMainCommit,
+		BaseCommit:         v.BaseCommit,
+		CodeCommit:         v.CodeCommit,
 		SupersededByIntent: v.StatusEvidence.SupersededByIntent,
 	}
 	if s := v.Summary; s != nil {
