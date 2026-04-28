@@ -88,6 +88,15 @@ var startCmd = &cobra.Command{
 					fmt.Printf("    %s\n", shortHash(c))
 				}
 			}
+			// First-touch breadcrumb: a brand-new user just claimed
+			// work; the next steps are non-obvious without reading
+			// AGENTS.md. Three lines is enough to drive the loop
+			// without quoting the spec.
+			fmt.Println()
+			fmt.Println("Next:")
+			fmt.Println("  1. Edit code; run `mainline append \"<what changed>\"` after each meaningful turn.")
+			fmt.Println("  2. `git add … && git commit -m \"…\"` — Mainline does not commit for you.")
+			fmt.Println("  3. `mainline seal --prepare > seal.json` → fill the template → `mainline seal --submit < seal.json`.")
 		}
 	},
 }
