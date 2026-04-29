@@ -288,17 +288,28 @@ func (s *Service) Show(intentID string) (*ShowResult, error) {
 	// Try local draft first
 	draft, err := s.Store.ReadDraft(intentID)
 	if err == nil && draft != nil {
+		if iv := s.readIntentViewByID(intentID); iv != nil && isTerminalIntentStatus(iv.Status) {
+			return &ShowResult{View: iv}, nil
+		}
 		turns, _ := s.Store.ReadTurns(intentID)
 		return &ShowResult{Intent: draft, Turns: turns}, nil
 	}
 
+	if iv := s.readIntentViewByID(intentID); iv != nil {
+		return &ShowResult{View: iv}, nil
+	}
+
+	return nil, domain.NewError(domain.ErrInvalidInput, fmt.Sprintf("intent %s not found", intentID))
+}
+
+func (s *Service) readIntentViewByID(intentID string) *domain.IntentView {
 	// Sealed-intent lookup: prefer the SQLite primary-key index
 	// (O(1)) over a linear scan of the JSON view. Both routes return
 	// the same IntentView struct because the SQLite raw_json column
 	// is the same struct WriteMainlineView serialised — semantics
 	// identical, just faster on big repos.
 	if iv, err := s.Store.ReadIntentViewByID(intentID); err == nil && iv != nil {
-		return &ShowResult{View: iv}, nil
+		return iv
 	}
 
 	// Fallback to JSON view scan when the SQLite cache is missing
@@ -308,12 +319,24 @@ func (s *Service) Show(intentID string) (*ShowResult, error) {
 	if view != nil {
 		for _, iv := range view.Intents {
 			if iv.IntentID == intentID {
-				return &ShowResult{View: &iv}, nil
+				return &iv
 			}
 		}
 	}
 
-	return nil, domain.NewError(domain.ErrInvalidInput, fmt.Sprintf("intent %s not found", intentID))
+	return nil
+}
+
+func isTerminalIntentStatus(status domain.IntentStatus) bool {
+	switch status {
+	case domain.StatusMerged,
+		domain.StatusAbandoned,
+		domain.StatusSuperseded,
+		domain.StatusReverted:
+		return true
+	default:
+		return false
+	}
 }
 
 // -----------------------------------------------------------
