@@ -370,6 +370,50 @@ func TestShowIntent(t *testing.T) {
 	}
 }
 
+func TestShowPrefersTerminalViewOverStaleDraft(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("test-agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	intentID, _ := seedMergedIntent(t, dir, svc, "show-view-overrides", "show_vo.go")
+	gitCmd(t, dir, "checkout", "main")
+	if _, err := svc.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	draft, err := svc.Store.ReadDraft(intentID)
+	if err != nil {
+		t.Fatalf("read draft: %v", err)
+	}
+	if draft == nil {
+		t.Fatal("expected local draft to exist")
+	}
+	// Recreate the real-world stale-cache shape: a draft file can lag
+	// behind the materialized view after sync/auto-pin has already made
+	// the intent terminal.
+	draft.Status = domain.StatusProposed
+	if err := svc.Store.WriteDraft(draft); err != nil {
+		t.Fatalf("write stale draft: %v", err)
+	}
+
+	result, err := svc.Show(intentID)
+	if err != nil {
+		t.Fatalf("show: %v", err)
+	}
+	if result.View == nil {
+		t.Fatalf("show should use terminal view instead of stale draft; got intent=%+v", result.Intent)
+	}
+	if result.Intent != nil {
+		t.Fatalf("show should not return stale draft when view is terminal; got intent status %s", result.Intent.Status)
+	}
+	if result.View.Status != domain.StatusMerged {
+		t.Fatalf("expected merged view status, got %s", result.View.Status)
+	}
+}
+
 func TestShowNotFound(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
