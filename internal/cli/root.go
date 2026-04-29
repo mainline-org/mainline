@@ -43,6 +43,16 @@ var (
 //              and the commit reports as uncovered. Auto-sync (gated
 //              by freshness) keeps that false-uncovered window
 //              within the 300s budget.
+//   - hub export, hub open — both rebuild a static snapshot from
+//              the local intent view. Stale data on the index page
+//              ("recent intents") and the per-file history pages is
+//              the same failure mode `status` exists to prevent —
+//              human reader opens the hub and thinks the team is
+//              idle when someone just shipped. Subcommand paths
+//              live in this map keyed as "<parent> <name>" because
+//              cobra's cmd.Name() returns just the leaf
+//              ("export"/"open") which would collide if another
+//              top-level command ever used those names.
 //
 // Notably absent:
 //
@@ -62,9 +72,11 @@ var (
 // command falls through to local data with a stderr warning.
 // Users can always opt out per-call with `--no-sync`.
 var autoSyncCommands = map[string]bool{
-	"check":  true,
-	"status": true,
-	"gaps":   true,
+	"check":      true,
+	"status":     true,
+	"gaps":       true,
+	"hub export": true,
+	"hub open":   true,
 }
 
 var rootCmd = &cobra.Command{
@@ -128,6 +140,16 @@ func maybeAutoSync(cmd *cobra.Command) {
 func shouldAutoSync(cmd *cobra.Command) bool {
 	if autoSyncCommands[cmd.Name()] {
 		return true
+	}
+	// Subcommand path lookup: cobra's cmd.Name() returns just the
+	// leaf, so a command like `mainline hub export` would only
+	// match "export" — colliding with any other top-level command
+	// ever named that. Match on "<parent> <leaf>" instead so the
+	// map can carry full paths unambiguously.
+	if parent := cmd.Parent(); parent != nil {
+		if autoSyncCommands[parent.Name()+" "+cmd.Name()] {
+			return true
+		}
 	}
 	return cmd.Name() == "log" && logSync
 }
