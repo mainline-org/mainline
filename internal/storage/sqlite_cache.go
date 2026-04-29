@@ -221,11 +221,11 @@ func (s *Store) ReadIntentViewsByFiles(paths []string) ([]domain.IntentView, err
 }
 
 // ReadIntentViewsByQuery returns every IntentView whose title /
-// what / decision text / risk text contains the given keyword
-// (case-insensitive substring). Hot path for `mainline context
-// --query`. Substring rather than FTS because the corpus is small
-// (hundreds of intents) and SQLite LIKE on indexed columns is
-// already fast at this scale.
+// goal / summary / decision / risk / anti_pattern text contains
+// the given keyword (case-insensitive substring). Hot path for
+// `mainline context --query`. Substring rather than FTS because
+// the corpus is small (hundreds of intents) and SQLite LIKE on
+// indexed columns is already fast at this scale.
 //
 // Returns ErrMainlineIndexUnavailable when the cache is missing.
 func (s *Store) ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, error) {
@@ -250,12 +250,17 @@ func (s *Store) ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, err
 		FROM intents i
 		LEFT JOIN intent_decisions d ON d.intent_id = i.intent_id
 		LEFT JOIN intent_risks r ON r.intent_id = i.intent_id
+		LEFT JOIN intent_anti_patterns ap ON ap.intent_id = i.intent_id
 		WHERE LOWER(i.title) LIKE ?
 		   OR LOWER(i.goal) LIKE ?
+		   OR LOWER(i.summary_what) LIKE ?
+		   OR LOWER(i.summary_why) LIKE ?
 		   OR LOWER(d.text) LIKE ?
 		   OR LOWER(r.text) LIKE ?
+		   OR LOWER(ap.what) LIKE ?
+		   OR LOWER(ap.why) LIKE ?
 		ORDER BY i.activity_at DESC, i.intent_id ASC`
-	args := []any{pattern, pattern, pattern, pattern}
+	args := []any{pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern}
 	return scanIntentViews(db, query, args)
 }
 
@@ -307,6 +312,8 @@ func initialiseMainlineIndex(db *sql.DB) error {
 			actor_name TEXT NOT NULL,
 			merged_main_commit TEXT NOT NULL,
 			superseded_by_intent TEXT NOT NULL,
+			summary_what TEXT NOT NULL,
+			summary_why TEXT NOT NULL,
 			last_check_json TEXT,
 			raw_json TEXT NOT NULL
 		)`,
@@ -372,8 +379,8 @@ func writeMainlineIndex(tx *sql.Tx, store *Store, view *domain.MainlineView) err
 	insertIntent, err := tx.Prepare(`INSERT INTO intents (
 		intent_id, status, title, goal, thread, git_branch, sealed_at,
 		activity_at, author, actor_id, actor_name, merged_main_commit,
-		superseded_by_intent, last_check_json, raw_json
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		superseded_by_intent, summary_what, summary_why, last_check_json, raw_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -417,8 +424,12 @@ func writeMainlineIndex(tx *sql.Tx, store *Store, view *domain.MainlineView) err
 
 	for _, iv := range view.Intents {
 		title := ""
+		summaryWhat := ""
+		summaryWhy := ""
 		if iv.Summary != nil {
 			title = iv.Summary.Title
+			summaryWhat = iv.Summary.What
+			summaryWhy = iv.Summary.Why
 		}
 		raw, err := json.Marshal(iv)
 		if err != nil {
@@ -446,6 +457,8 @@ func writeMainlineIndex(tx *sql.Tx, store *Store, view *domain.MainlineView) err
 			iv.ActorName,
 			iv.StatusEvidence.MergedMainCommit,
 			iv.StatusEvidence.SupersededByIntent,
+			summaryWhat,
+			summaryWhy,
 			lastCheck,
 			string(raw),
 		); err != nil {

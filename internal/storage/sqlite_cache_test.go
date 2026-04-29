@@ -26,12 +26,19 @@ func TestRebuildMainlineIndexLogRowsAndLookupTables(t *testing.T) {
 				SealedAt:      "2026-04-28T00:00:00Z",
 				Summary: &domain.IntentSummary{
 					Title: "Old title",
+					What:  "Old storage summary",
+					Why:   "Existing storage path",
 					Decisions: []domain.Decision{{
 						Point:     "Storage",
 						Chose:     "JSON",
 						Rationale: "Existing path",
 					}},
 					Risks: []string{"old risk"},
+					AntiPatterns: []domain.AntiPattern{{
+						What:     "Bypassing the JSON fallback",
+						Why:      "SQLite is only a derived cache",
+						Severity: "high",
+					}},
 				},
 				Fingerprint: &domain.SemanticFingerprint{
 					FilesTouched: []string{"internal/storage/storage.go"},
@@ -92,6 +99,7 @@ func TestRebuildMainlineIndexLogRowsAndLookupTables(t *testing.T) {
 	assertCount(t, db, "intent_subsystems", 1)
 	assertCount(t, db, "intent_decisions", 1)
 	assertCount(t, db, "intent_risks", 1)
+	assertCount(t, db, "intent_anti_patterns", 1)
 }
 
 // PK lookup: ReadIntentViewByID returns the same IntentView shape
@@ -203,21 +211,33 @@ func TestReadIntentViewsByFiles_ReverseIndexHits(t *testing.T) {
 }
 
 // Query reverse-index: ReadIntentViewsByQuery hits title / goal /
-// decision / risk text via case-insensitive LIKE. Empty keyword
-// returns (nil, nil).
+// summary / decision / risk / anti_pattern text via case-insensitive
+// LIKE. Empty keyword returns (nil, nil).
 func TestReadIntentViewsByQuery_TextSearchHits(t *testing.T) {
 	store := New(t.TempDir(), nil)
 	view := &domain.MainlineView{
 		SchemaVersion: 1, RebuiltAt: "2026-04-29T00:00:00Z", MainBranch: "main",
 		Intents: []domain.IntentView{
 			{IntentID: "int_jwt", Status: domain.StatusMerged, ActorID: "x", Goal: "Add JWT auth",
-				Summary: &domain.IntentSummary{Title: "JWT migration", Decisions: []domain.Decision{{Chose: "use JWT"}}},
+				Summary:     &domain.IntentSummary{Title: "JWT migration", Decisions: []domain.Decision{{Chose: "use JWT"}}},
 				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"auth"}, FilesTouched: []string{"a.go"}}},
 			{IntentID: "int_billing", Status: domain.StatusMerged, ActorID: "x", Goal: "Add billing",
-				Summary: &domain.IntentSummary{Title: "Billing rewrite", Risks: []string{"may break old jwt sessions"}},
+				Summary:     &domain.IntentSummary{Title: "Billing rewrite", Risks: []string{"may break old jwt sessions"}},
 				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"billing"}, FilesTouched: []string{"b.go"}}},
+			{IntentID: "int_docs", Status: domain.StatusMerged, ActorID: "x", Goal: "Clean up docs copy",
+				Summary: &domain.IntentSummary{
+					Title: "Terminology cleanup",
+					What:  "User-facing copy covers AGENTS.md conventions",
+					Why:   "Reader feedback called out confusing copy",
+					AntiPatterns: []domain.AntiPattern{{
+						What:     "Reintroducing managed block in AGENTS.md",
+						Why:      "Agent guidance is the user-facing term",
+						Severity: "medium",
+					}},
+				},
+				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"docs"}, FilesTouched: []string{"AGENTS.md"}}},
 			{IntentID: "int_other", Status: domain.StatusMerged, ActorID: "x", Goal: "Refactor logging",
-				Summary: &domain.IntentSummary{Title: "Logging cleanup"},
+				Summary:     &domain.IntentSummary{Title: "Logging cleanup"},
 				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"logs"}, FilesTouched: []string{"c.go"}}},
 		},
 	}
@@ -240,6 +260,22 @@ func TestReadIntentViewsByQuery_TextSearchHits(t *testing.T) {
 	}
 	if ids["int_other"] {
 		t.Errorf("int_other should not match jwt query")
+	}
+
+	docs, err := store.ReadIntentViewsByQuery("managed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs) != 1 || docs[0].IntentID != "int_docs" {
+		t.Fatalf("expected anti_pattern text to hit int_docs, got %+v", docs)
+	}
+
+	summary, err := store.ReadIntentViewsByQuery("agents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary) != 1 || summary[0].IntentID != "int_docs" {
+		t.Fatalf("expected summary text to hit int_docs, got %+v", summary)
 	}
 
 	// Empty keyword returns nil without hitting the DB.
