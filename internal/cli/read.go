@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/engine"
 )
 
@@ -179,32 +180,20 @@ Bare ` + "`mainline context`" + ` (no flags) is the legacy state-dump form
 kept for backwards compatibility; new agent guidance points at the
 mode flags above.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		req, err := contextRetrievalRequestFromFlags(contextCurrent, contextFiles, contextQuery, contextLimit, args)
+		if err != nil {
+			outputError(err)
+			return
+		}
+
 		svc, err := getService()
 		if err != nil {
 			outputError(err)
 			return
 		}
 
-		// Mode flags take priority over the legacy state-dump.
-		// Exactly one mode flag at a time keeps the contract simple.
-		retrievalMode := ""
-		switch {
-		case contextCurrent:
-			retrievalMode = "current"
-		case len(contextFiles) > 0:
-			retrievalMode = "files"
-		case contextQuery != "":
-			retrievalMode = "query"
-		}
-
-		if retrievalMode != "" {
-			req := engine.ContextRetrievalRequest{
-				Mode:  retrievalMode,
-				Files: contextFiles,
-				Query: contextQuery,
-				Limit: contextLimit,
-			}
-			result, err := svc.RetrieveContext(req)
+		if req != nil {
+			result, err := svc.RetrieveContext(*req)
 			if err != nil {
 				outputError(err)
 				return
@@ -246,6 +235,74 @@ mode flags above.`,
 			fmt.Println("  mainline context --current --json")
 		}
 	},
+}
+
+func contextRetrievalRequestFromFlags(current bool, files []string, query string, limit int, args []string) (*engine.ContextRetrievalRequest, error) {
+	mode := ""
+	setMode := func(next string) error {
+		if mode != "" {
+			return domain.NewRecoverableError(
+				domain.ErrInvalidInput,
+				"context accepts exactly one retrieval mode flag",
+				"use exactly one of --current, --files, or --query",
+			)
+		}
+		mode = next
+		return nil
+	}
+
+	if current {
+		if err := setMode("current"); err != nil {
+			return nil, err
+		}
+	}
+	if len(files) > 0 {
+		if err := setMode("files"); err != nil {
+			return nil, err
+		}
+	}
+	if query != "" {
+		if err := setMode("query"); err != nil {
+			return nil, err
+		}
+	}
+
+	if mode == "" {
+		if len(args) > 0 {
+			return nil, domain.NewRecoverableError(
+				domain.ErrInvalidInput,
+				fmt.Sprintf("unexpected argument %q", args[0]),
+				"use --current, --files, or --query for ranked context retrieval",
+				"run bare `mainline context` without positional arguments for the legacy state dump",
+			)
+		}
+		return nil, nil
+	}
+
+	switch mode {
+	case "files":
+		// Cobra/pflag consumes the first value after --files. Because
+		// `mainline context` has no positional operands of its own,
+		// any remaining args in files mode are additional paths, matching
+		// the advertised `--files <path>...` contract.
+		files = append(append([]string(nil), files...), args...)
+	case "current", "query":
+		if len(args) > 0 {
+			return nil, domain.NewRecoverableError(
+				domain.ErrInvalidInput,
+				fmt.Sprintf("unexpected argument %q", args[0]),
+				"--current and --query do not accept positional path arguments",
+				"use --files <path>... when retrieving context by file",
+			)
+		}
+	}
+
+	return &engine.ContextRetrievalRequest{
+		Mode:  mode,
+		Files: files,
+		Query: query,
+		Limit: limit,
+	}, nil
 }
 
 var listProposalsCmd = &cobra.Command{
@@ -316,7 +373,7 @@ func init() {
 	contextCmd.Flags().BoolVar(&contextCurrent, "current", false,
 		"retrieve intents relevant to the current repo state (active draft + diff vs main)")
 	contextCmd.Flags().StringSliceVar(&contextFiles, "files", nil,
-		"retrieve intents that touched these files (repeat or comma-separate)")
+		"retrieve intents that touched these files (repeat, comma-separate, or pass additional paths after the first)")
 	contextCmd.Flags().StringVar(&contextQuery, "query", "",
 		"retrieve intents whose decisions / risks / summary match these keywords")
 	contextCmd.Flags().IntVar(&contextLimit, "limit", 0,

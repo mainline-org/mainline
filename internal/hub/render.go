@@ -101,7 +101,7 @@ func buildTemplates() (*template.Template, error) {
 		"fileSlug":    fileSlug,
 		"actorSlug":   actorSlug,
 		"timeAgo":     timeAgo,
-		"join":        func(s []string, sep string) string { return strings.Join(s, sep) },
+		"join":        strings.Join,
 		"hasPrefix":   strings.HasPrefix,
 	}
 	tpl := template.New("hub").Funcs(funcs)
