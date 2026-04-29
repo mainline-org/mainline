@@ -267,6 +267,71 @@ func TestDoctorSetupReportsRemoteName(t *testing.T) {
 	}
 }
 
+func TestSyncHonoursNonOriginRemoteTrackingRefs(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	intentID, _ := seedSealedIntent(t, dir, svc, "upstream-only", "upstream.go")
+	cfg, _ := svc.Store.ReadTeamConfig()
+	localActorRef := svc.Store.ActorLogRef(initRes.ActorID, cfg.Mainline.ActorLogPrefix)
+
+	remoteDir, err := os.MkdirTemp("", "mainline-remote-*")
+	if err != nil {
+		t.Fatalf("remote temp: %v", err)
+	}
+	defer os.RemoveAll(remoteDir)
+	gitCmd(t, remoteDir, "init", "--bare")
+	gitCmd(t, dir, "remote", "add", "upstream", remoteDir)
+
+	cfg.Mainline.Remote = "upstream"
+	cfg.Sync.AutoPinAfterSync = false
+	if err := svc.Store.WriteTeamConfig(cfg); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	gitCmd(t, dir, "checkout", "main")
+	remoteMain, err := gitRunIn(t, dir, "rev-parse", "main")
+	if err != nil {
+		t.Fatalf("rev-parse remote main: %v", err)
+	}
+	remoteMain = strings.TrimSpace(remoteMain)
+	gitCmd(t, dir, "push", "upstream", "main")
+	gitCmd(t, dir, "push", "upstream", localActorRef+":"+localActorRef)
+	gitCmd(t, dir, "update-ref", "-d", localActorRef)
+
+	writeFile(t, dir, "local-only.txt", "not on upstream\n")
+	gitCmd(t, dir, "add", "local-only.txt")
+	gitCmd(t, dir, "commit", "-m", "local only")
+	localMain, err := gitRunIn(t, dir, "rev-parse", "main")
+	if err != nil {
+		t.Fatalf("rev-parse local main: %v", err)
+	}
+	if strings.TrimSpace(localMain) == remoteMain {
+		t.Fatal("test setup failed: local main should differ from upstream/main")
+	}
+
+	res, err := svc.Sync()
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.MainHead != remoteMain {
+		t.Fatalf("sync should use upstream/main as main head, got %s want %s", res.MainHead, remoteMain)
+	}
+
+	view, _ := svc.Store.ReadMainlineView()
+	for _, iv := range view.Intents {
+		if iv.IntentID == intentID {
+			return
+		}
+	}
+	t.Fatalf("intent %s from upstream actor log missing from view", intentID)
+}
+
 // doctor --setup honestly reports a missing AGENTS.md by deleting the
 // init-written file and re-running.
 func TestDoctorSetupFlagsMissingAgentsMD(t *testing.T) {
