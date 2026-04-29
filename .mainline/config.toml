@@ -4,6 +4,12 @@ main_branch = "main"
 actor_log_prefix = "_mainline/actor"
 require_seal_before = "push"
 
+[mainline.skip]
+patterns = [
+  "^Merge pull request ",
+  "^fix\\(skill\\): seal\\.json lives in \\.ml-cache/ in the Claude Code skill too \\(#77\\)$",
+]
+
 [sync]
 auto_sync = true
 interval = "30s"
