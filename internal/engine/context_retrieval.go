@@ -81,14 +81,14 @@ type ContextQueryEcho struct {
 // values that tell the agent how to use this intent right now:
 //
 //   - "current"     this intent is the current effective decision;
-//                   verify against current code, then apply.
+//     verify against current code, then apply.
 //   - "superseded"  this intent was replaced by SupersededBy; read
-//                   that one instead and only use this for context.
+//     that one instead and only use this for context.
 //   - "abandoned"   this approach was tried and abandoned; do not
-//                   repeat it without first understanding why.
+//     repeat it without first understanding why.
 //   - "stale"       this intent is current but its files have been
-//                   churning or it is old enough that its decisions
-//                   may no longer hold; verify before acting.
+//     churning or it is old enough that its decisions
+//     may no longer hold; verify before acting.
 //
 // Decisions / Risks are top-N truncated; AntiPatterns are NEVER
 // truncated — they are the load-bearing safety surface. Followups
@@ -96,16 +96,16 @@ type ContextQueryEcho struct {
 // the full record. Guidance is the single-line advisory derived
 // from Status.
 type ContextRelevant struct {
-	IntentID     string              `json:"intent_id"`
-	Title        string              `json:"title"`
-	Status       string              `json:"status"`
-	Relevance    ContextRelevance    `json:"relevance"`
-	Summary      string              `json:"summary"`
-	Decisions    []string            `json:"decisions,omitempty"`
-	Risks        []string            `json:"risks,omitempty"`
+	IntentID     string               `json:"intent_id"`
+	Title        string               `json:"title"`
+	Status       string               `json:"status"`
+	Relevance    ContextRelevance     `json:"relevance"`
+	Summary      string               `json:"summary"`
+	Decisions    []string             `json:"decisions,omitempty"`
+	Risks        []string             `json:"risks,omitempty"`
 	AntiPatterns []domain.AntiPattern `json:"anti_patterns,omitempty"`
-	Guidance     string              `json:"guidance,omitempty"`
-	Followups    map[string]string   `json:"followups,omitempty"`
+	Guidance     string               `json:"guidance,omitempty"`
+	Followups    map[string]string    `json:"followups,omitempty"`
 
 	// Status-conditional surface:
 	AbandonedReason string `json:"abandoned_reason,omitempty"`
@@ -250,16 +250,21 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		scored = append(scored, packRelevant(iv, score, reasons, retrStatus))
 	}
 
-	// Apply Property 3 (Superseded 不上位): if A is in the result
-	// AND B (its superseder) is also in the result, A.score is
-	// pinned just below B.score so B always ranks above A. Without
-	// this, raw signal could let an old superseded intent outrank
-	// its replacement.
-	enforceSupersessionRanking(scored)
+	// Explicit supersession links are lineage, not independent
+	// relevance matches. If a superseder is relevant, include the
+	// intents it replaced even when a SQLite candidate prefilter or
+	// relevance threshold would otherwise drop them.
+	scored = includeSupersededLineage(scored, view, churn, now, files, query, branch)
 
 	sort.SliceStable(scored, func(i, j int) bool {
 		return scored[i].Relevance.Score > scored[j].Relevance.Score
 	})
+
+	// Apply Property 3 (Superseded 不上位): when A is superseded by B
+	// and both are in the result, B must rank above A as a hard
+	// ordering constraint.
+	enforceSupersessionRanking(scored)
+
 	if len(scored) > req.Limit {
 		scored = scored[:req.Limit]
 	}
@@ -298,33 +303,62 @@ func candidateSetForRetrieval(store interface {
 		}
 		return got
 	case "query":
-		// Use the FIRST keyword as the SQLite filter; the in-memory
-		// scorer still handles the multi-keyword nuance. A single
-		// LIKE pattern is enough to shrink the corpus from "every
-		// intent" to "intents that mention this word at least once".
-		first := firstKeyword(query)
-		if first == "" {
+		// Use the query keywords as a SQLite filter; the in-memory
+		// scorer still handles relative weights. We union every
+		// keyword hit so the cache path cannot drop an intent merely
+		// because its best signal was not the alphabetically first
+		// token in the user's task.
+		keywords := keywordsFromText(query)
+		if len(keywords) == 0 {
 			return view.Intents
 		}
-		got, err := store.ReadIntentViewsByQuery(first)
-		if err != nil || len(got) == 0 {
+		seen := map[string]bool{}
+		out := make([]domain.IntentView, 0)
+		for _, kw := range keywords {
+			got, err := store.ReadIntentViewsByQuery(kw)
+			if err != nil {
+				return view.Intents
+			}
+			for _, iv := range got {
+				if seen[iv.IntentID] {
+					continue
+				}
+				seen[iv.IntentID] = true
+				out = append(out, iv)
+			}
+		}
+		out = appendRecentQueryCandidates(out, seen, view, time.Now())
+		if len(out) == 0 {
 			return view.Intents
 		}
-		return got
+		return out
 	}
 	return view.Intents
 }
 
-// firstKeyword returns the first non-stopword token from a query
-// string, or "" if there is none. We use this to drive the SQLite
-// LIKE filter; the rest of the scoring still iterates over the
-// full keyword set in memory so multi-word relevance scoring is
-// unchanged.
-func firstKeyword(q string) string {
-	for _, kw := range keywordsFromText(q) {
-		return kw
+func appendRecentQueryCandidates(out []domain.IntentView, seen map[string]bool, view *domain.MainlineView, now time.Time) []domain.IntentView {
+	for _, iv := range view.Intents {
+		if seen[iv.IntentID] {
+			continue
+		}
+		if !hasQueryRecencySignal(iv, now) {
+			continue
+		}
+		seen[iv.IntentID] = true
+		out = append(out, iv)
 	}
-	return ""
+	return out
+}
+
+func hasQueryRecencySignal(iv domain.IntentView, now time.Time) bool {
+	if iv.SealedAt == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, iv.SealedAt)
+	if err != nil {
+		return false
+	}
+	return now.Sub(t) < 30*24*time.Hour
 }
 
 // classifyRetrievalStatus maps a domain IntentView to one of four
@@ -336,8 +370,8 @@ func firstKeyword(q string) string {
 //  1. abandoned   — domain status says abandoned/reverted
 //  2. superseded  — explicit StatusEvidence.SupersededByIntent
 //  3. stale       — wall-clock age >= staleAge OR any of its files
-//                    has been re-touched by >= staleFileChurnThreshold
-//                    later sealed intents
+//     has been re-touched by >= staleFileChurnThreshold
+//     later sealed intents
 //  4. current     — the default
 func classifyRetrievalStatus(iv domain.IntentView, churn map[string]int, now time.Time) string {
 	switch iv.Status {
@@ -425,32 +459,105 @@ func idForFile(intentID, file string) string {
 	return intentID + "|" + file
 }
 
+// includeSupersededLineage expands the result set along explicit
+// supersession links. Relevance thresholding should filter unrelated
+// history, not hide the replaced half of a decision lineage whose
+// replacement already matched the user's task.
+func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query, branch string) []ContextRelevant {
+	if view == nil || len(scored) == 0 {
+		return scored
+	}
+	byID := map[string]ContextRelevant{}
+	for _, r := range scored {
+		byID[r.IntentID] = r
+	}
+	bySuperseder := map[string][]domain.IntentView{}
+	for _, iv := range view.Intents {
+		if iv.Status == domain.StatusDrafting {
+			continue
+		}
+		superseder := iv.StatusEvidence.SupersededByIntent
+		if superseder == "" {
+			continue
+		}
+		bySuperseder[superseder] = append(bySuperseder[superseder], iv)
+	}
+
+	for changed := true; changed; {
+		changed = false
+		for supersederID, superseded := range bySuperseder {
+			parent, parentPresent := byID[supersederID]
+			if !parentPresent {
+				continue
+			}
+			for _, iv := range superseded {
+				if _, exists := byID[iv.IntentID]; exists {
+					continue
+				}
+				score, reasons := scoreIntentRelevance(iv, files, query, branch)
+				parentScore := parent.Relevance.Score
+				if score < parentScore {
+					score = parentScore
+				}
+				if score < 0.01 {
+					score = 0.01
+				}
+				reasons = append(reasons, "superseded by returned intent "+supersederID)
+				retrStatus := classifyRetrievalStatus(iv, churn, now)
+				added := packRelevant(iv, score, reasons, retrStatus)
+				scored = append(scored, added)
+				byID[iv.IntentID] = added
+				changed = true
+			}
+		}
+	}
+	return scored
+}
+
 // enforceSupersessionRanking implements Property 3: any superseder
 // present in the result set ranks strictly above the intent it
-// supersedes. We pin the superseded intent's score to just below
-// its superseder so the stable sort places them in the right order
-// without changing the overall score budget.
+// supersedes, with the superseded intent immediately after the
+// replacement. This is a post-sort hard ordering pass rather than a
+// score tweak, so rounding and chained replacements cannot invert
+// or separate the lineage.
 func enforceSupersessionRanking(scored []ContextRelevant) {
-	byID := map[string]int{}
-	for i, r := range scored {
-		byID[r.IntentID] = i
-	}
-	for i, r := range scored {
-		if r.SupersededBy == "" {
-			continue
+	for pass := 0; pass < len(scored); pass++ {
+		moved := false
+		byID := map[string]int{}
+		for i, r := range scored {
+			byID[r.IntentID] = i
 		}
-		j, ok := byID[r.SupersededBy]
-		if !ok {
-			continue
-		}
-		if scored[i].Relevance.Score >= scored[j].Relevance.Score {
-			scored[i].Relevance.Score = scored[j].Relevance.Score - 0.01
-			if scored[i].Relevance.Score < 0 {
-				scored[i].Relevance.Score = 0
+		for i := 0; i < len(scored); i++ {
+			superseder := scored[i].SupersededBy
+			if superseder == "" {
+				continue
 			}
-			scored[i].Relevance.Score = round2(scored[i].Relevance.Score)
+			j, ok := byID[superseder]
+			if !ok || j == i || j == i-1 {
+				continue
+			}
+			moveIntentAfter(scored, i, j)
+			moved = true
+			break
+		}
+		if !moved {
+			return
 		}
 	}
+}
+
+func moveIntentAfter(scored []ContextRelevant, from, after int) {
+	if from == after+1 {
+		return
+	}
+	item := scored[from]
+	if from < after {
+		copy(scored[from:after], scored[from+1:after+1])
+		scored[after] = item
+		return
+	}
+	copy(scored[after+2:from+1], scored[after+1:from])
+	scored[after+1] = item
 }
 
 // scoreIntentRelevance is the deterministic relevance ranker. Pure
@@ -459,16 +566,17 @@ func enforceSupersessionRanking(scored []ContextRelevant) {
 // Rough budget (max ~1.0 from any single intent, but most clamp far
 // below):
 //
-//   file overlap:        up to 0.40   ← strongest signal
-//   subsystem overlap:   up to 0.20
-//   risk keyword match:  up to 0.20   ← deliberately above decisions
-//                                       since a risk-match is more
-//                                       constraining for the agent
-//   decision kw match:   up to 0.15
-//   title kw match:      up to 0.10
-//   what / summary kw:   up to 0.05
-//   recency:             up to 0.10
-//   same thread/branch:  up to 0.15
+//	file overlap:        up to 0.40   ← strongest signal
+//	subsystem overlap:   up to 0.20
+//	anti_pattern match:  up to 0.25   ← hard constraints
+//	risk keyword match:  up to 0.20   ← deliberately above decisions
+//	                                    since a risk-match is more
+//	                                    constraining for the agent
+//	decision kw match:   up to 0.15
+//	title kw match:      up to 0.10
+//	what / summary kw:   up to 0.05
+//	recency:             up to 0.10
+//	same thread/branch:  up to 0.15
 func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBranch string) (float64, []string) {
 	var score float64
 	var reasons []string
@@ -518,6 +626,10 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 			if whatHits > 0 {
 				score += 0.025 * float64(whatHits)
 			}
+			whyHits := countKeywordHits(keywords, iv.Summary.Why)
+			if whyHits > 0 {
+				score += 0.025 * float64(whyHits)
+			}
 			for _, d := range iv.Summary.Decisions {
 				dText := d.Point + " " + d.Chose + " " + d.Rationale
 				if countKeywordHits(keywords, dText) > 0 {
@@ -530,6 +642,14 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 				if countKeywordHits(keywords, r) > 0 {
 					score += 0.10
 					reasons = append(reasons, "risk mentions "+truncateForReason(r, 40))
+					break
+				}
+			}
+			for _, ap := range iv.Summary.AntiPatterns {
+				apText := ap.What + " " + ap.Why + " " + ap.Severity
+				if countKeywordHits(keywords, apText) > 0 {
+					score += 0.15
+					reasons = append(reasons, "anti_pattern mentions "+strings.Join(matchedKeywords(keywords, apText), ", "))
 					break
 				}
 			}
@@ -632,14 +752,14 @@ func guidanceFor(status, supersededBy string) string {
 // Intentionally short; the agent reads JSON, not prose. Three lines
 // because three invariants matter:
 //
-//   1. "use intents as historical context" — guard against
-//      ignoring the retrieval entirely (agent grep-first habit).
-//   2. "verify against current code before editing" — guard
-//      against the opposite extreme (agent trusting an intent
-//      whose code has been refactored since).
-//   3. "anti_patterns are hard constraints" — surface the hard/soft
-//      distinction at the top of the result so the agent doesn't
-//      treat anti_patterns as more risks-to-weigh.
+//  1. "use intents as historical context" — guard against
+//     ignoring the retrieval entirely (agent grep-first habit).
+//  2. "verify against current code before editing" — guard
+//     against the opposite extreme (agent trusting an intent
+//     whose code has been refactored since).
+//  3. "anti_patterns are hard constraints" — surface the hard/soft
+//     distinction at the top of the result so the agent doesn't
+//     treat anti_patterns as more risks-to-weigh.
 func contextNotes() []string {
 	return []string{
 		"Use these intents as historical context, not as a replacement for reading current code.",
@@ -651,11 +771,11 @@ func contextNotes() []string {
 // currentRelevantFiles synthesises the file list for --current mode.
 // Order of preference:
 //
-//   1. Files changed since fork point (base..HEAD) — exactly what an
-//      agent's pending change touches.
-//   2. Files in the worktree that are dirty/untracked — for an agent
-//      mid-edit on an uncommitted change set.
-//   3. Empty list — let scoring fall back to query / branch signals.
+//  1. Files changed since fork point (base..HEAD) — exactly what an
+//     agent's pending change touches.
+//  2. Files in the worktree that are dirty/untracked — for an agent
+//     mid-edit on an uncommitted change set.
+//  3. Empty list — let scoring fall back to query / branch signals.
 func (s *Service) currentRelevantFiles() []string {
 	cfg, err := s.getTeamConfig()
 	if err != nil {

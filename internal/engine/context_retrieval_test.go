@@ -323,6 +323,125 @@ func TestContextRetrieval_AntiPatternsPropagateAndAreNeverTruncated(t *testing.T
 	}
 }
 
+func TestContextRetrieval_QueryModeScoresAntiPatterns(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		RebuiltAt:     "2026-04-29T00:00:00Z",
+		Intents: []domain.IntentView{
+			{
+				IntentID:      "int_terminology",
+				Status:        domain.StatusMerged,
+				ActorID:       "agent",
+				Thread:        "docs/terminology",
+				GitBranch:     "docs/terminology",
+				Goal:          "standardise user-facing terminology",
+				SealedAt:      "2026-04-28T00:00:00Z",
+				ViewRebuiltAt: "2026-04-29T00:00:00Z",
+				Summary: &domain.IntentSummary{
+					Title: "Terminology cleanup",
+					What:  "Keep user-facing copy consistent.",
+					Why:   "Reader feedback showed internal vocabulary leaking into docs.",
+					AntiPatterns: []domain.AntiPattern{
+						{
+							What:     "Reintroducing 'managed block' or 'Mainline template' in CLI output, help text, README, or AGENTS.md",
+							Why:      "Distinct vocabularies for distinct audiences was the whole point of the rewrite.",
+							Severity: "medium",
+						},
+					},
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"AGENTS.md"},
+					Subsystems:   []string{"docs"},
+				},
+			},
+		},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "query",
+		Query: "write a new section in AGENTS.md describing the seal workflow",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if len(res.RelevantIntents) == 0 || res.RelevantIntents[0].IntentID != "int_terminology" {
+		t.Fatalf("expected anti_pattern-only docs intent to surface, got %+v", res.RelevantIntents)
+	}
+	if len(res.RelevantIntents[0].AntiPatterns) != 1 {
+		t.Fatalf("expected anti_pattern to be preserved, got %+v", res.RelevantIntents[0].AntiPatterns)
+	}
+	reasons := strings.Join(res.RelevantIntents[0].Relevance.Reasons, " ")
+	if !strings.Contains(reasons, "anti_pattern") {
+		t.Fatalf("expected anti_pattern relevance reason, got %v", res.RelevantIntents[0].Relevance.Reasons)
+	}
+}
+
+func TestContextRetrieval_QueryModeKeepsRecentWeakSignals(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	recent := time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+	old := time.Now().Add(-60 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		RebuiltAt:     time.Now().UTC().Format(time.RFC3339),
+		Intents: []domain.IntentView{
+			{
+				IntentID:      "int_keyword",
+				Status:        domain.StatusMerged,
+				ActorID:       "agent",
+				Goal:          "column export",
+				SealedAt:      old,
+				ViewRebuiltAt: time.Now().UTC().Format(time.RFC3339),
+				Summary:       &domain.IntentSummary{Title: "Column export"},
+				Fingerprint:   &domain.SemanticFingerprint{FilesTouched: []string{"src/export.go"}},
+			},
+			{
+				IntentID:      "int_recent_context",
+				Status:        domain.StatusMerged,
+				ActorID:       "agent",
+				Goal:          "billing boundary",
+				SealedAt:      recent,
+				ViewRebuiltAt: time.Now().UTC().Format(time.RFC3339),
+				Summary:       &domain.IntentSummary{Title: "Billing boundary"},
+				Fingerprint:   &domain.SemanticFingerprint{FilesTouched: []string{"src/billing.go"}},
+			},
+		},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "query",
+		Query: "column",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, ri := range res.RelevantIntents {
+		ids[ri.IntentID] = true
+	}
+	if !ids["int_keyword"] || !ids["int_recent_context"] {
+		t.Fatalf("query cache candidates should preserve keyword and recent weak signals, got %+v", res.RelevantIntents)
+	}
+}
+
 // Status classification: a sealed intent older than staleAge with no
 // supersede / abandon mark should classify as "stale" and carry the
 // "verify decisions" guidance. Property 2 + Property 6.
@@ -377,9 +496,9 @@ func TestContextRetrieval_FileChurnTriggersStale(t *testing.T) {
 // guidance text fails the test loudly rather than silently.
 func TestContextRetrieval_GuidanceIsDeterministicPerStatus(t *testing.T) {
 	cases := []struct {
-		status        string
-		supersededBy  string
-		mustContain   string
+		status       string
+		supersededBy string
+		mustContain  string
 	}{
 		{RetrievalStatusCurrent, "", "verify against current code"},
 		{RetrievalStatusSuperseded, "int_newer", "int_newer"},
@@ -444,6 +563,91 @@ func TestContextRetrieval_SupersederAlwaysRanksAboveSuperseded(t *testing.T) {
 		!strings.Contains(res.RelevantIntents[oldIdx].Guidance, newID) {
 		t.Errorf("superseded guidance must point at the replacement (%s), got %q",
 			newID, res.RelevantIntents[oldIdx].Guidance)
+	}
+}
+
+func TestContextRetrieval_IncludesSupersededLineageWhenSupersederMatches(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		RebuiltAt:     "2026-04-29T00:00:00Z",
+		Intents: []domain.IntentView{
+			{
+				IntentID:      "int_old_csv",
+				Status:        domain.StatusSuperseded,
+				ActorID:       "agent",
+				Thread:        "feature/export-csv",
+				GitBranch:     "feature/export-csv",
+				Goal:          "build CSV export endpoint",
+				SealedAt:      "2026-03-01T00:00:00Z",
+				ViewRebuiltAt: "2026-04-29T00:00:00Z",
+				StatusEvidence: domain.StatusEvidence{
+					SupersededByIntent: "int_new_parquet",
+				},
+				Summary: &domain.IntentSummary{
+					Title: "Build CSV export endpoint",
+					What:  "Server-rendered CSV from /export.csv.",
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"src/export/csv.go"},
+					Subsystems:   []string{"export"},
+				},
+			},
+			{
+				IntentID:      "int_new_parquet",
+				Status:        domain.StatusMerged,
+				ActorID:       "agent",
+				Thread:        "feature/export-parquet",
+				GitBranch:     "feature/export-parquet",
+				Goal:          "move analyst export to columnar parquet",
+				SealedAt:      "2026-04-28T00:00:00Z",
+				ViewRebuiltAt: "2026-04-29T00:00:00Z",
+				Summary: &domain.IntentSummary{
+					Title: "Replace CSV export with columnar Parquet",
+					What:  "Parquet export under /export.parquet; deprecate /export.csv.",
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"src/export/parquet.go", "src/export/csv.go"},
+					Subsystems:   []string{"export"},
+				},
+			},
+		},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "query",
+		Query: "column",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	idx := map[string]int{}
+	for i, ri := range res.RelevantIntents {
+		idx[ri.IntentID] = i
+	}
+	oldIdx, oldSeen := idx["int_old_csv"]
+	newIdx, newSeen := idx["int_new_parquet"]
+	if !oldSeen || !newSeen {
+		t.Fatalf("expected both supersession endpoints, got %+v", res.RelevantIntents)
+	}
+	if newIdx >= oldIdx {
+		t.Fatalf("superseder must rank above superseded; newIdx=%d oldIdx=%d", newIdx, oldIdx)
+	}
+	old := res.RelevantIntents[oldIdx]
+	if old.Status != RetrievalStatusSuperseded {
+		t.Fatalf("expected superseded retrieval status, got %q", old.Status)
+	}
+	if !strings.Contains(strings.Join(old.Relevance.Reasons, " "), "superseded by returned intent int_new_parquet") {
+		t.Fatalf("expected lineage inclusion reason, got %v", old.Relevance.Reasons)
 	}
 }
 
