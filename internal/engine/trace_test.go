@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -170,23 +171,48 @@ func TestTrace_AbandonedIntentSurfacesReason(t *testing.T) {
 // 5. Same-second append turns: detected and reported in the summary.
 // Mirrors the rc7 honest-signal flag — turns batched right before
 // seal share timestamps; tests that we surface that fact.
+//
+// Bypasses svc.Append (which timestamps via core.Now()) and writes
+// the turn entries directly via Store.AppendTurn with an explicit
+// shared CreatedAt. The original wall-clock-driven version was
+// flaky under `-race -short`: three consecutive svc.Append calls
+// are not guaranteed to land in the same second when the race
+// detector is on. The actual claim under test ("given turns
+// sharing a timestamp, the flag fires") doesn't need a real clock
+// to verify.
 func TestTrace_AppendTurnsRecordedTogetherDetected(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
-	svc.Init("agent")
-	// Three appends in immediate succession — all share the same
-	// second timestamp from core.Now() second resolution.
-	id := sealedIntentWithTurns(t, dir, svc, "samesec", []string{
-		"a", "b", "c",
-	})
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	gitCmd(t, dir, "checkout", "main")
+	gitCmd(t, dir, "checkout", "-b", "feature/samesec")
+	start, err := svc.Start("trace test samesec", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
 
-	res, err := svc.Trace(id, nil)
+	const sameTS = "2026-04-29T12:00:00Z"
+	for i, desc := range []string{"a", "b", "c"} {
+		if err := svc.Store.AppendTurn(&domain.Turn{
+			ID:          fmt.Sprintf("turn_samesec_%d", i),
+			IntentID:    start.IntentID,
+			Index:       i,
+			CreatedAt:   sameTS,
+			Description: desc,
+		}); err != nil {
+			t.Fatalf("append turn[%d]: %v", i, err)
+		}
+	}
+
+	res, err := svc.Trace(start.IntentID, nil)
 	if err != nil {
 		t.Fatalf("trace: %v", err)
 	}
 	if !res.Summary.AppendTurnsRecordedTogether {
-		t.Fatalf("expected AppendTurnsRecordedTogether=true for batched appends")
+		t.Fatalf("expected AppendTurnsRecordedTogether=true for batched appends; got summary=%+v", res.Summary)
 	}
 }
 
