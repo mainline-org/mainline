@@ -676,10 +676,7 @@ func (s *Service) collectUnsealedDrafts(currentBranch string, view *domain.Mainl
 		// past sealed_local, the draft file is stale. Treat the
 		// view's status as truth.
 		if vs, ok := viewStatus[id]; ok {
-			if vs == domain.StatusMerged ||
-				vs == domain.StatusAbandoned ||
-				vs == domain.StatusSuperseded ||
-				vs == domain.StatusReverted {
+			if isTerminalIntentStatus(vs) {
 				continue
 			}
 		}
