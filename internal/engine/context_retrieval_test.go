@@ -447,6 +447,35 @@ func TestContextRetrieval_SupersederAlwaysRanksAboveSuperseded(t *testing.T) {
 	}
 }
 
+func TestEnforceSupersessionRankingHandlesChains(t *testing.T) {
+	scored := []ContextRelevant{
+		{
+			IntentID:     "int_old",
+			SupersededBy: "int_mid",
+			Relevance:   ContextRelevance{Score: 0.33},
+		},
+		{
+			IntentID:     "int_mid",
+			SupersededBy: "int_new",
+			Relevance:   ContextRelevance{Score: 0.33},
+		},
+		{
+			IntentID:   "int_new",
+			Relevance: ContextRelevance{Score: 0.32},
+		},
+	}
+
+	enforceSupersessionRanking(scored)
+
+	got := []string{scored[0].IntentID, scored[1].IntentID, scored[2].IntentID}
+	want := []string{"int_new", "int_mid", "int_old"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("supersession chain order mismatch: got %v, want %v", got, want)
+		}
+	}
+}
+
 // Property 1: an anti_pattern with empty why is rejected at seal
 // time. This is what keeps the load-bearing safety property
 // honest — agents that paste anti_patterns without reasons get a

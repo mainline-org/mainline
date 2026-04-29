@@ -250,16 +250,16 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		scored = append(scored, packRelevant(iv, score, reasons, retrStatus))
 	}
 
-	// Apply Property 3 (Superseded 不上位): if A is in the result
-	// AND B (its superseder) is also in the result, A.score is
-	// pinned just below B.score so B always ranks above A. Without
-	// this, raw signal could let an old superseded intent outrank
-	// its replacement.
-	enforceSupersessionRanking(scored)
-
 	sort.SliceStable(scored, func(i, j int) bool {
 		return scored[i].Relevance.Score > scored[j].Relevance.Score
 	})
+
+	// Apply Property 3 (Superseded 不上位): if A is in the result
+	// AND B (its superseder) is also in the result, B must rank
+	// above A. Do this after the score sort so supersession remains
+	// a hard ordering constraint even for supersession chains.
+	enforceSupersessionRanking(scored)
+
 	if len(scored) > req.Limit {
 		scored = scored[:req.Limit]
 	}
@@ -427,28 +427,37 @@ func idForFile(intentID, file string) string {
 
 // enforceSupersessionRanking implements Property 3: any superseder
 // present in the result set ranks strictly above the intent it
-// supersedes. We pin the superseded intent's score to just below
-// its superseder so the stable sort places them in the right order
-// without changing the overall score budget.
+// supersedes. Scores establish the default order; supersession then
+// acts as a hard ordering constraint over that sorted list.
 func enforceSupersessionRanking(scored []ContextRelevant) {
-	byID := map[string]int{}
-	for i, r := range scored {
-		byID[r.IntentID] = i
-	}
-	for i, r := range scored {
-		if r.SupersededBy == "" {
-			continue
+	// A single score-pinning pass is not enough for chains:
+	// A -> B -> C can pin A below B before B is later moved below C.
+	// Instead, repeatedly move each superseder directly above the
+	// superseded intent until the partial order is stable.
+	for pass := 0; pass < len(scored); pass++ {
+		byID := map[string]int{}
+		for i, r := range scored {
+			byID[r.IntentID] = i
 		}
-		j, ok := byID[r.SupersededBy]
-		if !ok {
-			continue
-		}
-		if scored[i].Relevance.Score >= scored[j].Relevance.Score {
-			scored[i].Relevance.Score = scored[j].Relevance.Score - 0.01
-			if scored[i].Relevance.Score < 0 {
-				scored[i].Relevance.Score = 0
+
+		moved := false
+		for i, r := range scored {
+			if r.SupersededBy == "" {
+				continue
 			}
-			scored[i].Relevance.Score = round2(scored[i].Relevance.Score)
+			j, ok := byID[r.SupersededBy]
+			if !ok || j <= i {
+				continue
+			}
+
+			superseder := scored[j]
+			copy(scored[i+1:j+1], scored[i:j])
+			scored[i] = superseder
+			moved = true
+			break // indexes changed; rebuild byID before the next edge.
+		}
+		if !moved {
+			return
 		}
 	}
 }
