@@ -18,14 +18,9 @@ func Fixtures() []Fixture {
 		supersededDecision(),
 		staleIntent(),
 		billingBoundary(),
-
-		// Stubs — populate as fixture authors ship ground truth.
-		{Name: "risk-aware-tests",
-			Description: "[stub] must run specific regression tests when touching risk-tagged code"},
-		{Name: "docs-only-intent",
-			Description: "[stub] empty diff still gets a decision record"},
-		{Name: "refactor-cross-file",
-			Description: "[stub] refactor preserves behaviour across files"},
+		riskAwareTests(),
+		docsOnlyIntent(),
+		refactorCrossFile(),
 	}
 }
 
@@ -323,6 +318,159 @@ func staleIntent() Fixture {
 		Forbidden: []string{
 			"apply the 100rps limit blindly without checking current load",
 			"trust the 'empirical sustainable rate' line as if today's index were the same size",
+		},
+	}
+}
+
+// riskAwareTests: a prior intent recorded a hard rule that any
+// change to the rate-limiter MUST run a specific regression-test
+// suite first. Retrieval must surface that anti_pattern so the
+// agent picks up the rule before editing.
+func riskAwareTests() Fixture {
+	return Fixture{
+		Name:        "risk-aware-tests",
+		Description: "Risk-aware tests: agent must run the regression suite the prior intent named",
+		Intents: []SeedIntent{
+			{
+				ID:    "int_rate_limit_test_rule",
+				Title: "Rate-limiter changes always run the scraper-regression suite",
+				Goal:  "establish the test discipline for rate-limiter changes",
+				What:  "Any edit under src/search/limiter.go must run `go test ./internal/regression/scrapers/... -count=1` and the test in test/limiter_burst_test.go before being sealed.",
+				Why:   "The 2026-Q1 outage was caused by a token-bucket tweak that passed unit tests but broke under realistic burst patterns; the regression suite was added explicitly to catch that.",
+				Decisions: []domain.Decision{
+					{Point: "test discipline", Chose: "regression/scrapers + limiter_burst_test must pass before seal", Rationale: "outage-driven rule, codified after BUDGET-2024 incident"},
+				},
+				AntiPatterns: []domain.AntiPattern{
+					{
+						What:     "Sealing a rate-limiter change without running the regression/scrapers test suite",
+						Why:      "Unit tests pass on token-bucket changes that fail under realistic burst load. The 2026-Q1 outage came from exactly this gap. The regression suite is the only check that catches it.",
+						Severity: "high",
+					},
+					{
+						What:     "Skipping test/limiter_burst_test.go because it is slow",
+						Why:      "It is slow on purpose — it simulates the burst pattern that broke prod. Skipping it has the same effect as not having it.",
+						Severity: "high",
+					},
+				},
+				Files:      []string{"src/search/limiter.go", "internal/regression/scrapers/limiter_test.go", "test/limiter_burst_test.go"},
+				Subsystems: []string{"search", "rate_limit"},
+				Status:     domain.StatusMerged,
+				AgeDays:    45,
+			},
+		},
+		Task: "loosen the rate limiter on /search to 200rps for the new search-quality experiment",
+		Expected: []ExpectedItem{
+			{
+				IntentID:         "int_rate_limit_test_rule",
+				AntiPatternMatch: "regression/scrapers test suite",
+				Note:             "the test-discipline anti_pattern must reach the agent before they draft the limiter change",
+			},
+		},
+		Forbidden: []string{
+			"seal a rate-limiter change without running the regression/scrapers tests",
+			"skip test/limiter_burst_test.go for being slow",
+		},
+	}
+}
+
+// docsOnlyIntent: a documentation-only change that nonetheless
+// records load-bearing decisions (style guide, terminology). The
+// fixture tests that retrieval surfaces these intents even when
+// they touch zero source files — agents working on unrelated docs
+// later need to inherit the conventions.
+func docsOnlyIntent() Fixture {
+	return Fixture{
+		Name:        "docs-only-intent",
+		Description: "Docs-only intent: empty source diff still carries decision memory",
+		Intents: []SeedIntent{
+			{
+				ID:    "int_terminology_guide",
+				Title: "Standardise terminology: 'agent guidance', not 'managed block'",
+				Goal:  "fix the user-facing copy to say 'agent guidance' instead of 'managed block'",
+				What:  "All user-facing CLI output, help text, and Markdown docs use the term 'agent guidance' for the marker-bounded region inside AGENTS.md. Internal Go code keeps 'managed block' where it precisely names the engineering concept.",
+				Why:   "Reader feedback: 'managed block' leaked Mainline-internal vocabulary into copy users had to read. 'Agent guidance' names the artefact, not the implementation.",
+				Decisions: []domain.Decision{
+					{Point: "user-facing label", Chose: "agent guidance", Rationale: "names the artefact"},
+					{Point: "internal vocabulary", Chose: "managed block stays in Go code", Rationale: "precise engineering term; users do not read it"},
+				},
+				AntiPatterns: []domain.AntiPattern{
+					{
+						What:     "Reintroducing 'managed block' or 'Mainline template' in CLI output, help text, README, or AGENTS.md",
+						Why:      "Distinct vocabularies for distinct audiences was the whole point of the rewrite; mixing them in user-facing copy reverses the fix.",
+						Severity: "medium",
+					},
+				},
+				Files:      []string{"docs/style-guide.md", "AGENTS.md"},
+				Subsystems: []string{"docs", "agent_guidance_template"},
+				Status:     domain.StatusMerged,
+				AgeDays:    30,
+			},
+		},
+		Task: "write a new section in AGENTS.md describing the seal workflow",
+		Expected: []ExpectedItem{
+			{
+				IntentID:         "int_terminology_guide",
+				AntiPatternMatch: "managed block",
+				Note:             "terminology rule must surface when an agent edits docs even though no .go files are involved",
+			},
+		},
+		Forbidden: []string{
+			"call the AGENTS.md region a 'managed block' in the new section",
+			"refer to the file's content as 'the Mainline template' in CLI-style copy",
+		},
+	}
+}
+
+// refactorCrossFile: a refactor that splits one large file into
+// several smaller ones must preserve the public surface AND the
+// behaviour of every callsite. The fixture establishes the
+// invariants and tests retrieval surfaces them when the next
+// agent picks up "extend the parser to handle X".
+func refactorCrossFile() Fixture {
+	return Fixture{
+		Name:        "refactor-cross-file",
+		Description: "Cross-file refactor: behaviour must be preserved across the split",
+		Intents: []SeedIntent{
+			{
+				ID:    "int_parser_split",
+				Title: "Split src/parser.go into reader / lexer / ast",
+				Goal:  "decompose the 2k-line parser into three focused files",
+				What:  "Split src/parser.go into src/parser/reader.go (byte-level reader), src/parser/lexer.go (tokens), src/parser/ast.go (tree). Public Parse(input) -> (*AST, error) signature is unchanged. All existing tests must pass without modification.",
+				Why:   "src/parser.go was a 2k-line god-file; the three layers had grown distinct enough that mixing them made each layer harder to evolve.",
+				Decisions: []domain.Decision{
+					{Point: "split boundaries", Chose: "reader / lexer / ast as three files under src/parser/", Rationale: "natural three-layer boundary that already existed in code organisation"},
+					{Point: "public surface", Chose: "Parse(input) (*AST, error) stays in src/parser.go, exported", Rationale: "every caller in the codebase imports parser.Parse; preserving it makes the refactor invisible to callers"},
+				},
+				AntiPatterns: []domain.AntiPattern{
+					{
+						What:     "Changing the Parse function signature, return type, or error semantics during the split",
+						Why:      "The split is a refactor — behaviour-preserving by definition. A signature change couples the cleanup to a feature change and breaks every caller silently.",
+						Severity: "high",
+					},
+					{
+						What:     "Modifying the lexer's whitespace or comment handling during the split",
+						Why:      "The original handler tolerated edge cases (CR-only line endings, trailing whitespace before EOF) that the test suite does not directly cover. Touching this in a refactor introduces undetected behaviour drift.",
+						Severity: "medium",
+					},
+				},
+				Files:      []string{"src/parser.go", "src/parser/reader.go", "src/parser/lexer.go", "src/parser/ast.go"},
+				Subsystems: []string{"parser"},
+				Status:     domain.StatusMerged,
+				AgeDays:    21,
+			},
+		},
+		Task: "extend the parser to handle backtick-delimited strings",
+		Expected: []ExpectedItem{
+			{
+				IntentID:         "int_parser_split",
+				AntiPatternMatch: "Parse function signature",
+				Note:             "the signature-preservation anti_pattern must reach the agent so the new feature does not silently change Parse",
+			},
+		},
+		Forbidden: []string{
+			"change the Parse function signature to add a new option",
+			"modify whitespace or comment handling in the lexer",
+			"add a separate ParseBacktick function in src/parser.go without going through the lexer layer",
 		},
 	}
 }
