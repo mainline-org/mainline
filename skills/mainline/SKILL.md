@@ -13,6 +13,25 @@ Mainline records why AI-driven changes happen, connects those intents to code
 commits, and surfaces semantic conflicts before PR review. Treat it as part of
 the coding workflow, not as optional documentation.
 
+## Language Rule (load-bearing)
+
+Match the user's language in everything you write into Mainline:
+the goal text on `mainline start`, every `mainline append` turn,
+the seal `summary.title` / `what` / `why` / `user_goal` / decisions
+/ risks / anti_patterns / followups, and PR description prose. If
+the user wrote in Chinese, seal in Chinese. English in, English out.
+Mixed inputs → match the dominant language.
+
+Why this matters: the seal record is the team's long-term memory.
+A teammate reading `mainline show <id>` later must recognise the
+work as theirs. Translating a Chinese task into an English seal
+makes the corpus harder to read for the people whose memory it is.
+
+Pass the user's goal text through verbatim — `mainline start
+"<goal>"` becomes the headline in `mainline log`. Code identifiers,
+command names, file paths, and CLI snippets stay in their original
+form regardless of conversation language.
+
 ## Trigger Policy
 
 Use this skill for any task in a Git repository when one of these is true:

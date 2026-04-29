@@ -1,7 +1,7 @@
-<!-- mainline:agents:start version=12 checksum=sha256:bb93a86dcc1512ce1f81dfd84c14e6714261d252997e36eda3e1041a515273ba -->
+<!-- mainline:agents:start version=13 checksum=sha256:d732924350c8afa61cbf4d598d1a0c73bd638e5997d39722814d23d4d14f046c -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 8 -->
+<!-- mainline-agents-md-version: 9 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -26,6 +26,13 @@ mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
 ```
 
 Sync, pin, merge are automatic — do not invoke them.
+
+**Language rule**: write everything you put into Mainline (goal,
+appends, seal title/what/why/decisions/risks/anti_patterns) in the
+language the user used. Chinese in, Chinese out; English in, English
+out. The seal is the team's memory — translating it makes it harder
+to read for the people whose memory it is. Code identifiers, command
+names, and file paths stay in their original form.
 
 ### If `mainline hooks` is installed for your agent
 

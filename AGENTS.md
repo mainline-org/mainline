@@ -1,7 +1,7 @@
-<!-- mainline:agents:start version=12 checksum=sha256:62ee66d15a420f45eb3c1403cffe332072b56e14044597a18ddcc71fa14a0d83 -->
+<!-- mainline:agents:start version=13 checksum=sha256:3f2e6230bef09af5288a47aecc080284018883112f249a9907dce2ced8712685 -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 12 -->
+<!-- mainline-agents-md-version: 13 -->
 
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the
@@ -19,6 +19,34 @@ the diff alone cannot give you.
 > trailer or matched config pattern), or `uncovered` (neither). Run
 > `mainline status` to see the rollup; `mainline gaps` to see uncovered
 > commits with rescue suggestions.
+
+### Language rule (load-bearing)
+
+**Match the user's language in everything you write into Mainline:**
+intent goal text, append turn descriptions, seal `summary.title` /
+`what` / `why` / `user_goal` / decisions / risks / anti_patterns /
+followups, and PR description prose. If the user wrote to you in
+Chinese, seal in Chinese. English in, English out. Mixed → match
+the dominant language of the user's request.
+
+Why this is load-bearing: the seal record is the team's long-term
+memory. A teammate reading `mainline show <id>` six months from now
+has to recognise the work as theirs. Translating a Chinese-language
+task into an English seal turns a clear record into something the
+team has to re-translate at every read.
+
+Two clarifications:
+
+- **Don't translate the user's goal text.** `mainline start
+  "<goal>"` should pass the user's words through verbatim — that
+  text becomes the headline in `mainline log` for everyone. If the
+  user said *"修复 OAuth 回调的会话丢失"*, start with exactly that
+  string, not an English paraphrase.
+- **Code identifiers, command names, file paths, and CLI snippets
+  stay in their original form.** Match natural-language prose, not
+  the technical substrate. `mainline seal --submit` is
+  `mainline seal --submit` in any language; the surrounding *why*
+  matches the user.
 
 ### At the start of a task
 
