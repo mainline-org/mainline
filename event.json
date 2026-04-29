@@ -1,1 +1,1 @@
-{"event_id":"evt_b2327e01","schema_version":1,"event_type":"intent.abandoned","actor_id":"actor_b7d5d6a4","actor_name":"cat","timestamp":"2026-04-29T12:25:45Z","intent_id":"int_037d6892","reason":"duplicate of existing PR #93 / intent int_cbcbfcbe"}
+{"event_id":"evt_2e1b1558","schema_version":1,"event_type":"intent.abandoned","actor_id":"actor_b7d5d6a4","actor_name":"cat","timestamp":"2026-04-29T14:10:37Z","intent_id":"int_cbcbfcbe","reason":"最新 origin/main 的 #94/#95 已覆盖 supersession ranking CI 修复，并通过原 CI 失败 rapid seed；关闭 follow-up PR #93"}
