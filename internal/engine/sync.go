@@ -51,8 +51,9 @@ func (s *Service) Sync() (*SyncResult, error) {
 		}
 	}
 
+	remote := s.remoteName()
 	fetched := false
-	if s.Git.HasRemote(s.remoteName()) {
+	if s.Git.HasRemote(remote) {
 		// One fetch, three refspecs: main branch + every actor log +
 		// the notes ref (rc3: notes are the source of truth for merged
 		// status). A single `git fetch` shares one ssh handshake with
@@ -72,12 +73,12 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// turns. Main branch is intentionally NOT force-fetched
 		// because rewrites to main are a separate safety concern
 		// the user resolves explicitly via git.
-		actorRefspec := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/origin/%s/*",
-			cfg.Mainline.ActorLogPrefix, cfg.Mainline.ActorLogPrefix)
+		actorRefspec := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*",
+			cfg.Mainline.ActorLogPrefix, remote, cfg.Mainline.ActorLogPrefix)
 		// Network fetch is best-effort: a transient network failure
 		// should let the rest of sync run against local refs (the
 		// freshness window from PR #20 already handles staleness).
-		_ = s.Git.Fetch(s.remoteName(),
+		_ = s.Git.Fetch(remote,
 			cfg.Mainline.MainBranch,
 			actorRefspec,
 			"+refs/notes/mainline/*:refs/notes/mainline/*",
@@ -345,9 +346,10 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 }
 
 func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
+	remote := s.remoteName()
 	refPrefixes := []string{
 		fmt.Sprintf("refs/heads/%s", prefix),
-		fmt.Sprintf("refs/remotes/origin/%s", prefix),
+		fmt.Sprintf("refs/remotes/%s/%s", remote, prefix),
 	}
 
 	// Phase 1: gather the unique actor-log refs in the same order
@@ -418,7 +420,7 @@ func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 }
 
 func (s *Service) syncedMainRef(mainBranch string) string {
-	remoteRef := "refs/remotes/origin/" + mainBranch
+	remoteRef := "refs/remotes/" + s.remoteName() + "/" + mainBranch
 	if s.Git.ReadRef(remoteRef) != "" {
 		return remoteRef
 	}
