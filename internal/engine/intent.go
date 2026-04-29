@@ -292,7 +292,18 @@ func (s *Service) Show(intentID string) (*ShowResult, error) {
 		return &ShowResult{Intent: draft, Turns: turns}, nil
 	}
 
-	// Try mainline view
+	// Sealed-intent lookup: prefer the SQLite primary-key index
+	// (O(1)) over a linear scan of the JSON view. Both routes return
+	// the same IntentView struct because the SQLite raw_json column
+	// is the same struct WriteMainlineView serialised — semantics
+	// identical, just faster on big repos.
+	if iv, err := s.Store.ReadIntentViewByID(intentID); err == nil && iv != nil {
+		return &ShowResult{View: iv}, nil
+	}
+
+	// Fallback to JSON view scan when the SQLite cache is missing
+	// (fresh repo, schema bump, doctor wipe). Same code path as
+	// before — keeps Show working when the cache is unavailable.
 	view, _ := s.Store.ReadMainlineView()
 	if view != nil {
 		for _, iv := range view.Intents {

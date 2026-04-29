@@ -94,6 +94,174 @@ func TestRebuildMainlineIndexLogRowsAndLookupTables(t *testing.T) {
 	assertCount(t, db, "intent_risks", 1)
 }
 
+// PK lookup: ReadIntentViewByID returns the same IntentView shape
+// the JSON view path returns, so callers can swap with no semantics
+// change. Missing-id returns (nil, nil) so callers can fall through
+// to JSON without distinguishing "absent" from "errored".
+func TestReadIntentViewByID_RoundTripsAndHandlesMissing(t *testing.T) {
+	store := New(t.TempDir(), nil)
+	view := &domain.MainlineView{
+		SchemaVersion: 1, RebuiltAt: "2026-04-29T00:00:00Z", MainBranch: "main",
+		Intents: []domain.IntentView{
+			{
+				IntentID: "int_target", Status: domain.StatusMerged,
+				ActorID: "actor_a", Thread: "t",
+				Summary: &domain.IntentSummary{
+					Title: "Target",
+					AntiPatterns: []domain.AntiPattern{
+						{What: "x", Why: "y", Severity: "high"},
+					},
+				},
+				Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"a.go"}, Subsystems: []string{"a"}},
+			},
+		},
+	}
+	if err := store.RebuildMainlineIndex(view); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.ReadIntentViewByID("int_target")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got == nil || got.IntentID != "int_target" {
+		t.Fatalf("expected IntentView for int_target, got %+v", got)
+	}
+	// raw_json round-trip must carry AntiPatterns through verbatim —
+	// the load-bearing safety surface.
+	if got.Summary == nil || len(got.Summary.AntiPatterns) != 1 || got.Summary.AntiPatterns[0].What != "x" {
+		t.Errorf("AntiPatterns lost in round-trip: %+v", got.Summary)
+	}
+
+	missing, err := store.ReadIntentViewByID("int_does_not_exist")
+	if err != nil {
+		t.Errorf("missing id should be (nil, nil), got err=%v", err)
+	}
+	if missing != nil {
+		t.Errorf("missing id should be nil, got %+v", missing)
+	}
+}
+
+// File reverse-index: ReadIntentViewsByFiles returns every intent
+// whose fingerprint touches at least one of the queried paths.
+// Empty paths returns (nil, nil); a path with no matches returns
+// an empty slice without error.
+func TestReadIntentViewsByFiles_ReverseIndexHits(t *testing.T) {
+	store := New(t.TempDir(), nil)
+	view := &domain.MainlineView{
+		SchemaVersion: 1, RebuiltAt: "2026-04-29T00:00:00Z", MainBranch: "main",
+		Intents: []domain.IntentView{
+			{IntentID: "int_a", Status: domain.StatusMerged, ActorID: "x",
+				Summary: &domain.IntentSummary{Title: "a"},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"src/auth.go", "src/db.go"},
+					Subsystems:   []string{"auth"},
+				}},
+			{IntentID: "int_b", Status: domain.StatusMerged, ActorID: "x",
+				Summary: &domain.IntentSummary{Title: "b"},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"src/auth.go"},
+					Subsystems:   []string{"auth"},
+				}},
+			{IntentID: "int_c", Status: domain.StatusMerged, ActorID: "x",
+				Summary: &domain.IntentSummary{Title: "c"},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"src/web.go"},
+					Subsystems:   []string{"web"},
+				}},
+		},
+	}
+	if err := store.RebuildMainlineIndex(view); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.ReadIntentViewsByFiles([]string{"src/auth.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]bool{}
+	for _, iv := range got {
+		ids[iv.IntentID] = true
+	}
+	if !ids["int_a"] || !ids["int_b"] {
+		t.Errorf("expected int_a + int_b, got %+v", ids)
+	}
+	if ids["int_c"] {
+		t.Errorf("int_c should not match — it doesn't touch src/auth.go")
+	}
+
+	// Empty paths returns (nil, nil) — same shape as no-cache fall-through.
+	if rs, err := store.ReadIntentViewsByFiles(nil); err != nil || rs != nil {
+		t.Errorf("empty paths should be (nil, nil); got rs=%v err=%v", rs, err)
+	}
+
+	// No match returns empty slice without error.
+	none, err := store.ReadIntentViewsByFiles([]string{"src/nope.go"})
+	if err != nil || len(none) != 0 {
+		t.Errorf("no-match should be ([], nil); got rs=%v err=%v", none, err)
+	}
+}
+
+// Query reverse-index: ReadIntentViewsByQuery hits title / goal /
+// decision / risk text via case-insensitive LIKE. Empty keyword
+// returns (nil, nil).
+func TestReadIntentViewsByQuery_TextSearchHits(t *testing.T) {
+	store := New(t.TempDir(), nil)
+	view := &domain.MainlineView{
+		SchemaVersion: 1, RebuiltAt: "2026-04-29T00:00:00Z", MainBranch: "main",
+		Intents: []domain.IntentView{
+			{IntentID: "int_jwt", Status: domain.StatusMerged, ActorID: "x", Goal: "Add JWT auth",
+				Summary: &domain.IntentSummary{Title: "JWT migration", Decisions: []domain.Decision{{Chose: "use JWT"}}},
+				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"auth"}, FilesTouched: []string{"a.go"}}},
+			{IntentID: "int_billing", Status: domain.StatusMerged, ActorID: "x", Goal: "Add billing",
+				Summary: &domain.IntentSummary{Title: "Billing rewrite", Risks: []string{"may break old jwt sessions"}},
+				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"billing"}, FilesTouched: []string{"b.go"}}},
+			{IntentID: "int_other", Status: domain.StatusMerged, ActorID: "x", Goal: "Refactor logging",
+				Summary: &domain.IntentSummary{Title: "Logging cleanup"},
+				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"logs"}, FilesTouched: []string{"c.go"}}},
+		},
+	}
+	if err := store.RebuildMainlineIndex(view); err != nil {
+		t.Fatal(err)
+	}
+
+	// "jwt" should hit int_jwt (title + decision text) AND int_billing
+	// (risk text mentions "old jwt sessions") — case-insensitive.
+	got, err := store.ReadIntentViewsByQuery("JWT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]bool{}
+	for _, iv := range got {
+		ids[iv.IntentID] = true
+	}
+	if !ids["int_jwt"] || !ids["int_billing"] {
+		t.Errorf("expected int_jwt + int_billing, got %+v", ids)
+	}
+	if ids["int_other"] {
+		t.Errorf("int_other should not match jwt query")
+	}
+
+	// Empty keyword returns nil without hitting the DB.
+	if rs, err := store.ReadIntentViewsByQuery(""); err != nil || rs != nil {
+		t.Errorf("empty keyword should be (nil, nil); got %v / %v", rs, err)
+	}
+}
+
+// Cache-missing paths return ErrMainlineIndexUnavailable so callers
+// can fall through to the JSON view scan without distinguishing
+// "broken cache" from "no rows".
+func TestReadIntentViewsByFiles_MissingCacheIsErrMainlineIndexUnavailable(t *testing.T) {
+	store := New(t.TempDir(), nil)
+	_, err := store.ReadIntentViewsByFiles([]string{"a.go"})
+	if err == nil {
+		t.Fatal("expected ErrMainlineIndexUnavailable when cache missing")
+	}
+	if err != ErrMainlineIndexUnavailable {
+		t.Errorf("expected ErrMainlineIndexUnavailable, got %v", err)
+	}
+}
+
 func assertCount(t *testing.T, db *sql.DB, table string, want int) {
 	t.Helper()
 	var got int

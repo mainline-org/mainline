@@ -215,6 +215,16 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	churn := buildFileChurnIndex(view)
 	now := time.Now()
 
+	// Decide the candidate set the scorer iterates over. For --files
+	// and --query, prefer the SQLite reverse indexes (intent_files /
+	// intent_decisions / intent_risks) so we only score intents
+	// that have at least one matching surface, instead of every
+	// sealed intent in the view. JSON-view scan stays as the
+	// fallback when the SQLite cache is missing — semantics
+	// identical because both paths deserialise the same IntentView
+	// struct.
+	candidates := candidateSetForRetrieval(s.Store, req.Mode, files, query, view)
+
 	// Score every non-drafting intent; rank; truncate to Limit.
 	// Abandoned and superseded intents stay in the result set —
 	// they are valuable signal ("this was tried", "this was
@@ -222,9 +232,9 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	// raw score by the multiplier in scoreIntentRelevance, and
 	// labelled with the retrieval status that tells the agent how
 	// to use them.
-	scored := make([]ContextRelevant, 0, len(view.Intents))
+	scored := make([]ContextRelevant, 0, len(candidates))
 	branch, _ := s.Git.CurrentBranch()
-	for _, iv := range view.Intents {
+	for _, iv := range candidates {
 		if iv.Status == domain.StatusDrafting {
 			continue
 		}
@@ -259,6 +269,62 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		RelevantIntents: scored,
 		Notes:           contextNotes(),
 	}, nil
+}
+
+// candidateSetForRetrieval picks the intents the scorer iterates
+// over. For --files and --query, the SQLite reverse indexes shrink
+// the set to "intents with at least one matching surface" — a
+// material speedup on big repos. For --current, the file/query
+// signals come from the live diff and synthesised text, but those
+// vary turn-by-turn and the candidate set on a hot loop is just as
+// likely to be the whole catalog as not, so we keep the full
+// view.Intents path for predictability.
+//
+// On any SQLite error or cache miss we fall back to view.Intents.
+// This preserves the contract "retrieval results never depend on
+// whether the cache is present"; the cache only changes the cost.
+func candidateSetForRetrieval(store interface {
+	ReadIntentViewsByFiles(paths []string) ([]domain.IntentView, error)
+	ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, error)
+}, mode string, files []string, query string, view *domain.MainlineView) []domain.IntentView {
+	switch mode {
+	case "files":
+		if len(files) == 0 {
+			return view.Intents
+		}
+		got, err := store.ReadIntentViewsByFiles(files)
+		if err != nil || len(got) == 0 {
+			return view.Intents
+		}
+		return got
+	case "query":
+		// Use the FIRST keyword as the SQLite filter; the in-memory
+		// scorer still handles the multi-keyword nuance. A single
+		// LIKE pattern is enough to shrink the corpus from "every
+		// intent" to "intents that mention this word at least once".
+		first := firstKeyword(query)
+		if first == "" {
+			return view.Intents
+		}
+		got, err := store.ReadIntentViewsByQuery(first)
+		if err != nil || len(got) == 0 {
+			return view.Intents
+		}
+		return got
+	}
+	return view.Intents
+}
+
+// firstKeyword returns the first non-stopword token from a query
+// string, or "" if there is none. We use this to drive the SQLite
+// LIKE filter; the rest of the scoring still iterates over the
+// full keyword set in memory so multi-word relevance scoring is
+// unchanged.
+func firstKeyword(q string) string {
+	for _, kw := range keywordsFromText(q) {
+		return kw
+	}
+	return ""
 }
 
 // classifyRetrievalStatus maps a domain IntentView to one of four

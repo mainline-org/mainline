@@ -142,6 +142,147 @@ func (s *Store) ReadIndexedLogIntents(statusFilter domain.IntentStatus) ([]Index
 	return out, nil
 }
 
+// ReadIntentViewByID returns the IntentView for one specific id by
+// hitting the SQLite primary key index. Falls through to
+// ErrMainlineIndexUnavailable when the cache is missing — callers
+// then load the full JSON view and scan.
+//
+// Semantics are identical to scanning the JSON view: we deserialise
+// the raw_json column (the same struct WriteMainlineView serialised
+// into the JSON file on the same sync). No projection trimming.
+func (s *Store) ReadIntentViewByID(id string) (*domain.IntentView, error) {
+	if _, err := os.Stat(s.mainlineIndexPath()); err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrMainlineIndexUnavailable
+		}
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", s.mainlineIndexPath())
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	row := db.QueryRow(`SELECT raw_json FROM intents WHERE intent_id = ?`, id)
+	var raw string
+	if err := row.Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var iv domain.IntentView
+	if err := json.Unmarshal([]byte(raw), &iv); err != nil {
+		return nil, err
+	}
+	return &iv, nil
+}
+
+// ReadIntentViewsByFiles returns every IntentView whose
+// fingerprint.files_touched intersects the given paths, using the
+// intent_files reverse index. The hot path for `mainline context
+// --files` — shrinks the candidate set from "every sealed intent"
+// to "intents that touched at least one queried file".
+//
+// Returns ErrMainlineIndexUnavailable when the cache is missing.
+// Returns no rows (not an error) when no intent matches.
+func (s *Store) ReadIntentViewsByFiles(paths []string) ([]domain.IntentView, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if _, err := os.Stat(s.mainlineIndexPath()); err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrMainlineIndexUnavailable
+		}
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", s.mainlineIndexPath())
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Build placeholder set for the IN clause. SQLite's
+	// argument-positional ? doesn't variadicize, so we expand by
+	// hand. paths comes from the agent's --files flag — bounded by
+	// the diff size, never thousands.
+	placeholders := strings.Repeat("?,", len(paths))
+	placeholders = placeholders[:len(placeholders)-1]
+	query := `SELECT DISTINCT i.raw_json
+		FROM intents i
+		JOIN intent_files f ON f.intent_id = i.intent_id
+		WHERE f.path IN (` + placeholders + `)
+		ORDER BY i.activity_at DESC, i.intent_id ASC`
+	args := make([]any, 0, len(paths))
+	for _, p := range paths {
+		args = append(args, p)
+	}
+	return scanIntentViews(db, query, args)
+}
+
+// ReadIntentViewsByQuery returns every IntentView whose title /
+// what / decision text / risk text contains the given keyword
+// (case-insensitive substring). Hot path for `mainline context
+// --query`. Substring rather than FTS because the corpus is small
+// (hundreds of intents) and SQLite LIKE on indexed columns is
+// already fast at this scale.
+//
+// Returns ErrMainlineIndexUnavailable when the cache is missing.
+func (s *Store) ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, nil
+	}
+	if _, err := os.Stat(s.mainlineIndexPath()); err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrMainlineIndexUnavailable
+		}
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", s.mainlineIndexPath())
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	pattern := "%" + strings.ToLower(keyword) + "%"
+	query := `SELECT DISTINCT i.raw_json
+		FROM intents i
+		LEFT JOIN intent_decisions d ON d.intent_id = i.intent_id
+		LEFT JOIN intent_risks r ON r.intent_id = i.intent_id
+		WHERE LOWER(i.title) LIKE ?
+		   OR LOWER(i.goal) LIKE ?
+		   OR LOWER(d.text) LIKE ?
+		   OR LOWER(r.text) LIKE ?
+		ORDER BY i.activity_at DESC, i.intent_id ASC`
+	args := []any{pattern, pattern, pattern, pattern}
+	return scanIntentViews(db, query, args)
+}
+
+// scanIntentViews unmarshals the raw_json column from each result
+// row. Shared by the two query helpers above so the deserialise
+// path stays in one place.
+func scanIntentViews(db *sql.DB, query string, args []any) ([]domain.IntentView, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.IntentView
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var iv domain.IntentView
+		if err := json.Unmarshal([]byte(raw), &iv); err != nil {
+			return nil, err
+		}
+		out = append(out, iv)
+	}
+	return out, rows.Err()
+}
+
 func initialiseMainlineIndex(db *sql.DB) error {
 	stmts := []string{
 		`PRAGMA journal_mode = OFF`,
