@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -229,6 +231,10 @@ func renderEvalSummary(s eval.Summary) {
 var (
 	evalAgentRunnerPath string
 	evalAgentScratchDir string
+	evalAgentJudgePath  string
+	evalAgentOutputDir  string
+	evalAgentModel      string
+	evalAgentSeed       int
 )
 
 var evalAgentCmd = &cobra.Command{
@@ -247,7 +253,21 @@ The runner binary's contract:
     text containing "mainline context" infers ContextRetrieved=true.
 
 This is the seam any LLM CLI plugs into — write a small wrapper that
-reads stdin, drives your favourite LLM, writes stdout.`,
+reads stdin, drives your favourite LLM, writes stdout.
+
+Scorer v2 (--judge):
+
+  When --judge is provided, the harness uses an LLM-as-judge binary
+  instead of substring matching. The judge classifies each (output,
+  forbidden_item) pair as PROPOSED (violation) or DECLINED-WITH-
+  REFERENCE (not a violation). This eliminates the false positives
+  that plague substring scoring.
+
+  Judge binary contract:
+  - stdin: { "agent_output": "...", "forbidden_item": "...",
+    "fixture_name": "...", "prompt_key": "...", "task": "..." }
+  - stdout: { "proposed": bool, "referenced_but_rejected": bool,
+    "evidence_quote": "...", "confidence": 0.0-1.0 }`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if evalAgentRunnerPath == "" {
@@ -269,24 +289,132 @@ reads stdin, drives your favourite LLM, writes stdout.`,
 			fs = matched
 		}
 		runner := &eval.CommandRunner{Path: evalAgentRunnerPath}
+		if evalAgentModel != "" {
+			runner.Env = append(runner.Env, "EVAL_MODEL="+evalAgentModel)
+		}
+		if evalAgentSeed > 0 {
+			runner.Env = append(runner.Env, fmt.Sprintf("EVAL_SEED=%d", evalAgentSeed))
+		}
 		scratch := evalAgentScratchDir
 		if scratch == "" {
 			scratch = filepath.Join(os.TempDir(), "mainline-eval-agent")
 		}
 		_ = os.MkdirAll(scratch, 0o755)
+
+		// v2 path: if --judge is provided, use LLM-as-judge scorer
+		if evalAgentJudgePath != "" {
+			judge := &eval.CommandJudge{Path: evalAgentJudgePath}
+			scores := eval.RunWithJudge(fs, runner, judge, scratch)
+			summary := eval.Summarize(scores)
+
+			// Persist output if --output-dir specified
+			if evalAgentOutputDir != "" {
+				persistEvalOutput(scores, summary)
+			}
+
+			if jsonOutput {
+				outputJSON(eval.EvalRunOutput{
+					Metadata: eval.EvalRunMetadata{
+						Timestamp:    time.Now().UTC().Format(time.RFC3339),
+						Model:        evalAgentModel,
+						RunnerPath:   evalAgentRunnerPath,
+						JudgePath:    evalAgentJudgePath,
+						Seed:         evalAgentSeed,
+						FixtureCount: len(fs),
+					},
+					Scores:  scores,
+					Summary: summary,
+				})
+			} else {
+				renderJudgedScores(scores, summary)
+			}
+			if summary.CodeFirstViolations > 0 || summary.IntentFirstViolations > 0 {
+				os.Exit(2)
+			}
+			return
+		}
+
+		// v1 path: substring scorer (legacy, preserved for comparison)
 		scores := eval.RunWithAgent(fs, runner, scratch)
 		if jsonOutput {
 			outputJSON(scores)
 		} else {
 			renderAgentScores(scores)
 		}
-		// Exit 2 if any score has forbidden violations OR run errors.
 		for _, s := range scores {
 			if len(s.ForbiddenViolations) > 0 || s.RunError != "" {
 				os.Exit(2)
 			}
 		}
 	},
+}
+
+// renderJudgedScores prints the v2 judge-scored results.
+func renderJudgedScores(scores []eval.JudgedScore, summary eval.EvalRunSummary) {
+	byFixture := map[string]map[eval.AgentRunPrompt]eval.JudgedScore{}
+	order := []string{}
+	for _, s := range scores {
+		if _, seen := byFixture[s.Fixture]; !seen {
+			order = append(order, s.Fixture)
+			byFixture[s.Fixture] = map[eval.AgentRunPrompt]eval.JudgedScore{}
+		}
+		byFixture[s.Fixture][s.Prompt] = s
+	}
+	for _, name := range order {
+		row := byFixture[name]
+		cf := row[eval.AgentPromptCodeFirst]
+		intf := row[eval.AgentPromptIntentFirst]
+		fmt.Printf("\n%s\n", name)
+		fmt.Printf("  code-first    violations=%d  declined=%d  context=%v  ms=%d\n",
+			cf.ViolationCount, cf.DeclinedCount, cf.ContextRetrieved, cf.DurationMillis)
+		fmt.Printf("  intent-first  violations=%d  declined=%d  context=%v  ms=%d\n",
+			intf.ViolationCount, intf.DeclinedCount, intf.ContextRetrieved, intf.DurationMillis)
+		for _, v := range cf.Verdicts {
+			if v.Proposed {
+				fmt.Printf("    ✗ CF PROPOSED: %s (%.0f%%)\n", v.ForbiddenItem, v.Confidence*100)
+				if v.EvidenceQuote != "" {
+					fmt.Printf("      evidence: %q\n", v.EvidenceQuote)
+				}
+			}
+		}
+		for _, v := range intf.Verdicts {
+			if v.Proposed {
+				fmt.Printf("    ✗ IF PROPOSED: %s (%.0f%%)\n", v.ForbiddenItem, v.Confidence*100)
+				if v.EvidenceQuote != "" {
+					fmt.Printf("      evidence: %q\n", v.EvidenceQuote)
+				}
+			}
+		}
+	}
+	fmt.Printf("\n─── Summary ───\n")
+	fmt.Printf("  code-first:   %d violations across %d fixtures\n",
+		summary.CodeFirstViolations, summary.CodeFirstFixtures)
+	fmt.Printf("  intent-first: %d violations across %d fixtures\n",
+		summary.IntentFirstViolations, summary.IntentFirstFixtures)
+	fmt.Printf("  Δ = %d  verdict: %s\n", summary.Delta, summary.Verdict)
+}
+
+// persistEvalOutput writes the full eval output to the output directory.
+func persistEvalOutput(scores []eval.JudgedScore, summary eval.EvalRunSummary) {
+	dir := evalAgentOutputDir
+	_ = os.MkdirAll(dir, 0o755)
+
+	output := eval.EvalRunOutput{
+		Metadata: eval.EvalRunMetadata{
+			Timestamp:    time.Now().UTC().Format(time.RFC3339),
+			Model:        evalAgentModel,
+			RunnerPath:   evalAgentRunnerPath,
+			JudgePath:    evalAgentJudgePath,
+			Seed:         evalAgentSeed,
+			FixtureCount: len(scores) / 2,
+		},
+		Scores:  scores,
+		Summary: summary,
+	}
+	data, _ := json.MarshalIndent(output, "", "  ")
+	outPath := filepath.Join(dir, "eval-run.json")
+	_ = os.WriteFile(outPath, data, 0o644)
+	fmt.Fprintf(os.Stderr, "eval: output written to %s\n", outPath)
 }
 
 // renderAgentScores prints a per-(fixture, prompt) table comparing
@@ -339,5 +467,13 @@ func init() {
 		"path to a runner binary (reads JSON envelope on stdin, writes agent response on stdout)")
 	evalAgentCmd.Flags().StringVar(&evalAgentScratchDir, "scratch", "",
 		"scratch directory for runner artifacts (default: <os-temp>/mainline-eval-agent)")
+	evalAgentCmd.Flags().StringVar(&evalAgentJudgePath, "judge", "",
+		"path to a judge binary for scorer v2 (reads JudgeRequest on stdin, writes JudgeVerdict on stdout)")
+	evalAgentCmd.Flags().StringVar(&evalAgentOutputDir, "output-dir", "",
+		"directory to persist eval run output (scores, verdicts, summary)")
+	evalAgentCmd.Flags().StringVar(&evalAgentModel, "model", "",
+		"model name passed to runner via EVAL_MODEL env var")
+	evalAgentCmd.Flags().IntVar(&evalAgentSeed, "seed", 0,
+		"seed number passed to runner via EVAL_SEED env var (for multi-seed runs)")
 	evalCmd.AddCommand(evalListCmd, evalRunCmd, evalAgentCmd)
 }
