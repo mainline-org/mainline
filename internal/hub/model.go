@@ -284,6 +284,27 @@ type HubIntent struct {
 	// surface phase-2 conflict edges. Nil means no agent has run
 	// `mainline check --submit` against this intent yet.
 	LastCheck *HubCheckSummary `json:"last_check,omitempty"`
+
+	// InheritedConstraints surfaces anti_patterns from prior intents
+	// whose touched files / subsystems overlap with this intent.
+	// Each entry carries an Acknowledgement (decision /
+	// rejected_alternative / anti_pattern / risk / "" for none) so
+	// reviewers see "did the agent acknowledge the prior constraint"
+	// without re-walking the seal text.
+	InheritedConstraints []HubInheritedConstraint `json:"inherited_constraints,omitempty"`
+}
+
+// HubInheritedConstraint mirrors domain.InheritedConstraint plus the
+// pre-computed acknowledgement form the Hub renderer + reviewer-facing
+// surfaces use as a badge. Acknowledgement is "" when not acknowledged
+// in any of the supported forms.
+type HubInheritedConstraint struct {
+	SourceIntent    string   `json:"source_intent"`
+	What            string   `json:"what"`
+	Why             string   `json:"why"`
+	Severity        string   `json:"severity,omitempty"`
+	MatchedBy       []string `json:"matched_by"`
+	Acknowledgement string   `json:"acknowledgement,omitempty"` // decision | rejected_alternative | anti_pattern | risk | ""
 }
 
 // HubCheckSummary is the per-intent rollup of the latest phase-2

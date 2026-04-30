@@ -736,6 +736,81 @@ func sealedIntentSupersedingWith(t *testing.T, dir string, svc *Service, branchS
 }
 
 // Helper: seal an intent with a populated AntiPatterns slice.
+// TestContextRetrieval_SurfacesInheritedConstraints verifies that
+// when --files names a file with prior anti_patterns from another
+// sealed intent, those anti_patterns appear in the top-level
+// inherited_constraints field — even if the source intent itself
+// is the only candidate.
+func TestContextRetrieval_SurfacesInheritedConstraints(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	_ = sealedIntentTouchingWithAntiPatterns(t, dir, svc, "auth-old",
+		[]string{"src/auth/middleware.go"},
+		"Earlier auth migration",
+		[]domain.AntiPattern{
+			{What: "Removing legacy session middleware on /oauth path", Why: "OAuth callback needs session", Severity: "high"},
+			{What: "Bypassing JWT validation in dev mode", Why: "leaks", Severity: "medium"},
+		})
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "files",
+		Files: []string{"src/auth/middleware.go"},
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if len(res.InheritedConstraints) < 2 {
+		t.Fatalf("expected >=2 inherited constraints, got %d (%+v)", len(res.InheritedConstraints), res.InheritedConstraints)
+	}
+	// Ordering: high severity must come before medium.
+	if res.InheritedConstraints[0].Severity != "high" {
+		t.Errorf("expected high-severity constraint first, got %q",
+			res.InheritedConstraints[0].Severity)
+	}
+	// Top-level note must alert the agent.
+	hasAckNote := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, "Inherited high-severity") {
+			hasAckNote = true
+			break
+		}
+	}
+	if !hasAckNote {
+		t.Errorf("expected acknowledgement-required note in Notes; got %v", res.Notes)
+	}
+}
+
+// TestContextRetrieval_NoInheritedWhenNoOverlap is the negative case
+// — no constraints surfaced when the queried files don't overlap
+// any prior intent's touched files.
+func TestContextRetrieval_NoInheritedWhenNoOverlap(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	_ = sealedIntentTouchingWithAntiPatterns(t, dir, svc, "auth-old",
+		[]string{"internal/auth/middleware.go"},
+		"Auth migration",
+		[]domain.AntiPattern{
+			{What: "Removing legacy session middleware", Why: "breaks sso", Severity: "high"},
+		})
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "files",
+		Files: []string{"internal/billing/charges.go"},
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if len(res.InheritedConstraints) != 0 {
+		t.Errorf("expected zero inherited constraints for non-overlapping path, got %v", res.InheritedConstraints)
+	}
+}
+
 func sealedIntentTouchingWithAntiPatterns(t *testing.T, dir string, svc *Service, branchSuffix string,
 	files []string, summaryTitle string, antiPatterns []domain.AntiPattern) string {
 	t.Helper()

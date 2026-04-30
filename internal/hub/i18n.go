@@ -122,7 +122,7 @@ var translations = map[string]map[string]string{
 	},
 	"coverage.covered_suffix": {LangEN: "covered", LangZH: "已覆盖"},
 	"coverage.uncovered_commits": {LangEN: "uncovered commit", LangZH: "未覆盖 commit"},
-	"coverage.high_risk_uncovered": {LangEN: "high-risk uncovered change", LangZH: "高风险未覆盖变更"},
+	"coverage.high_risk_uncovered": {LangEN: "possibly high-risk uncovered change", LangZH: "可能高风险的未覆盖变更"},
 
 	"coverage.eyebrow": {LangEN: "Coverage", LangZH: "覆盖率"},
 	"coverage.headline": {
@@ -214,6 +214,19 @@ var translations = map[string]map[string]string{
 		LangEN: "Status mix only. Watch abandonment & supersession rates as a churn signal — not as a per-person score.",
 		LangZH: "仅展示状态分布。abandonment 和 supersession 比例反映返工信号，不是个人评分。",
 	},
+
+	"intent.risks": {LangEN: "Risks", LangZH: "风险"},
+
+	"inherited.heading": {LangEN: "Inherited constraints considered", LangZH: "继承的硬约束"},
+	"inherited.lead": {
+		LangEN: "Anti-patterns from prior intents whose touched files or subsystems overlap with this intent. High-severity items must be acknowledged in decisions, rejected_alternatives, risks, or your own anti_patterns.",
+		LangZH: "来自历史 intent 的硬约束，因为修改的文件或子系统与本 intent 重叠而被继承下来。高风险项必须在 decisions / rejected_alternatives / risks / 自己的 anti_patterns 之一里被确认。",
+	},
+	"inherited.severity_unspecified": {LangEN: "unspecified", LangZH: "未标注"},
+	"inherited.from":                 {LangEN: "from", LangZH: "来自"},
+	"inherited.matched_by":           {LangEN: "matched by", LangZH: "命中"},
+	"inherited.ack_via":              {LangEN: "acknowledged via", LangZH: "已通过"},
+	"inherited.unack":                {LangEN: "not acknowledged", LangZH: "未确认"},
 
 	"actor.heading": {LangEN: "Activity by actor", LangZH: "成员活动"},
 	"actor.lead": {
