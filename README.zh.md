@@ -134,3 +134,21 @@ agent 用上面那些 JSON 命令。
 
 完整的英文文档（架构 / 概念 / 详细命令 / FAQ / 配置 / 存储布局 /
 开发指南 / 路线图）在 [README.md](./README.md)。
+
+---
+
+## Eval: intent-first 真的比 code-first 少犯错吗？
+
+是的。在 8 个合成场景上的测试结果：
+
+| 模式 | 语义违规 | 上下文检索 |
+|---|---|---|
+| **Intent-first** | **0 / 8** | 8 / 8 |
+| Code-first | 3 / 8 | 0 / 8 |
+
+code-first 犯错的 3 个场景有一个共同点：**仅靠读代码无法发现约束**——
+被废弃的方案（代码还在但失败原因只在 intent 里）、被取代的决策（新旧
+代码共存但不知道哪个已废弃）、纯文档提交里建立的命名约定。
+
+完整方法论和下一步 →
+[docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)

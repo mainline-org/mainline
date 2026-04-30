@@ -95,6 +95,7 @@ manually and follows the same protocol — both paths work.
 - [Development](#development)
 - [Project structure](#project-structure)
 - [Roadmap](#roadmap)
+- [Eval: does intent-first actually help?](#eval-does-intent-first-actually-help)
 
 ## Install
 
@@ -504,6 +505,38 @@ mainline/
 ├── docs_for_ai/               # Spec patches (rc1 → rc5) + AGENTS.md
 └── .github/workflows/ci.yml
 ```
+
+## Eval: does intent-first actually help?
+
+Yes. On 8 synthetic scenarios designed to test the core thesis:
+
+| Mode | Semantic violations | Context retrieved |
+|---|---|---|
+| **Intent-first** | **0 / 8** | 8 / 8 |
+| Code-first | 3 / 8 | 0 / 8 |
+
+The 3 violations code-first agents commit are in scenarios where **code
+inspection alone cannot reveal the constraint:**
+
+1. A prior approach was **abandoned** — code still exists, but the reason
+   it failed (replication-lag) is only in the intent record.
+2. A decision was **superseded** — both old and new code coexist, but only
+   the intent says "CSV is deprecated, add to Parquet only".
+3. A convention lives in a **docs-only commit** — no source file carries
+   the terminology rule.
+
+Intent-first agents read `mainline context` and see the anti-pattern
+before they propose the change. Code-first agents have no signal.
+
+**Run it yourself:**
+
+```bash
+mainline eval run                                          # layer 1: retrieval preconditions (8/8 pass)
+mainline eval agent --runner ./scripts/eval-runner-copilot.py   # layer 2: code-first vs intent-first
+```
+
+Full methodology, caveats, and next steps →
+[docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)
 
 ## Roadmap
 
