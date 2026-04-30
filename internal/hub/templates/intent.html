@@ -78,6 +78,19 @@
 {{if .Subsystems}}<p class="tags">Subsystems: {{range .Subsystems}}<span class="tag">{{.}}</span> {{end}}</p>{{end}}
 {{if .Tags}}<p class="tags">Tags: {{range .Tags}}<span class="tag">{{.}}</span> {{end}}</p>{{end}}
 
+{{if .References}}
+<section><h2>References</h2>
+<ul class="references">
+{{range .References}}<li>
+  <span class="ref-kind">{{.Kind}}</span>
+  {{if .Label}}<strong>{{.Label}}</strong>{{end}}
+  {{if .Client}}<span class="muted">· {{.Client}}</span>{{end}}
+  {{if .URL}}<br><a href="{{.URL}}" class="ref-link">{{.URL}}</a>{{else if .Ref}}<br><code>{{.Ref}}</code>{{end}}
+</li>{{end}}
+</ul>
+</section>
+{{end}}
+
 {{end}}{{if .IntentLinks}}
 <section><h2>Related</h2>
 <ul>{{range .IntentLinks}}<li><a href="{{.ID}}.html"><code>{{shortID .ID}}</code></a> — {{.Title}}</li>{{end}}</ul>

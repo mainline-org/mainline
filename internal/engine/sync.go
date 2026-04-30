@@ -260,6 +260,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				BaseCommit:      evt.BaseCommit,
 				CodeCommit:      evt.CodeCommit,
 				BackfillCommits: evt.BackfillCommits,
+				References:      evt.References,
 				Summary:         &evt.Summary,
 				Fingerprint:     &evt.Fingerprint,
 				ViewRebuiltAt:   core.Now(),

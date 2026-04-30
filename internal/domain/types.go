@@ -68,6 +68,9 @@ type IntentView struct {
 	// CheckSubmit wrote an event no command could read back.
 	LastCheck *CheckSummary `json:"last_check,omitempty"`
 
+	// References to external materials (sessions, issues, PRs, docs, CI runs).
+	References []Reference `json:"references,omitempty"`
+
 	ViewRebuiltAt string `json:"view_rebuilt_at"`
 }
 
@@ -146,6 +149,7 @@ type Turn struct {
 	FilesChanged []FileChange `json:"files_changed"`
 	DiffStats    DiffStats    `json:"diff_stats"`
 	Caller       CallerInfo   `json:"caller"`
+	References   []Reference  `json:"references,omitempty"`
 }
 
 type TurnSummary struct {
@@ -326,11 +330,24 @@ type SealResult struct {
 	Fingerprint       SemanticFingerprint `json:"fingerprint"`
 	Confidence        SealConfidence      `json:"confidence"`
 	UnsupportedClaims []string            `json:"unsupported_claims,omitempty"`
+	References        []Reference         `json:"references,omitempty"`
 }
 
 type SealConfidence struct {
 	Summary     float64 `json:"summary"`
 	Fingerprint float64 `json:"fingerprint"`
+}
+
+// Reference is an external material linked to an intent. Mainline
+// stores only the reference metadata — it never reads, parses, or
+// indexes the referenced content. Each reference must have at least
+// Ref or URL non-empty.
+type Reference struct {
+	Kind   string `json:"kind"`             // session | issue | pr | doc | ci | other
+	Label  string `json:"label,omitempty"`  // human-readable description
+	Client string `json:"client,omitempty"` // agent client (claude-code, cursor, codex, copilot, gemini-cli, opencode)
+	Ref    string `json:"ref,omitempty"`    // session/checkpoint/provider id
+	URL    string `json:"url,omitempty"`    // file URL / http URL / provider URL
 }
 
 // SealPreparePackage is returned by `mainline seal --prepare`.

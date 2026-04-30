@@ -300,6 +300,9 @@ type HubIntent struct {
 
 	SupersededByIntent string `json:"superseded_by_intent,omitempty"`
 
+	// References to external materials (sessions, issues, etc.)
+	References []domain.Reference `json:"references,omitempty"`
+
 	// LastCheck mirrors IntentView.LastCheck so the graph view can
 	// surface phase-2 conflict edges. Nil means no agent has run
 	// `mainline check --submit` against this intent yet.
@@ -460,6 +463,9 @@ func hubIntentFromView(v *domain.IntentView) HubIntent {
 		out.ArchitecturalClaims = append([]string(nil), f.ArchitecturalClaims...)
 		out.BehavioralChanges = append([]string(nil), f.BehavioralChanges...)
 		out.Tags = append([]string(nil), f.Tags...)
+	}
+	if len(v.References) > 0 {
+		out.References = append([]domain.Reference(nil), v.References...)
 	}
 	if out.Title == "" {
 		out.Title = v.Goal

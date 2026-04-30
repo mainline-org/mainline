@@ -56,6 +56,9 @@ type IntentSealedEvent struct {
 	// by `mainline start --commits` for retroactive coverage of
 	// commits that landed without an intent.
 	BackfillCommits []string `json:"backfill_commits,omitempty"`
+
+	// References to external materials (sessions, issues, PRs, docs, CI runs).
+	References []Reference `json:"references,omitempty"`
 }
 
 // IntentSupersededEvent records that an intent was replaced by a new one.

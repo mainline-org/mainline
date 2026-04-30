@@ -168,6 +168,10 @@ type AppendResult struct {
 }
 
 func (s *Service) Append(description string) (*AppendResult, error) {
+	return s.AppendWithRefs(description, nil)
+}
+
+func (s *Service) AppendWithRefs(description string, refs []domain.Reference) (*AppendResult, error) {
 	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
@@ -207,6 +211,7 @@ func (s *Service) Append(description string) (*AppendResult, error) {
 			PID: pid,
 			Cwd: cwd,
 		},
+		References: refs,
 	}
 
 	if err := s.Store.AppendTurn(turn); err != nil {
@@ -240,7 +245,7 @@ type AppendAutoResult struct {
 	IntentCreated bool   `json:"intent_created"`
 }
 
-func (s *Service) AppendWithAutoStart(description, goal string) (*AppendAutoResult, error) {
+func (s *Service) AppendWithAutoStart(description, goal string, refs []domain.Reference) (*AppendAutoResult, error) {
 	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
@@ -257,7 +262,7 @@ func (s *Service) AppendWithAutoStart(description, goal string) (*AppendAutoResu
 		created = true
 	}
 
-	result, err := s.Append(description)
+	result, err := s.AppendWithRefs(description, refs)
 	if err != nil {
 		return nil, err
 	}

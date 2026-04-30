@@ -640,7 +640,7 @@ func (s *Service) PRDescription(intentID string) (string, error) {
 					inherited = domain.BuildInheritedConstraints(view,
 						iv.Fingerprint.FilesTouched, iv.Fingerprint.Subsystems, iv.IntentID)
 				}
-				return formatPRDescription(iv.IntentID, iv.Summary, iv.Fingerprint, inherited), nil
+				return formatPRDescription(iv.IntentID, iv.Summary, iv.Fingerprint, inherited, iv.References), nil
 			}
 		}
 	}
@@ -656,7 +656,7 @@ func (s *Service) PRDescription(intentID string) (string, error) {
 }
 
 // rc3: pure human-readable markdown, no Mainline-* fields
-func formatPRDescription(intentID string, summary *domain.IntentSummary, fp *domain.SemanticFingerprint, inherited []domain.InheritedConstraint) string {
+func formatPRDescription(intentID string, summary *domain.IntentSummary, fp *domain.SemanticFingerprint, inherited []domain.InheritedConstraint, refs []domain.Reference) string {
 	var sb strings.Builder
 	sb.WriteString("## Mainline Intent\n\n")
 	sb.WriteString(fmt.Sprintf("**Intent:** `%s`\n", intentID))
@@ -720,6 +720,22 @@ func formatPRDescription(intentID string, summary *domain.IntentSummary, fp *dom
 			}
 			if len(ic.MatchedBy) > 0 {
 				sb.WriteString(fmt.Sprintf("  - Matched by: %s\n", strings.Join(ic.MatchedBy, ", ")))
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(refs) > 0 {
+		sb.WriteString("### References\n\n")
+		for _, ref := range refs {
+			label := ref.Label
+			if label == "" {
+				label = ref.Kind
+			}
+			if ref.URL != "" {
+				sb.WriteString(fmt.Sprintf("- %s: [`%s`](%s)\n", label, ref.Ref, ref.URL))
+			} else if ref.Ref != "" {
+				sb.WriteString(fmt.Sprintf("- %s: `%s`\n", label, ref.Ref))
 			}
 		}
 		sb.WriteString("\n")

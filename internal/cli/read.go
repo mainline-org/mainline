@@ -124,6 +124,24 @@ var showCmd = &cobra.Command{
 					fmt.Printf("What:    %s\n", v.Summary.What)
 					fmt.Printf("Why:     %s\n", v.Summary.Why)
 				}
+				if len(v.References) > 0 {
+					fmt.Println("References:")
+					for _, ref := range v.References {
+						label := ref.Label
+						if label == "" {
+							label = ref.Kind
+						}
+						detail := ref.Ref
+						if detail == "" {
+							detail = ref.URL
+						}
+						if ref.Client != "" {
+							fmt.Printf("  - %s · %s\n    %s:%s\n", ref.Kind, label, ref.Client, detail)
+						} else {
+							fmt.Printf("  - %s · %s\n    %s\n", ref.Kind, label, detail)
+						}
+					}
+				}
 				if v.LastCheck != nil {
 					lc := v.LastCheck
 					verdict := "no_conflict"

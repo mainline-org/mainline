@@ -378,6 +378,9 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		// at start time so cross-actor sync sees it and Pin can pin
 		// to those exact commits.
 		BackfillCommits: draft.BackfillCommits,
+
+		// References attached by the agent via SealResult.
+		References: sr.References,
 	}
 
 	if err := s.Store.AppendActorLogEvent(identity.ActorID, cfg.Mainline.ActorLogPrefix, event); err != nil {

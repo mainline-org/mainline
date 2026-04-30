@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/engine"
 )
 
@@ -16,6 +18,7 @@ var sealSubmit bool
 var sealIntentID string
 var sealOffline bool
 var sealAllowDirty bool
+var sealRefs []string
 
 var sealCmd = &cobra.Command{
 	Use:   "seal",
@@ -45,6 +48,17 @@ var sealCmd = &cobra.Command{
 				outputError(fmt.Errorf("read stdin: %w", err))
 				return
 			}
+
+			// Inject references from --ref flags and environment auto-discovery.
+			refs := collectSealReferences()
+			if len(refs) > 0 {
+				var sr domain.SealResult
+				if err := json.Unmarshal(data, &sr); err == nil {
+					sr.References = append(sr.References, refs...)
+					data, _ = json.Marshal(sr)
+				}
+			}
+
 			result, err := svc.SealSubmitWithOptions(json.RawMessage(data),
 				&engine.SealSubmitOptions{Offline: sealOffline, AllowDirty: sealAllowDirty})
 			if err != nil {
@@ -155,4 +169,100 @@ func init() {
 	sealCmd.Flags().StringVar(&sealIntentID, "intent", "", "intent ID (default: active intent on current branch)")
 	sealCmd.Flags().BoolVar(&sealOffline, "offline", false, "skip the auto sync+check inside --submit (sealed_local only)")
 	sealCmd.Flags().BoolVar(&sealAllowDirty, "allow-dirty", false, "submit even when worktree is dirty/untracked (records dirty status in audit trail)")
+	sealCmd.Flags().StringArrayVar(&sealRefs, "ref", nil, "attach reference (format: kind:client:ref, e.g. session:claude-code:sess_abc123)")
+}
+
+// collectSealReferences builds references from --ref flags and env auto-discovery.
+func collectSealReferences() []domain.Reference {
+	var refs []domain.Reference
+
+	// From --ref flags: "kind:client:ref" or "kind::ref"
+	for _, r := range sealRefs {
+		ref := parseRefFlag(r)
+		if ref.Kind != "" && (ref.Ref != "" || ref.URL != "") {
+			refs = append(refs, ref)
+		}
+	}
+
+	// Auto-discover from environment variables (only attach if real).
+	refs = append(refs, discoverSessionRefs()...)
+	return refs
+}
+
+// parseRefFlag parses "kind:client:ref" into a Reference.
+func parseRefFlag(s string) domain.Reference {
+	parts := strings.SplitN(s, ":", 3)
+	switch len(parts) {
+	case 3:
+		return domain.Reference{
+			Kind:   parts[0],
+			Client: parts[1],
+			Ref:    parts[2],
+			Label:  autoLabel(parts[0], parts[1]),
+		}
+	case 2:
+		return domain.Reference{Kind: parts[0], Ref: parts[1], Label: autoLabel(parts[0], "")}
+	default:
+		return domain.Reference{}
+	}
+}
+
+// discoverSessionRefs checks well-known environment variables for session IDs.
+func discoverSessionRefs() []domain.Reference {
+	var refs []domain.Reference
+	envMap := map[string]string{
+		"CLAUDE_SESSION_ID":  "claude-code",
+		"CODEX_SESSION_ID":   "codex",
+		"CURSOR_SESSION_ID":  "cursor",
+		"COPILOT_SESSION_ID": "copilot",
+		"MAINLINE_SESSION_REF": "",
+	}
+	for envVar, client := range envMap {
+		val := os.Getenv(envVar)
+		if val == "" {
+			continue
+		}
+		ref := domain.Reference{
+			Kind:   "session",
+			Client: client,
+			Ref:    val,
+			Label:  autoLabel("session", client),
+		}
+		// MAINLINE_SESSION_REF can be a URL
+		if envVar == "MAINLINE_SESSION_REF" && (strings.HasPrefix(val, "http") || strings.HasPrefix(val, "file://")) {
+			ref.URL = val
+			ref.Ref = ""
+			ref.Client = os.Getenv("MAINLINE_SESSION_CLIENT")
+			ref.Label = autoLabel("session", ref.Client)
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func autoLabel(kind, client string) string {
+	switch kind {
+	case "session":
+		if client != "" {
+			// Convert "claude-code" → "Claude Code session"
+			parts := strings.Split(client, "-")
+			for i, p := range parts {
+				if len(p) > 0 {
+					parts[i] = strings.ToUpper(p[:1]) + p[1:]
+				}
+			}
+			return strings.Join(parts, " ") + " session"
+		}
+		return "Agent session"
+	case "issue":
+		return "Issue reference"
+	case "pr":
+		return "Pull request"
+	case "doc":
+		return "Document"
+	case "ci":
+		return "CI run"
+	default:
+		return "Reference"
+	}
 }
