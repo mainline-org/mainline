@@ -85,6 +85,7 @@ func renderForLang(dir string, m *HubModel, tpl *template.Template, lang string)
 		// RootPath and OtherLangPath depend on (lang, depth).
 		nested := strings.Contains(rel, "/")
 		ctx.RootPath = rootPathFor(lang, nested)
+		ctx.LangRoot = langRootFor(nested)
 		ctx.OtherLangPath = otherLangPath(lang, rel)
 		ctx.OtherLangLabel = LanguageLabel[otherLang(lang)]
 		return renderTo(filepath.Join(base, rel), tpl, name, ctx)
@@ -150,6 +151,19 @@ func rootPathFor(lang string, nested bool) string {
 	default:
 		return strings.Repeat("../", depth)
 	}
+}
+
+// langRootFor returns the relative path back to the SAME-language
+// top-level (where index/open/files/etc live). Sidebar nav uses this
+// instead of RootPath so a Chinese reader staying inside /zh/ does
+// not get bounced back into the EN tree. Only the nested dimension
+// matters — the language dimension is a no-op since same-language
+// nav stays inside its own subtree.
+func langRootFor(nested bool) string {
+	if nested {
+		return "../"
+	}
+	return ""
 }
 
 // otherLangPath computes the href to the same page rendered in the
@@ -235,6 +249,14 @@ type pageCtx struct {
 	MainHead    string
 	NavActive   string
 	RootPath    string
+
+	// LangRoot is the relative path back to the same-language top-
+	// level (where index/open/etc live). Used by the sidebar nav so
+	// links stay within the current language's subtree. Differs from
+	// RootPath only when the current page is under /zh/: RootPath
+	// climbs out to root (where /assets and /data live), LangRoot
+	// stays inside /zh/.
+	LangRoot string
 
 	// Lang is the UI language of the current render: "en" or "zh".
 	// Templates pass this to the `t` helper for chrome strings;

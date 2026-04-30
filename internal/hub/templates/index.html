@@ -81,8 +81,8 @@
       <a class="hot-file" href="files/{{fileSlug .Path}}.html">
         <code>{{.Path}}</code>
         <span>
-          {{.IntentCount}} intent{{if ne .IntentCount 1}}s{{end}}
-          {{if .RiskIntentCount}} · {{.RiskIntentCount}} {{$.Lang | printf ""}}with risk{{if ne .RiskIntentCount 1}}s{{end}}{{end}}
+          {{.IntentCount}} {{if eq .IntentCount 1}}{{t $.Lang "hotfile.intents_singular"}}{{else}}{{t $.Lang "hotfile.intents_plural"}}{{end}}
+          {{if .RiskIntentCount}} · {{.RiskIntentCount}} {{if eq .RiskIntentCount 1}}{{t $.Lang "hotfile.with_risk_singular"}}{{else}}{{t $.Lang "hotfile.with_risk_plural"}}{{end}}{{end}}
           {{if .RecentCount}} · {{.RecentCount}} {{t $.Lang "risk.this_week_suffix"}}{{end}}
         </span>
       </a>
