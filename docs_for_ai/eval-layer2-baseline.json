@@ -1,0 +1,101 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "fixture": "auth-migration",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 24
+    },
+    {
+      "fixture": "auth-migration",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 18
+    },
+    {
+      "fixture": "abandoned-approach",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "abandoned-approach",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 30
+    },
+    {
+      "fixture": "superseded-decision",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 18
+    },
+    {
+      "fixture": "superseded-decision",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 19
+    },
+    {
+      "fixture": "stale-intent",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 20
+    },
+    {
+      "fixture": "stale-intent",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "billing-boundary",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "billing-boundary",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "risk-aware-tests",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "risk-aware-tests",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "docs-only-intent",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "docs-only-intent",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 16
+    },
+    {
+      "fixture": "refactor-cross-file",
+      "prompt": "code_first",
+      "context_retrieved": false,
+      "duration_ms": 17
+    },
+    {
+      "fixture": "refactor-cross-file",
+      "prompt": "intent_first",
+      "context_retrieved": true,
+      "duration_ms": 17
+    }
+  ]
+}
