@@ -1,12 +1,14 @@
 # Mainline Eval Results
 
-**Date:** 2026-04-29 (initial baseline)
+**Date:** 2026-04-29 — second baseline after Context Reliability v2 fixes.
 **Catalog:** 8/8 populated (auth-migration, abandoned-approach, superseded-decision, stale-intent, billing-boundary, risk-aware-tests, docs-only-intent, refactor-cross-file)
 **Run:** `mainline eval run` — precondition scorer only; LLM-runner round pending external runner wire-up.
 
-This document captures the **first complete run** of the eval harness
-against the populated catalog. The findings here are the honest input
-to Context Reliability v2.
+This document is now the **second baseline** of the eval harness against
+the populated catalog. The first baseline (also 2026-04-29 earlier in
+the day) recorded two real failures, F1 and F2, which drove the next
+round of retrieval work. Both have since landed and the eval is
+**8/8 pass**.
 
 ---
 
@@ -34,26 +36,30 @@ after the first runner round.
 
 ---
 
-## Layer 1 baseline: precondition scorer
+## Layer 1 second baseline: precondition scorer
 
-| # | Fixture | Status | Finding |
+| # | Fixture | Status | Notes |
 |---|---|---|---|
 | 1 | `auth-migration` | ✓ pass | both intents + anti_patterns surface |
 | 2 | `abandoned-approach` | ✓ pass | abandoned intent + anti_pattern surface with status=abandoned |
-| 3 | `superseded-decision` | ✗ FAIL | superseder retrieved, **superseded intent dropped** |
+| 3 | `superseded-decision` | ✓ pass | F1 fix: superseded retrieved alongside superseder, ranking preserved |
 | 4 | `stale-intent` | ✓ pass | wall-clock-stale classifier fires correctly |
 | 5 | `billing-boundary` | ✓ pass | both boundary anti_patterns surface for the auth task |
 | 6 | `risk-aware-tests` | ✓ pass | test-discipline anti_pattern surfaces |
-| 7 | `docs-only-intent` | ✗ FAIL | terminology intent **does not surface** for an AGENTS.md docs task |
+| 7 | `docs-only-intent` | ✓ pass | F2 fix: terminology anti_pattern now searched (SQLite + in-memory scorer) |
 | 8 | `refactor-cross-file` | ✓ pass | signature-preservation anti_pattern surfaces |
 
-**Score: 6/8 pass.** Two failures are **honest signals**, not test
-authoring bugs. They point at concrete retrieval gaps the next round
-of context-reliability work needs to fix.
+**Score: 8/8 pass.** The two failures from the first baseline
+(F1 superseded-decision, F2 docs-only-intent) were closed by the
+"close context retrieval eval gaps" change shipped on
+2026-04-29. The original failure analysis below is preserved for
+reference — that's the kind of signal the eval is supposed to
+produce, and the closing-the-loop pattern is the right model for
+future v2/v3 cycles.
 
 ---
 
-## Failure analysis
+## Failure analysis (preserved from first baseline; both now resolved)
 
 ### F1. `superseded-decision`: superseded intent dropped below relevance threshold
 
@@ -148,29 +154,31 @@ contract.
 
 ---
 
-## Recommended next steps (per-the-spec sequencing)
+## Recommended next steps
 
-1. **Context Reliability v2 — F2 fix first.** Add anti_patterns to
-   the keyword search (SQLite + in-memory). This is the higher-
-   leverage of the two — anti_patterns are the load-bearing safety
-   surface, and the gap is across every fixture, not just
-   docs-only-intent.
+The precondition layer is green (8/8). Next milestone is the
+LLM-runner round.
 
-2. **Context Reliability v2 — F1 fix.** Pin superseded intents into
-   the result set whenever their superseder is in. Smaller change;
-   easier to land alongside the F2 work.
-
-3. **Re-run `mainline eval run`** — expect 8/8 pass.
-
-4. **Wire an LLM runner.** Write a small bash/python wrapper that
+1. **Wire an LLM runner.** Write a small bash/python wrapper that
    reads the JSON envelope on stdin, calls Anthropic / OpenAI /
    local-LLM, writes the response on stdout. Run
    `mainline eval agent --runner <path>` to compare code-first vs
    intent-first.
 
-5. **Update this document** with the LLM-runner results, including
+2. **Update this document** with the LLM-runner results, including
    per-prompt latency, forbidden-violation counts, and any
    third-finding-class issues the agent runs surface.
+
+3. **If intent-first wins on a meaningful fraction of fixtures**,
+   that's the empirical signal the product thesis holds — promote
+   the result to a public eval-results post and link from the
+   README.
+
+4. **If intent-first is a wash**, do not silently deprioritise.
+   Diagnose: was retrieval correct (Layer-1 says yes — 8/8) but
+   the agent ignored it? Was the agent's prompt under-specified?
+   That produces v3 retrieval / prompt work, not a thesis
+   abandonment.
 
 ---
 

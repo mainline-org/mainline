@@ -200,13 +200,14 @@ type HubIntent struct {
 	BaseCommit       string `json:"base_commit,omitempty"`
 	CodeCommit       string `json:"code_commit,omitempty"`
 
-	What      string           `json:"what,omitempty"`
-	Why       string           `json:"why,omitempty"`
-	UserGoal  string           `json:"user_goal,omitempty"`
-	Decisions []HubDecision    `json:"decisions,omitempty"`
-	Rejected  []HubAlternative `json:"rejected,omitempty"`
-	Risks     []string         `json:"risks,omitempty"`
-	Followups []string         `json:"followups,omitempty"`
+	What         string              `json:"what,omitempty"`
+	Why          string              `json:"why,omitempty"`
+	UserGoal     string              `json:"user_goal,omitempty"`
+	Decisions    []HubDecision       `json:"decisions,omitempty"`
+	Rejected     []HubAlternative    `json:"rejected,omitempty"`
+	Risks        []string            `json:"risks,omitempty"`
+	AntiPatterns []domain.AntiPattern `json:"anti_patterns,omitempty"`
+	Followups    []string            `json:"followups,omitempty"`
 
 	Subsystems          []string `json:"subsystems,omitempty"`
 	FilesTouched        []string `json:"files_touched,omitempty"`
@@ -315,6 +316,7 @@ func hubIntentFromView(v *domain.IntentView) HubIntent {
 		out.Why = s.Why
 		out.UserGoal = s.UserGoal
 		out.Risks = append([]string(nil), s.Risks...)
+		out.AntiPatterns = append([]domain.AntiPattern(nil), s.AntiPatterns...)
 		out.Followups = append([]string(nil), s.Followups...)
 		for _, d := range s.Decisions {
 			out.Decisions = append(out.Decisions, HubDecision{
