@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible problem in Mainline.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include commands and relevant repository state.
+      placeholder: |
+        1. Run ...
+        2. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: mainline version, git SHA, or branch
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Logs, JSON output, screenshots, or related intent IDs.
