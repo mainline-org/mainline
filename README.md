@@ -510,29 +510,30 @@ mainline/
 
 Yes. On 8 synthetic scenarios designed to test the core thesis:
 
-| Mode | Semantic violations | Context retrieved |
+| Mode | Violations (LLM-as-judge) | Declined-with-reference |
 |---|---|---|
-| **Intent-first** | **0 / 8** | 8 / 8 |
-| Code-first | 3 / 8 | 0 / 8 |
+| **Intent-first** | **0 / 8 fixtures** | 18 items correctly declined |
+| Code-first | 4 violations in 3 / 8 fixtures | 0 |
 
-The 3 violations code-first agents commit are in scenarios where **code
+The 4 violations code-first agents commit fall in scenarios where **code
 inspection alone cannot reveal the constraint:**
 
 1. A prior approach was **abandoned** — code still exists, but the reason
    it failed (replication-lag) is only in the intent record.
 2. A decision was **superseded** — both old and new code coexist, but only
-   the intent says "CSV is deprecated, add to Parquet only".
+   the intent says "CSV is deprecated, add to Parquet only" (2 violations).
 3. A convention lives in a **docs-only commit** — no source file carries
    the terminology rule.
 
-Intent-first agents read `mainline context` and see the anti-pattern
-before they propose the change. Code-first agents have no signal.
+Intent-first agents read `mainline context`, see the anti-pattern,
+and explicitly decline with reference. Code-first agents have no signal.
 
 **Run it yourself:**
 
 ```bash
 mainline eval run                                          # layer 1: retrieval preconditions (8/8 pass)
-mainline eval agent --runner ./scripts/eval-runner-copilot.py   # layer 2: code-first vs intent-first
+mainline eval agent --runner ./scripts/eval-runner-copilot.py \
+  --judge ./scripts/eval-judge-copilot.py                  # layer 2: v2 scorer (CF=4, IF=0)
 ```
 
 Full methodology, caveats, and next steps →
