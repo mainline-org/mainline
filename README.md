@@ -1,9 +1,22 @@
 # Mainline
 
-**Mainline is a git-native intent memory layer for AI-assisted engineering.**
+**Git-native intent memory for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the current *what*.
 
 > 中文版本: [README.zh.md](./README.zh.md)
+
+AI coding agents are fast, but code alone cannot tell them:
+
+- which approaches were tried and abandoned,
+- which decisions superseded older implementations,
+- which conventions live outside source code,
+- which constraints reviewers expect future changes to preserve.
+
+RAG can retrieve similar code.
+Grep can verify what code exists right now.
+Mainline gives agents the missing layer: **engineering intent**.
+
+> Mainline gives agents the why before the code.
 
 Stop your AI agent from silently undoing yesterday's decision, repeating an
 abandoned approach, or stepping on a teammate's in-flight work. Mainline
@@ -79,9 +92,10 @@ manually and follows the same protocol — both paths work.
 | You want to know which commits on `main` have no recorded intent | No signal | `mainline gaps` |
 
 > **Does it actually work?** We ran a controlled eval: 8 scenarios × 3 seeds ×
-> 2 modes. Code-first agents committed 9 violations; intent-first agents
-> committed 0. The advantage is 100% reproducible on abandoned-approach and
-> superseded-decision tasks. [Full report →](./docs/eval-results.md)
+> 2 modes. Code-first agents committed 9 forbidden-list violations; intent-first
+> agents committed 0. The advantage consistently reproduced on abandoned-approach
+> and superseded-decision tasks — scenarios where code cannot reveal the
+> constraint. [Full report →](./docs/eval-results.md)
 
 ## Table of contents
 
@@ -89,6 +103,8 @@ manually and follows the same protocol — both paths work.
 - [Eval: does intent-first actually help?](#eval-does-intent-first-actually-help)
 - [Five-minute quick start](#five-minute-quick-start)
 - [How it fits your workflow](#how-it-fits-your-workflow)
+- [What Mainline records](#what-mainline-records)
+- [CLI and Hub](#cli-and-hub)
 - [Architecture](#architecture)
 - [Concepts](#concepts)
 - [Daily commands](#daily-commands)
@@ -97,6 +113,7 @@ manually and follows the same protocol — both paths work.
 - [Webhook subscriptions](#webhook-subscriptions)
 - [Configuration](#configuration)
 - [FAQ](#faq)
+- [Related tools and boundaries](#related-tools-and-boundaries)
 - [Storage layout](#storage-layout)
 - [Development](#development)
 - [Project structure](#project-structure)
@@ -125,12 +142,18 @@ mainline doctor --setup
 
 ## Eval: does intent-first actually help?
 
-Yes. On 8 synthetic scenarios with 3 independent seeds (live LLM, not replay):
+In our first controlled eval, we tested 8 engineering scenarios with two agent modes:
+
+- **code-first**: task + code only
+- **intent-first**: task + code + Mainline historical intent context
+
+Across 3 independent Claude Sonnet 4 runs, code-first agents repeatedly failed
+in two history-dependent scenarios:
 
 | Mode | Violations | Consistency |
 |---|---|---|
 | **Intent-first** | **0 across all seeds** | 0/8 fixtures fail |
-| Code-first | 9 violations (3/seed) | 2/8 fixtures fail, 100% reproducible |
+| Code-first | 9 violations (3/seed) | 2/8 fixtures fail consistently |
 
 Code-first fails on exactly the scenarios where **code cannot reveal the
 constraint:**
@@ -144,6 +167,10 @@ constraint:**
 
 Intent-first agents read `mainline context`, see the anti-pattern, and
 explicitly decline with reference. Code-first agents have no signal.
+
+This is not a broad benchmark claim. It is an early signal that intent memory
+helps when the correct action depends on abandoned approaches, superseded
+decisions, or conventions not visible in code.
 
 **Run it yourself:**
 
@@ -237,6 +264,32 @@ the human-reader surface; agents use the JSON commands above.
 ```
 
 Mainline never asks you to change your merge process. The `mainline merge` command exists for non-PR pipelines but is **not** part of the supported default flow.
+
+## What Mainline records
+
+A sealed Mainline intent contains:
+
+- **Why** — why this engineering work exists.
+- **Decisions** — what the team decided, with rationale and rejected alternatives.
+- **Risks** — soft risks reviewers should be aware of.
+- **Anti-patterns** — hard constraints future agents must avoid.
+- **Inherited constraints** — file-level constraints from prior intents.
+- **Lifecycle** — merged, abandoned, superseded, or reverted.
+- **References** — optional links to issues, PRs, docs, CI runs, or external sessions.
+- **Commit pins** — links between intents and the commits that implemented them.
+
+Mainline does not try to preserve every token of an AI session.
+It preserves the durable decision record future agents and reviewers need.
+
+## CLI and Hub
+
+Mainline has two first-class surfaces:
+
+- **CLI for action** — start, append, seal, lint, sync, context, show, trace.
+- **Hub for reading** — review pending work, inspect file constraints, read important decisions, and orient around the repo's intent history.
+
+Use the CLI when you know what to do.
+Use Hub when you need to understand what happened, what matters, and where to look next.
 
 ## Architecture
 
@@ -478,23 +531,68 @@ The first sync still pays the full SSH handshake; subsequent syncs within the `C
 
 ## FAQ
 
+**Q: Is Mainline a replacement for RAG or grep?**
+
+No. RAG retrieves semantically similar code. Grep verifies what code exists right now. Mainline retrieves the historical engineering intent behind the code. A good agent workflow is: `mainline context` → inspect current code → edit → seal new intent. Mainline should run before broad code search, not instead of code verification.
+
+**Q: How is Mainline different from session-memory tools?**
+
+Session-memory tools record prompts, responses, snapshots, tool calls, or code diffs from AI coding sessions. They help you replay, rollback, or inspect how a change happened. Mainline records the engineering intent that should guide future work: why the change exists, what decisions were made, what risks were accepted, which anti-patterns future agents must avoid, and whether the intent was merged, abandoned, superseded, or reverted. Session history is useful evidence. Mainline intent is durable working memory for future agents and reviewers.
+
+**Q: Does Mainline record AI sessions?**
+
+No. Mainline does not capture transcripts, tool calls, token usage, or session timelines. It can attach optional references to real external materials (session URLs, issues, PRs, docs, CI runs), but references support the intent — they don't replace it. The sealed intent remains the durable decision record.
+
+**Q: Why not just use commit messages or PR descriptions?**
+
+Commit messages are short and final-state oriented. PR descriptions are review-time artifacts. Both are easy to lose, rewrite, or skip. Mainline intents are git-backed, queryable, lifecycle-aware records. They can be abandoned, superseded, inherited by files, retrieved before editing, and shown to agents as context.
+
+**Q: Is Mainline a productivity dashboard?**
+
+No. Mainline does not rank developers by intent count, velocity, or productivity. Hub is designed around action signals: work needing review, inherited constraints, decision hotspots, important decisions, lifecycle signals, and coverage gaps. The goal is intent clarity and safer engineering, not surveillance.
+
+**Q: When should agents use Mainline?**
+
+Before non-trivial changes: architecture changes, refactors, migrations, deletions, auth/billing/permissions/data-model work, cross-file behavior changes, "can we delete this?" questions, "was this tried before?" questions. For trivial typo or formatting fixes, Mainline may be unnecessary.
+
 **Q: Why is there no `mainline merge` in the quick start?**
+
 GitHub's merge button is the supported default. After a merged PR, the next `mainline sync` will find the squash commit by tree hash and auto-pin the intent. `mainline merge` is for non-PR pipelines only.
 
 **Q: My `mainline log` shows `[check:?]` for everything new — what should I do?**
+
 Nothing. `?` means "no overlap detected, no judgment requested". You only act on `~` (phase 1 spotted overlap) or `!` (phase 2 confirmed conflict).
 
 **Q: Phase 1 vs phase 2 — when do I run phase 2?**
+
 Only when you see `[check:~]` on an intent and want to know whether the overlap is a real conflict. `mainline check --prepare --intent <id>` produces a task package; the agent reads it and submits a judgment via `mainline check --submit`.
 
 **Q: Do I need to run `sync` manually?**
+
 Yes — `sync` is now the single command that drives the team-aware loop: it fetches, rebuilds the view, **auto-pins merged commits**, runs phase 1 conflict detection on the delta, and writes the staleness record. `seal --submit` and `check` auto-sync internally; read-only displays (`log`, `status`, `context`) skip the network to stay snappy.
 
 **Q: What happens if the heuristics pin the wrong commit?**
+
 Use `mainline pin <intent> <commit>` to overwrite the pin manually. The note is updated, not duplicated; existing intents on the same commit are preserved.
 
 **Q: Can two intents land on the same main commit?**
+
 Yes. `CommitNote.intents` is a list. Mainline's `upsertCommitNote` merges new intent references into the existing note on a commit instead of overwriting.
+
+## Related tools and boundaries
+
+Mainline is part of a broader ecosystem of tools for AI-assisted engineering.
+The difference is the unit of memory.
+
+| Category | What it remembers | Mainline boundary |
+|---|---|---|
+| RAG / code indexing | Similar code snippets and repository context | Mainline retrieves intent before code search. |
+| Grep / agentic code search | Fresh, exact code evidence | Mainline tells the agent what historical constraints to check before reading code. |
+| AI provenance tools | Which AI produced which code, from which prompt/session | Mainline does not do line attribution; it records engineering intent. |
+| Session-memory tools | Prompts, responses, snapshots, tool calls, code diffs | Mainline can link sessions as references, but keeps the sealed intent as the durable decision record. |
+| PR / issue trackers | Review discussion, task state, project workflow | Mainline captures the engineering why and lifecycle of intent, not general project management. |
+
+These tools can be complementary. If your team already stores sessions or checkpoints elsewhere, Mainline can link them as references on sealed intents.
 
 ## Storage layout
 
