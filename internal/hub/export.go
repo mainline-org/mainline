@@ -298,6 +298,7 @@ func buildDashboard(m *HubModel) HubDashboard {
 		}
 		return files[i].Path < files[j].Path
 	})
+	files = filterHotFileNoise(files)
 	// Pre-index risk + recent counts per intent so we can populate
 	// the decision-hotspots metadata in one pass without an
 	// O(intents * files) walk inside the cap loop.
@@ -333,6 +334,58 @@ func buildDashboard(m *HubModel) HubDashboard {
 		})
 	}
 	return d
+}
+
+// hotFileExcludePatterns lists file basenames and glob patterns that are
+// almost always noise in the hot-files ranking — manifests, lock files,
+// and generated artifacts that accumulate intent touches mechanically
+// rather than through meaningful design decisions.
+var hotFileExcludePatterns = []string{
+	"package.json",
+	"package-lock.json",
+	"yarn.lock",
+	"pnpm-lock.yaml",
+	"go.sum",
+	"go.mod",
+	"Cargo.lock",
+	"Gemfile.lock",
+	"composer.lock",
+	"poetry.lock",
+	"Pipfile.lock",
+	"requirements.txt",
+	"flake.lock",
+	"pubspec.lock",
+	"packages.lock.json",
+	".gitignore",
+	"CHANGELOG.md",
+	"CHANGES.md",
+}
+
+// filterHotFileNoise removes files whose basename matches a known
+// noise pattern. These files get touched by many intents mechanically
+// (dependency bumps, lockfile regeneration) and crowd out files where
+// intent density signals real design contention.
+func filterHotFileNoise(files []HubFileEntry) []HubFileEntry {
+	out := files[:0]
+	for _, f := range files {
+		if isHotFileNoise(f.Path) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// isHotFileNoise returns true if a path's basename matches the
+// built-in noise exclusion list.
+func isHotFileNoise(path string) bool {
+	base := filepath.Base(path)
+	for _, p := range hotFileExcludePatterns {
+		if base == p {
+			return true
+		}
+	}
+	return false
 }
 
 // buildRelations emits the per-intent edges that the graph view

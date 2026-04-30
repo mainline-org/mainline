@@ -298,7 +298,9 @@ func BuildDigest(intents []HubIntent, windowDays int, now time.Time) HubWeeklyDi
 				focusFromIntent(in, trimReason(reason), now))
 		}
 		for _, f := range in.FilesTouched {
-			hotByPath[f]++
+			if !isHotFileNoise(f) {
+				hotByPath[f]++
+			}
 		}
 	}
 
