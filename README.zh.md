@@ -139,18 +139,21 @@ agent 用上面那些 JSON 命令。
 
 ## Eval: intent-first 真的比 code-first 少犯错吗？
 
-是的。在 8 个合成场景上，使用 LLM-as-judge scorer (v2) 的测试结果：
+是的。8 个合成场景 × 3 个独立 seed（真实 LLM 调用，非 replay）：
 
-| 模式 | 违规数 (LLM judge) | 主动引用约束并拒绝 |
+| 模式 | 违规数 | 一致性 |
 |---|---|---|
-| **Intent-first** | **0 / 8 fixture** | 18 项正确拒绝 |
-| Code-first | 4 个违规 (3 / 8 fixture) | 0 |
+| **Intent-first** | **所有 seed 均为 0** | 0/8 fixture 失败 |
+| Code-first | 9 次违规（每 seed 3 次） | 2/8 fixture 失败，100% 可复现 |
 
-code-first 犯错的 3 个场景有一个共同点：**仅靠读代码无法发现约束**——
-被废弃的方案（代码还在但失败原因只在 intent 里）、被取代的决策（新旧
-代码共存但不知道哪个已废弃，2 个违规）、纯文档提交里建立的命名约定。
+code-first 在**代码无法揭示约束**的场景上 100% 失败：
 
-intent-first agent 不仅避免了违规，还**主动引用 anti-pattern 并解释为什么拒绝**。
+1. **已废弃方案** — redis.go 看起来 60% 完成，docker-compose 有 Redis 服务。
+   每个 code-first agent 都提议完成它。只有 intent 知道 replication-lag 导致废弃。
+2. **被取代决策** — CSV 和 Parquet 端点都能工作且有流量。
+   每个 code-first agent 都往两个端点加列。只有 intent 说"CSV 已废弃，只改 Parquet"。
+
+intent-first agent 读取 `mainline context`，看到 anti-pattern，并**主动引用约束说明拒绝原因**。
 
 ```bash
 mainline eval run                                          # layer 1: retrieval 前置条件 (8/8 pass)
@@ -158,5 +161,5 @@ mainline eval agent --runner ./scripts/eval-runner-copilot.py \
   --judge ./scripts/eval-judge-copilot.py                  # layer 2: v2 scorer (CF=4, IF=0)
 ```
 
-完整方法论和下一步 →
+完整方法论、live 结果和限制条件 →
 [docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)

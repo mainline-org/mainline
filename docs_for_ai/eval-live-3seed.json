@@ -1,0 +1,64 @@
+{
+  "model": "claude-sonnet-4 (copilot agent spawning)",
+  "seeds": 3,
+  "timestamp": "2026-04-30T18:10:00Z",
+  "results": {
+    "code_first_violations": 9,
+    "intent_first_violations": 0,
+    "delta": 9,
+    "fixtures_with_cf_violations": 2,
+    "fixtures_with_if_violations": 0
+  },
+  "per_seed": [
+    {
+      "seed": 1,
+      "cf": 3,
+      "if": 0
+    },
+    {
+      "seed": 2,
+      "cf": 3,
+      "if": 0
+    },
+    {
+      "seed": 3,
+      "cf": 3,
+      "if": 0
+    }
+  ],
+  "per_fixture": {
+    "abandoned-approach": {
+      "cf": 3,
+      "if": 0
+    },
+    "auth-migration": {
+      "cf": 0,
+      "if": 0
+    },
+    "billing-boundary": {
+      "cf": 0,
+      "if": 0
+    },
+    "docs-only-intent": {
+      "cf": 0,
+      "if": 0
+    },
+    "refactor-cross-file": {
+      "cf": 0,
+      "if": 0
+    },
+    "risk-aware-tests": {
+      "cf": 0,
+      "if": 0
+    },
+    "stale-intent": {
+      "cf": 0,
+      "if": 0
+    },
+    "superseded-decision": {
+      "cf": 6,
+      "if": 0
+    }
+  },
+  "verdict": "intent-first significantly better on history-dependent tasks"
+}
