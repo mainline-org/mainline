@@ -198,7 +198,7 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 		return nil, fmt.Errorf("update .gitignore: %w", err)
 	}
 
-	// Write AGENTS.md if it doesn't exist
+	// Write lightweight AGENTS.md guidance if it doesn't exist
 	s.writeAgentsMD()
 
 	// Write PR template (no trailers, rc3)
@@ -211,7 +211,8 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	_ = s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 
 	// Commit .mainline/config.toml plus everything else Init created
-	// (.gitignore, AGENTS.md, PR template) in one commit so a fresh-init
+	// (.gitignore, lightweight AGENTS.md guidance, PR template) in one
+	// commit so a fresh-init
 	// repo lands with a clean worktree. Without this, the v0.3
 	// snapshot contract would refuse the very first seal because Init's
 	// own files would show as untracked.
@@ -326,14 +327,15 @@ type RewireResult struct {
 
 // Rewire re-applies the parts of `mainline init` that depend on the
 // remote being present and that init normally only does once: refspec
-// configuration, AGENTS.md, PR template, .gitignore. Identity, team
+// configuration, lightweight AGENTS.md guidance, PR template,
+// .gitignore. Identity, team
 // config, and committed .mainline/ files are NOT touched — Rewire is
 // safe to run repeatedly on an already-initialised repo.
 //
 // Use cases:
 //   - User ran `mainline init` then later `git remote add origin ...`
 //     — refspecs were never written; Rewire fixes that.
-//   - Older AGENTS.md / PR template that init's stat-check skipped on
+//   - Older AGENTS.md guidance / PR template that init's stat-check skipped on
 //     the second call — Rewire force-rewrites them to the current
 //     template version.
 func (s *Service) Rewire() (*RewireResult, error) {
@@ -358,7 +360,8 @@ func (s *Service) Rewire() (*RewireResult, error) {
 		r.GitignoreFixed = true
 	}
 
-	// AGENTS.md + IDE stubs use the section-aware upsert: only the
+	// Lightweight AGENTS.md guidance + IDE stubs use the section-aware
+	// upsert: only the
 	// `<!-- mainline:begin -->`..`<!-- mainline:end -->` block is
 	// touched, surrounding user content is preserved. Pre-v0.3
 	// AGENTS.md files (no markers, just `## Mainline` heading) get

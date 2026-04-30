@@ -144,7 +144,7 @@ var hooksInstallCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("Hooks are enabled. At sessionStart the dispatcher will run `mainline sync`")
 		fmt.Println("and inject a status snapshot as agent context. All other workflow steps")
-		fmt.Println("(start, append, seal --prepare/--submit, check) remain agent-driven per AGENTS.md.")
+		fmt.Println("(start, append, seal --prepare/--submit, check) remain agent-driven per the Mainline skill or team guidance.")
 		fmt.Println("Run `mainline hooks disable` to pause without uninstalling.")
 		return nil
 	},

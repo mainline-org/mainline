@@ -10,8 +10,8 @@ import (
 )
 
 // `mainline agents …` is the upgrade-safe family for the
-// Mainline-managed block inside AGENTS.md (and the four IDE pointer
-// stubs).
+// lightweight Mainline-managed block inside AGENTS.md (and the four IDE
+// pointer stubs).
 //
 // Contract: the user owns AGENTS.md; Mainline owns one versioned,
 // checksummed block inside it. install / check / diff / update
@@ -20,13 +20,14 @@ import (
 
 var agentsCmd = &cobra.Command{
 	Use:   "agents",
-	Short: "Manage Mainline's agent guidance (AGENTS.md, CLAUDE.md, IDE stubs)",
-	Long: `Manage Mainline's agent guidance for coding agents.
+	Short: "Manage Mainline's lightweight agent guidance (AGENTS.md, CLAUDE.md, IDE stubs)",
+	Long: `Manage Mainline's lightweight agent guidance for coding agents.
 
 These commands install, check, diff, and update the Mainline-owned
 guidance block inside AGENTS.md, CLAUDE.md, Cursor rules, Windsurf
-rules, and Copilot instructions — without ever overwriting user-
-edited content outside the block.
+rules, and Copilot instructions. The full workflow lives in the Mainline
+agent skill; these repo-local files are project markers and bootstrap
+reminders. Updates preserve user-edited content outside the block.
 
 The guidance block is wrapped in version + checksum markers so:
 
@@ -37,7 +38,7 @@ The guidance block is wrapped in version + checksum markers so:
 
 Subcommands:
 
-  mainline agents install          # add agent guidance to AGENTS.md
+  mainline agents install          # add lightweight guidance to AGENTS.md
   mainline agents check            # report state per file
   mainline agents diff             # show old vs new body
   mainline agents update           # update unmodified files; refuse modified
@@ -91,7 +92,7 @@ var agentsCheckCmd = &cobra.Command{
 
 var agentsInstallCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install Mainline's agent guidance into AGENTS.md and IDE stubs",
+	Short: "Install Mainline's lightweight guidance into AGENTS.md and IDE stubs",
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -107,7 +108,7 @@ var agentsInstallCmd = &cobra.Command{
 			outputJSON(res)
 			return
 		}
-		fmt.Printf("Installed Mainline agent guidance (template v%d)\n\n", res.CurrentVersion)
+		fmt.Printf("Installed Mainline lightweight agent guidance (template v%d)\n\n", res.CurrentVersion)
 		for _, c := range res.Files {
 			renderAgentsChange(c)
 		}
@@ -121,8 +122,8 @@ var (
 
 var agentsUpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update Mainline's agent guidance to the binary's template version",
-	Long: `Update Mainline's agent guidance in AGENTS.md and the IDE stubs.
+	Short: "Update Mainline's lightweight guidance to the binary's template version",
+	Long: `Update Mainline's lightweight agent guidance in AGENTS.md and the IDE stubs.
 
 Default policy:
 

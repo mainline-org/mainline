@@ -106,8 +106,8 @@ type LogSection struct {
 // decisions for the agent. They run mechanical operations (sync) and
 // inject context for the agent to read at session start; everything
 // else (intent start / append / seal-prepare / seal-submit / check
-// verdicts) is the agent's job per AGENTS.md, regardless of whether
-// hooks are installed.
+// verdicts) is the agent's job per the Mainline skill or team guidance,
+// regardless of whether hooks are installed.
 type HooksSection struct {
 	// Enabled is the soft kill-switch. When false, the on-disk hook
 	// commands still fire but the dispatcher exits immediately. Lets

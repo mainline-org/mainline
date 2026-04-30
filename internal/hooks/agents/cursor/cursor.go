@@ -100,7 +100,8 @@ func (Agent) HookNames() []string {
 // Other hooks (before-submit-prompt, stop, subagent-stop, session-end)
 // either don't accept output or have no use for one in the
 // "context provider" model (the agent drives all semantic decisions
-// per AGENTS.md), so we return (nil, nil) and the CLI writes nothing.
+// per the Mainline skill or team guidance), so we return (nil, nil)
+// and the CLI writes nothing.
 func (Agent) RenderHookOutput(hookName string, d *hooks.Dispatcher, _ *hooks.Event, _ any) ([]byte, error) {
 	if hookName != HookSessionStart || d == nil {
 		return nil, nil

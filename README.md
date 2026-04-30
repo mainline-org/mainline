@@ -26,9 +26,10 @@ mainline append "<what changed>"         # after each meaningful turn
 mainline seal --prepare > .ml-cache/seal.json   # → patch → mainline seal --submit < .ml-cache/seal.json
 ```
 
-You don't memorise this — `AGENTS.md` (which Mainline writes into your repo on
-init) tells the agent the protocol. Modern agents read `AGENTS.md` at every
-session.
+You don't have to memorise this. The installed `mainline` agent skill is the
+preferred full workflow source of truth. Repo-local `AGENTS.md` / IDE guidance
+is a lightweight marker and bootstrap reminder for agents that do not have the
+skill loaded.
 
 **You** (the human) review intent, browse history, and quality-check the
 team's record:
@@ -62,11 +63,12 @@ That's it. Now at every Cursor session start, Mainline:
 
 Your agent now sees fresh team state at every session start without you
 typing anything. The agent itself drives the rest of the workflow (start /
-append / seal / check) per `AGENTS.md` — Mainline is a context provider, not
-a workflow driver.
+append / seal / check) per the `mainline` skill or team guidance — Mainline is
+a context provider, not a workflow driver.
 
-If you don't use a supported hook agent, your AI tool reads `AGENTS.md`
-manually and follows the same protocol — both paths work.
+If you don't use a supported hook agent, your AI tool follows the installed
+`mainline` skill. Repo-local `AGENTS.md` remains a lightweight fallback marker
+and bootstrap reminder.
 
 ## What problem this solves
 
@@ -118,7 +120,8 @@ mainline doctor --setup
 ## Five-minute quick start
 
 The lines marked **[you]** are what you type. The rest are what the agent
-runs (driven by `AGENTS.md`, or auto-injected if you installed hooks).
+runs (driven by the `mainline` skill / team guidance, or aided by hook-injected
+context if you installed hooks).
 
 ```bash
 # [you] one-time per repo
@@ -301,8 +304,8 @@ Full daily set:
 | `mainline hub open` | Build + open a static HTML site over the local intent view (humans, not agents) |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |
 | `mainline check --submit` | Submit phase 2 judgment; result surfaces in log column |
-| `mainline doctor --setup` | Verify installation: refspecs, identity, AGENTS.md, PR template, .gitignore |
-| `mainline init --rewire` | Re-apply remote refspec config + AGENTS.md + PR template (use after adding origin post-init) |
+| `mainline doctor --setup` | Verify installation: refspecs, identity, lightweight agent guidance, PR template, .gitignore |
+| `mainline init --rewire` | Re-apply remote refspec config + lightweight agent guidance + PR template (use after adding origin post-init) |
 
 All commands accept `--json`. The persistent `--no-sync` flag opts a command out of the auto-sync wrapper.
 
@@ -349,9 +352,9 @@ What hooks deliberately do NOT do: deciding when to `mainline start`,
 what the goal text should be, when to `mainline append`, what to
 write in the append, building the seal fingerprint, or judging
 phase-2 conflicts. Those are LLM judgments and the agent stays the
-sole source of truth for them — exactly as `AGENTS.md` specifies in
-the no-hooks flow. Hooks installed or not, the contract above never
-changes.
+sole source of truth for them — exactly as the `mainline` skill or team
+guidance specifies in the no-hooks flow. Hooks installed or not, the
+contract above never changes.
 
 Per-toggle controls live in `.mainline/config.toml` under `[hooks]`
 (`enabled`, `auto_sync_on_session_start`); everything is fail-soft

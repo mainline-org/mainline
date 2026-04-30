@@ -1,43 +1,29 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 9 -->
+<!-- mainline-agents-md-version: 14 -->
 
-This project uses **Mainline** for AI-driven intent tracking and
-conflict detection. The full agent workflow lives in `AGENTS.md` at
-the repo root — read that file for the complete contract.
+This repository uses **Mainline** for AI-assisted intent tracking and conflict
+detection.
 
-Quick reference:
+The full workflow belongs in the installed `mainline` agent skill or the team's
+global agent guidance. The repo-root `AGENTS.md` contains the lightweight
+project marker, bootstrap reminders, and remote-write boundary for this repo.
 
-```
-mainline status                                      # see your state
+Quick bootstrap if no skill is available:
 
-# Read team intents for context (do this aggressively):
-mainline log --json --limit 30                       # recent intents
-mainline show <intent_id> --json                     # full why/decisions/risks
-mainline list-proposals --json                       # what's in flight
-
-# Write your own intent:
-mainline start "<goal>"                              # claim work
-mainline append "<what changed>"                     # after each turn
-git add ... && git commit -m ...                     # commit code
-mainline seal --prepare > .ml-cache/seal.json        # patch the starter
-mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
+```bash
+mainline status --json
+mainline context --current --json
+mainline start "<goal>" --json                 # for real non-trivial work
+mainline append "<what changed and why>" --json
+mainline seal --prepare --json > .ml-cache/seal.json
+mainline seal --submit --json < .ml-cache/seal.json
 ```
 
-Sync, pin, merge are automatic — do not invoke them.
+`mainline seal --submit`, `mainline sync`, and `mainline publish` may publish
+Mainline metadata refs, but they do not authorize `git push` for the working
+branch. Never push `main` or `master` without explicit current-turn user
+authorization that names the branch.
 
-**Language rule**: write everything you put into Mainline (goal,
-appends, seal title/what/why/decisions/risks/anti_patterns) in the
-language the user used. Chinese in, Chinese out; English in, English
-out. The seal is the team's memory — translating it makes it harder
-to read for the people whose memory it is. Code identifiers, command
-names, and file paths stay in their original form.
-
-### If `mainline hooks` is installed for your agent
-
-When hooks are active, the only thing that changes is sessionStart:
-the hook runs `mainline sync` + `mainline status` for you and injects
-the snapshot into your system context. Every other workflow step
-(start / append / commit / seal --prepare / seal --submit / check)
-remains agent-driven exactly as `AGENTS.md` describes. Hooks are a
-context provider, not a workflow driver.
+Hooks, when installed, are context providers only. They do not choose goals,
+append turns, seal intents, judge conflicts, or authorize Git branch pushes.

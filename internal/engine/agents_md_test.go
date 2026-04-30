@@ -233,7 +233,7 @@ func TestUpsertAgentInstructionStubs_PreservesHandEdits(t *testing.T) {
 	if strings.Contains(got, "OLD STUB CONTENT") {
 		t.Errorf("stale content not replaced")
 	}
-	if !strings.Contains(got, "Quick reference") {
+	if !strings.Contains(got, "Quick bootstrap") {
 		t.Errorf("new stub body missing")
 	}
 }

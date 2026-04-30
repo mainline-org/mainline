@@ -71,7 +71,7 @@ var sealCmd = &cobra.Command{
 				// run lint on the freshly-sealed payload and surface
 				// warnings/errors as a hint, but never block submit.
 				// First-touch users discover lint here without
-				// reading AGENTS.md or `--help`.
+				// reading the Mainline skill or `--help`.
 				renderSealLintHint(svc, result.IntentID)
 				if len(result.Conflicts) > 0 {
 					fmt.Printf("\n⚠ %d potential conflict(s) detected (intent is sealed; review when convenient):\n",
@@ -128,9 +128,10 @@ func renderSealLintHint(svc *engine.Service, intentID string) {
 }
 
 // renderSealNextSteps drops the "what do I do now?" breadcrumb a
-// first-time user needs after a successful submit. Concrete next
-// commands, no prose. We print these *after* conflicts/lint so the
-// last thing on screen is actionable. SealSubmitResult does not
+// first-time user needs after a successful submit. Keep Git branch
+// pushes framed as a separately-authorized action; Mainline publish
+// only covers metadata refs. We print these *after* conflicts/lint so
+// the last thing on screen is actionable. SealSubmitResult does not
 // carry the branch name, so we read it from git directly — at this
 // point the working tree is the same one the user just sealed
 // from, so CurrentBranch is the right answer.
@@ -141,7 +142,9 @@ func renderSealNextSteps(svc *engine.Service, result *engine.SealSubmitResult) {
 	}
 	fmt.Println()
 	fmt.Println("Next:")
-	fmt.Printf("  · `git push -u origin %s` (if not already), then open a PR.\n", branch)
+	fmt.Println("  · Branch is sealed and ready for push/PR.")
+	fmt.Printf("  · If Git branch push is authorized: `git push -u origin %s`, then open a PR.\n", branch)
+	fmt.Println("  · `mainline publish`/`seal --submit` publish metadata only; they do not authorize branch push.")
 	fmt.Println("  · The next `mainline sync` auto-pins the merge commit.")
 	if !result.Published {
 		fmt.Println("  · Status: sealed_local — the actor log was not pushed (no remote, or sync skipped).")

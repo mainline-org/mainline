@@ -1,13 +1,15 @@
 ---
 name: mainline
-description: "Use for any coding-agent work in a Git repository that uses or may need Mainline intent tracking: before reading or editing code, fixing bugs, adding features, refactoring, deleting code, changing tests or CI, committing, pushing, opening PRs, reviewing intent conflicts, or setting up Mainline CLI/hooks/agent guidance."
+description: "Use for any coding-agent work in a Git repository that uses or may need Mainline intent tracking: before reading or editing code, fixing bugs, adding features, refactoring, deleting code, changing tests or CI, committing, deciding whether Git branch push is authorized, opening PRs, reviewing intent conflicts, or setting up Mainline CLI/hooks/agent guidance."
 ---
 
 # Mainline
 
-This skill is the agent-facing Mainline integration. It should be sufficient
-even when the repository does not yet have Mainline text in AGENTS.md and when
-Mainline hooks are not installed.
+This skill is the agent-facing Mainline integration and the preferred full
+workflow source of truth. Repo-local `AGENTS.md` blocks should be lightweight
+project markers and bootstrap reminders, not a second copy of this manual.
+This skill must still be sufficient when a repository has no Mainline text in
+`AGENTS.md` and when Mainline hooks are not installed.
 
 Mainline records why AI-driven changes happen, connects those intents to code
 commits, and surfaces semantic conflicts before PR review. Treat it as part of
@@ -41,8 +43,9 @@ Use this skill for any task in a Git repository when one of these is true:
 - The user mentions Mainline, intents, conflict checks, agent guidance, hooks,
   sealing, proposals, coverage, gaps, or uncovered commits.
 - You are about to edit code, refactor, delete code, change tests or CI, commit,
-  push, create a PR, review a PR, or investigate whether prior work already made
-  a decision in a repository known to use Mainline.
+  decide whether Git branch push is authorized, create a PR, review a PR, or
+  investigate whether prior work already made a decision in a repository known
+  to use Mainline.
 
 If the skill triggers because the repository appears to use Mainline, run the
 Mainline checks before broad code search or edits. If the repository does not
@@ -260,18 +263,30 @@ retry later:
 mainline publish --intent <intent_id> --json
 ```
 
-## Push And PR Workflow
+## Mainline Publish, Git Push, And PR Workflow
 
-Before pushing, ensure the intent is proposed or publishable:
+`mainline publish` publishes Mainline intent metadata. It may push actor-log
+refs to the configured remote, but it does not authorize `git push` for the
+working Git branch.
+
+Do not push a Git branch unless the user explicitly asked for push in the
+current turn, or repository policy explicitly delegates push for this named
+non-main branch. Never push `main` or `master` without explicit current-turn
+user authorization that names the branch. Previous push permission applies only
+to the named branch/commit scope and does not carry over to later commits or
+different branches.
+
+If Git branch push is authorized, first ensure the intent metadata is proposed
+or publishable:
 
 ```bash
 mainline status --json
 mainline publish --intent <intent_id> --json
 ```
 
-Then push the Git branch through the normal repository workflow. Humans merge
-PRs through the GitHub UI unless the user explicitly asks for a non-PR merge
-path.
+Then push only the authorized Git branch through the normal repository workflow.
+Prefer feature branch + PR for collaboration. Humans merge PRs through the
+GitHub UI unless the user explicitly asks for a non-PR merge path.
 
 Do not run these unless the user explicitly asks:
 

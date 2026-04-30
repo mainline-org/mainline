@@ -90,8 +90,8 @@ var startCmd = &cobra.Command{
 			}
 			// First-touch breadcrumb: a brand-new user just claimed
 			// work; the next steps are non-obvious without reading
-			// AGENTS.md. Three lines is enough to drive the loop
-			// without quoting the spec.
+			// the Mainline skill or guidance. Three lines is enough
+			// to drive the loop without quoting the spec.
 			fmt.Println()
 			fmt.Println("Next:")
 			fmt.Println("  1. Edit code; run `mainline append \"<what changed>\"` after each meaningful turn.")

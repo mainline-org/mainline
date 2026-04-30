@@ -210,7 +210,7 @@ func init() {
 	doctorCmd.GroupID = groupSetup.ID
 	agentsCmd.GroupID = groupSetup.ID
 
-	// Advanced — manual fallbacks. AGENTS.md instructs agents NOT to
+	// Advanced — manual fallbacks. Mainline guidance instructs agents NOT to
 	// run these unless the user explicitly asks; the auto-flow
 	// (auto-pin in sync, auto-publish in seal, GitHub PR for merge)
 	// covers the normal case.

@@ -25,7 +25,7 @@ var initCmd = &cobra.Command{
 	Long: `Initialise mainline in the current git repository: writes .mainline/
 config, generates an actor identity, configures notes / actor-log
 fetch+push refspecs on origin (if origin is configured), and writes
-AGENTS.md plus a PR template.
+lightweight AGENTS.md guidance plus a PR template.
 
 If you ran 'mainline init' before adding your git remote, the refspec
 configuration step was skipped silently. Re-run with --rewire to fix
@@ -152,5 +152,5 @@ that without re-creating identity or team config.`,
 
 func init() {
 	initCmd.Flags().StringVar(&initActorName, "actor-name", "", "name for this actor identity (or export "+envActorName+")")
-	initCmd.Flags().BoolVar(&initRewire, "rewire", false, "(re-)apply remote refspec config + AGENTS.md + PR template on an already-initialised repo")
+	initCmd.Flags().BoolVar(&initRewire, "rewire", false, "(re-)apply remote refspec config + lightweight AGENTS.md guidance + PR template on an already-initialised repo")
 }
