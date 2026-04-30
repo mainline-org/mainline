@@ -632,6 +632,95 @@ func TestHubDigest_GeneratesSevenDaySummary(t *testing.T) {
 	}
 }
 
+// Hub renders both EN and ZH copies of every page; the ZH version
+// lives under /zh/, intent CONTENT (titles, what/why) stays as
+// the user wrote it, only the chrome (nav / section headers /
+// labels) gets translated. Assets/data stay at root.
+func TestHubExport_RendersBothLanguagesWithToggle(t *testing.T) {
+	dir := t.TempDir()
+	repoRoot := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := storage.New(repoRoot, nil)
+	v := makeView(intent("int_a", "actor_x", time.Now().UTC().Format(time.RFC3339), domain.StatusMerged, "src/x.go"))
+	if err := store.WriteMainlineView(v); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "site")
+	if _, err := Export(store, ExportOptions{OutputDir: out}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both top-level index pages exist, each tagged with its lang.
+	enIndex, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatalf("EN index missing: %v", err)
+	}
+	zhIndex, err := os.ReadFile(filepath.Join(out, "zh", "index.html"))
+	if err != nil {
+		t.Fatalf("ZH index missing: %v", err)
+	}
+	if !strings.Contains(string(enIndex), `<html lang="en">`) {
+		t.Errorf("EN index should declare lang=en")
+	}
+	if !strings.Contains(string(zhIndex), `<html lang="zh">`) {
+		t.Errorf("ZH index should declare lang=zh")
+	}
+
+	// Each version's toggle points at the OTHER language. Toggle
+	// label is the OTHER language's self-name.
+	if !strings.Contains(string(enIndex), `href="zh/index.html"`) ||
+		!strings.Contains(string(enIndex), `>中文<`) {
+		t.Errorf("EN toggle should link to zh/ and label '中文'")
+	}
+	if !strings.Contains(string(zhIndex), `href="../index.html"`) ||
+		!strings.Contains(string(zhIndex), `>English<`) {
+		t.Errorf("ZH toggle should link back to root and label 'English'")
+	}
+
+	// ZH chrome strings present (a couple of key ones).
+	for _, want := range []string{"团队健康", "总览", "生成于"} {
+		if !strings.Contains(string(zhIndex), want) {
+			t.Errorf("ZH index missing chrome string %q", want)
+		}
+	}
+
+	// Intent CONTENT must NOT be translated. The fixture's title is
+	// English ("Title for int_a") — it must appear verbatim in BOTH
+	// the EN and ZH renders.
+	if !strings.Contains(string(enIndex), "Title for int_a") {
+		t.Errorf("EN should carry the user-written title verbatim")
+	}
+	if !strings.Contains(string(zhIndex), "Title for int_a") {
+		t.Errorf("ZH should carry the user-written title verbatim — content does not translate")
+	}
+
+	// Nested ZH page's stylesheet href must climb out of /zh/<sub>/.
+	zhIntent, err := os.ReadFile(filepath.Join(out, "zh", "intents", "int_a.html"))
+	if err != nil {
+		t.Fatalf("ZH intent page missing: %v", err)
+	}
+	if !strings.Contains(string(zhIntent), `href="../../assets/style.css"`) {
+		t.Errorf("nested ZH page should reach assets via ../../, got: %s",
+			extractStylesheet(string(zhIntent)))
+	}
+}
+
+func extractStylesheet(html string) string {
+	const marker = `rel="stylesheet" href="`
+	i := strings.Index(html, marker)
+	if i < 0 {
+		return "(no stylesheet link)"
+	}
+	rest := html[i+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
+}
+
 // Spec §14 mandatory copy test: dashboard / digest / team-health
 // output must NOT use productivity / leaderboard / performance
 // language. This test renders the template against a real fixture

@@ -1,5 +1,5 @@
 {{define "header"}}<!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <title>{{.Title}} · Mainline Hub</title>
@@ -9,19 +9,22 @@
 <header class="topbar">
   <div>
     <div class="brand">Mainline Hub</div>
-    <div class="meta">Human view of the local intent history</div>
+    <div class="meta">{{t .Lang "header.tagline"}}</div>
   </div>
-  <span class="meta build-meta">main: <code>{{shortCommit .MainHead}}</code> · generated {{timeAgo .GeneratedAt}}</span>
+  <div class="topbar-right">
+    <span class="meta build-meta">{{t .Lang "header.main_at"}}: <code>{{shortCommit .MainHead}}</code> · {{t .Lang "header.generated"}} {{timeAgo .GeneratedAt}}</span>
+    <a class="lang-toggle" href="{{.OtherLangPath}}" aria-label="{{t .Lang "toggle.aria"}}">{{.OtherLangLabel}}</a>
+  </div>
 </header>
 <div class="layout">
   <nav class="sidebar">
-    <a href="{{.RootPath}}index.html"   class="{{if eq .NavActive "index"}}active{{end}}">Dashboard</a>
-    <a href="{{.RootPath}}open.html"    class="{{if eq .NavActive "open"}}active{{end}}">Open work</a>
-    <a href="{{.RootPath}}review.html"  class="{{if eq .NavActive "review"}}active{{end}}">Review queue</a>
-    <a href="{{.RootPath}}files.html"   class="{{if eq .NavActive "files"}}active{{end}}">Files</a>
-    <a href="{{.RootPath}}risks.html"   class="{{if eq .NavActive "risks"}}active{{end}}">Risk review</a>
-    <a href="{{.RootPath}}graph.html"   class="{{if eq .NavActive "graph"}}active{{end}}">Relationships</a>
-    <div class="navgroup">Data</div>
+    <a href="{{.RootPath}}index.html"   class="{{if eq .NavActive "index"}}active{{end}}">{{t .Lang "nav.dashboard"}}</a>
+    <a href="{{.RootPath}}open.html"    class="{{if eq .NavActive "open"}}active{{end}}">{{t .Lang "nav.open_work"}}</a>
+    <a href="{{.RootPath}}review.html"  class="{{if eq .NavActive "review"}}active{{end}}">{{t .Lang "nav.review_queue"}}</a>
+    <a href="{{.RootPath}}files.html"   class="{{if eq .NavActive "files"}}active{{end}}">{{t .Lang "nav.files"}}</a>
+    <a href="{{.RootPath}}risks.html"   class="{{if eq .NavActive "risks"}}active{{end}}">{{t .Lang "nav.risk_review"}}</a>
+    <a href="{{.RootPath}}graph.html"   class="{{if eq .NavActive "graph"}}active{{end}}">{{t .Lang "nav.relationships"}}</a>
+    <div class="navgroup">{{t .Lang "nav.data"}}</div>
     <a href="{{.RootPath}}data/intents.json" class="muted">data/intents.json</a>
   </nav>
   <main class="content">{{end}}

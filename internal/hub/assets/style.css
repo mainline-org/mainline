@@ -198,3 +198,16 @@ section.commands pre { background: var(--panel); border: 1px solid var(--line); 
 @media (max-width: 720px) {
   .dashboard-row { grid-template-columns: 1fr; }
 }
+
+/* ----- Language toggle ----- */
+
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+.lang-toggle {
+  font-size: 0.85em;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg);
+  background: var(--soft);
+}
+.lang-toggle:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }

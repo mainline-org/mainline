@@ -43,55 +43,146 @@ var tplGraph string
 //go:embed assets/style.css
 var embeddedCSS string
 
-// renderAll writes every page in the site. Templates compose via the
-// shared base layout. Each page passes a small context struct so the
-// template can reach the surrounding model when it needs to (e.g.
-// resolving an intent ID it links to into a title).
+// renderAll writes every page in the site, once per supported
+// language. EN renders to <dir>/<page>.html (canonical paths kept
+// for backward compatibility); ZH renders to <dir>/zh/<page>.html.
+// /assets/style.css and /data/intents.json stay shared at root —
+// they don't have UI text so duplicating them would just bloat the
+// site.
+//
+// RootPath / OtherLangPath wiring is per-page: top-level vs nested
+// each have a different path back to assets/data (RootPath) and a
+// different relative path to the same page in the other language
+// (OtherLangPath). Pre-computed at context-build time so templates
+// don't have to know the directory tree.
 func renderAll(dir string, m *HubModel) error {
 	tpl, err := buildTemplates()
 	if err != nil {
 		return fmt.Errorf("hub: parse templates: %w", err)
 	}
+	for _, lang := range SupportedLanguages {
+		if err := renderForLang(dir, m, tpl, lang); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// renderForLang renders the full site once for the given language.
+// EN goes to dir/, ZH to dir/zh/. Per-page contexts get Lang +
+// OtherLangPath baked in.
+func renderForLang(dir string, m *HubModel, tpl *template.Template, lang string) error {
 	intentByID := indexByID(m.Intents)
 
-	if err := renderTo(filepath.Join(dir, "index.html"), tpl, "index", indexCtx(m)); err != nil {
+	// Per-language base directory.
+	base := dir
+	if lang != LangEN {
+		base = filepath.Join(dir, lang)
+	}
+
+	render := func(rel, name string, ctx pageCtx) error {
+		ctx.Lang = lang
+		// RootPath and OtherLangPath depend on (lang, depth).
+		nested := strings.Contains(rel, "/")
+		ctx.RootPath = rootPathFor(lang, nested)
+		ctx.OtherLangPath = otherLangPath(lang, rel)
+		ctx.OtherLangLabel = LanguageLabel[otherLang(lang)]
+		return renderTo(filepath.Join(base, rel), tpl, name, ctx)
+	}
+
+	if err := render("index.html", "index", indexCtx(m)); err != nil {
 		return err
 	}
-	if err := renderTo(filepath.Join(dir, "open.html"), tpl, "open", openCtx(m)); err != nil {
+	if err := render("open.html", "open", openCtx(m)); err != nil {
 		return err
 	}
-	if err := renderTo(filepath.Join(dir, "files.html"), tpl, "files", filesCtx(m)); err != nil {
+	if err := render("files.html", "files", filesCtx(m)); err != nil {
 		return err
 	}
-	if err := renderTo(filepath.Join(dir, "review.html"), tpl, "review", reviewCtx(m)); err != nil {
+	if err := render("review.html", "review", reviewCtx(m)); err != nil {
 		return err
 	}
 	for i := range m.Intents {
 		in := m.Intents[i]
-		path := filepath.Join(dir, "intents", in.ID+".html")
-		if err := renderTo(path, tpl, "intent", intentCtx(m, in, intentByID)); err != nil {
+		if err := render("intents/"+in.ID+".html", "intent", intentCtx(m, in, intentByID)); err != nil {
 			return err
 		}
 	}
 	for _, f := range m.FileIndex {
-		path := filepath.Join(dir, "files", fileSlug(f.Path)+".html")
-		if err := renderTo(path, tpl, "file", fileCtx(m, f, intentByID)); err != nil {
+		if err := render("files/"+fileSlug(f.Path)+".html", "file", fileCtx(m, f, intentByID)); err != nil {
 			return err
 		}
 	}
 	for _, a := range m.ActorIndex {
-		path := filepath.Join(dir, "actors", actorSlug(a.ActorID)+".html")
-		if err := renderTo(path, tpl, "actor", actorCtx(m, a, intentByID)); err != nil {
+		if err := render("actors/"+actorSlug(a.ActorID)+".html", "actor", actorCtx(m, a, intentByID)); err != nil {
 			return err
 		}
 	}
-	if err := renderTo(filepath.Join(dir, "risks.html"), tpl, "risks", risksCtx(m, intentByID)); err != nil {
+	if err := render("risks.html", "risks", risksCtx(m, intentByID)); err != nil {
 		return err
 	}
-	if err := renderTo(filepath.Join(dir, "graph.html"), tpl, "graph", graphCtx(m, intentByID)); err != nil {
+	if err := render("graph.html", "graph", graphCtx(m, intentByID)); err != nil {
 		return err
 	}
 	return nil
+}
+
+// rootPathFor returns the relative path back to dir (the root
+// containing /assets and /data) for a page rendered under
+// (lang, nested). EN top-level: ""; EN nested: "../"; ZH
+// top-level (under /zh/): "../"; ZH nested (under /zh/intents/):
+// "../../".
+func rootPathFor(lang string, nested bool) string {
+	depth := 0
+	if lang != LangEN {
+		depth++ // /zh/
+	}
+	if nested {
+		depth++ // /intents/, /files/, /actors/
+	}
+	switch depth {
+	case 0:
+		return ""
+	case 1:
+		return "../"
+	case 2:
+		return "../../"
+	default:
+		return strings.Repeat("../", depth)
+	}
+}
+
+// otherLangPath computes the href to the same page rendered in the
+// other language, relative to the current page's location. Drives
+// the language-toggle button.
+func otherLangPath(lang, rel string) string {
+	other := otherLang(lang)
+	nested := strings.Contains(rel, "/")
+	switch {
+	case lang == LangEN && other == LangZH:
+		// /<rel> → /zh/<rel>; /intents/X.html → ../zh/intents/X.html
+		if !nested {
+			return "zh/" + rel
+		}
+		return "../zh/" + rel
+	case lang == LangZH && other == LangEN:
+		// /zh/<rel> → /<rel>; /zh/intents/X.html → ../../intents/X.html
+		if !nested {
+			return "../" + rel
+		}
+		return "../../" + rel
+	}
+	return rel
+}
+
+// otherLang returns the canonical "other" language code given a
+// current-language code. Two-language v1; if more languages land
+// later this becomes a more complex choice.
+func otherLang(lang string) string {
+	if lang == LangEN {
+		return LangZH
+	}
+	return LangEN
 }
 
 func buildTemplates() (*template.Template, error) {
@@ -107,6 +198,8 @@ func buildTemplates() (*template.Template, error) {
 		"ageLabel":      ageLabel,
 		"coverageRatio": coverageRatio,
 		"deref":         derefInt,
+		"t":             translate,
+		"tHealth":       translateHealthLabel,
 	}
 	tpl := template.New("hub").Funcs(funcs)
 	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplReview, tplActor, tplRisks, tplGraph} {
@@ -142,6 +235,24 @@ type pageCtx struct {
 	MainHead    string
 	NavActive   string
 	RootPath    string
+
+	// Lang is the UI language of the current render: "en" or "zh".
+	// Templates pass this to the `t` helper for chrome strings;
+	// intent CONTENT (titles, what/why, decisions, risks,
+	// anti_patterns) stays as the user wrote it — only chrome
+	// translates.
+	Lang string
+
+	// OtherLangPath is the relative href from this page to the
+	// SAME page in the other language. Used by the language-toggle
+	// button in the header. Pre-computed at context-build time so
+	// templates don't have to know the directory tree.
+	OtherLangPath string
+
+	// OtherLangLabel is what the toggle button shows — the OTHER
+	// language's self-name ("English" / "中文"). Computed alongside
+	// OtherLangPath so a single template variable drives the link.
+	OtherLangLabel string
 
 	Dashboard   HubDashboard
 	TeamHealth  HubTeamHealth
@@ -460,6 +571,23 @@ func timeAgo(s string) string {
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	default:
 		return t.Format("2006-01-02")
+	}
+}
+
+// translateHealthLabel is healthLabel's i18n-aware sibling: takes
+// (lang, level) instead of just level. Templates use this when the
+// page has a Lang context; legacy callers can still use healthLabel
+// for the English-only fallback.
+func translateHealthLabel(lang, level string) string {
+	switch level {
+	case "healthy":
+		return translate(lang, "team_health.healthy")
+	case "attention":
+		return translate(lang, "team_health.attention")
+	case "critical":
+		return translate(lang, "team_health.critical")
+	default:
+		return translate(lang, "team_health.partial")
 	}
 }
 
