@@ -96,13 +96,17 @@ func renderAll(dir string, m *HubModel) error {
 
 func buildTemplates() (*template.Template, error) {
 	funcs := template.FuncMap{
-		"shortID":     shortID,
-		"shortCommit": shortCommit,
-		"fileSlug":    fileSlug,
-		"actorSlug":   actorSlug,
-		"timeAgo":     timeAgo,
-		"join":        strings.Join,
-		"hasPrefix":   strings.HasPrefix,
+		"shortID":       shortID,
+		"shortCommit":   shortCommit,
+		"fileSlug":      fileSlug,
+		"actorSlug":     actorSlug,
+		"timeAgo":       timeAgo,
+		"join":          strings.Join,
+		"hasPrefix":     strings.HasPrefix,
+		"healthLabel":   healthLabel,
+		"ageLabel":      ageLabel,
+		"coverageRatio": coverageRatio,
+		"deref":         derefInt,
 	}
 	tpl := template.New("hub").Funcs(funcs)
 	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplReview, tplActor, tplRisks, tplGraph} {
@@ -140,6 +144,7 @@ type pageCtx struct {
 	RootPath    string
 
 	Dashboard   HubDashboard
+	TeamHealth  HubTeamHealth
 	Intents     []HubIntent
 	OpenIntents []HubOpenIntent
 	FileIndex   []HubFileEntry
@@ -202,6 +207,7 @@ func indexCtx(m *HubModel) pageCtx {
 		NavActive:   "index",
 		RootPath:    "",
 		Dashboard:   m.Dashboard,
+		TeamHealth:  m.TeamHealth,
 		Intents:     m.Intents,
 		OpenIntents: m.OpenIntents,
 	}
@@ -455,4 +461,59 @@ func timeAgo(s string) string {
 	default:
 		return t.Format("2006-01-02")
 	}
+}
+
+// healthLabel maps the team-health enum to user-facing copy. Spec
+// §4.3 three buckets; empty value (partial-data path) becomes
+// "Partial data" so the dashboard never reads as healthy when core
+// inputs are missing.
+func healthLabel(level string) string {
+	switch level {
+	case "healthy":
+		return "Good overall"
+	case "attention":
+		return "Needs attention"
+	case "critical":
+		return "Critical"
+	default:
+		return "Partial data"
+	}
+}
+
+// ageLabel renders an integer-hours age as a short human string.
+// "1h", "23h", "2d", "5d". Days are truncated, not rounded — under-
+// promising on age is more useful than over.
+func ageLabel(hours int) string {
+	if hours <= 0 {
+		return "<1h"
+	}
+	if hours < 48 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	days := hours / 24
+	return fmt.Sprintf("%dd", days)
+}
+
+// coverageRatio formats a 0..1 float as a percentage with one
+// decimal when needed, otherwise integer percent. 0.967 → "97%",
+// 0.9678 → "97%", 1.0 → "100%".
+func coverageRatio(r float64) string {
+	if r <= 0 {
+		return "0%"
+	}
+	if r >= 1 {
+		return "100%"
+	}
+	pct := r * 100
+	return fmt.Sprintf("%d%%", int(pct+0.5))
+}
+
+// derefInt unwraps an *int for the Risks-missing-mitigation field.
+// nil reads as 0 in templates by accident; explicit deref makes the
+// "field not available" branch obvious in the template.
+func derefInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }

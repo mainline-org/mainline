@@ -30,6 +30,7 @@ type HubModel struct {
 	MainBranch  string          `json:"main_branch"`
 	MainHead    string          `json:"main_head"`
 	Dashboard   HubDashboard    `json:"dashboard"`
+	TeamHealth  HubTeamHealth   `json:"team_health"`
 	Intents     []HubIntent     `json:"intents"`
 	OpenIntents []HubOpenIntent `json:"open_intents,omitempty"`
 
@@ -64,15 +65,119 @@ type HubStatusCount struct {
 }
 
 type HubFocusIntent struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
-	Reason string `json:"reason"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Status     string `json:"status"`
+	Reason     string `json:"reason"`
+	// AgeHours is the wall-clock age (sealed→now or last activity→now)
+	// in whole hours. 0 when timestamps aren't available; renderer
+	// hides the column then. Drives the review-queue aging buckets.
+	AgeHours int `json:"age_hours,omitempty"`
+	// RiskCount + FileCount let the dashboard show "1 high-risk
+	// proposed" / "touches 3 files" without a second lookup.
+	RiskCount int `json:"risk_count,omitempty"`
+	FileCount int `json:"file_count,omitempty"`
+	// HighRisk is true when the intent has at least one anti-pattern
+	// or any risk text — used to pin high-risk items above same-age
+	// peers in the review queue.
+	HighRisk bool `json:"high_risk,omitempty"`
 }
 
 type HubHotFile struct {
 	Path        string `json:"path"`
 	IntentCount int    `json:"intent_count"`
+	// Decision-hotspots metadata (spec §9). RiskIntentCount is how
+	// many of the IntentCount intents flagged risks; RecentCount is
+	// how many were sealed within the last 7 days. Both are
+	// pre-computed in the model layer so the renderer doesn't have
+	// to walk the catalog per row.
+	RiskIntentCount int `json:"risk_intent_count"`
+	RecentCount     int `json:"recent_count"`
+}
+
+// HubTeamHealth is the founder-facing summary the spec calls for.
+// Survives into Hub v2 as the JSON DTO behind a /team-health API
+// endpoint; same omitempty discipline as the other Hub types so an
+// older reader parses unchanged.
+//
+// The headline state is HealthLevel — one of "healthy" | "attention"
+// | "critical". Spec §4.3: data unavailability never reads as
+// healthy; HealthLevel falls back to "" with HealthSummary
+// explaining why.
+type HubTeamHealth struct {
+	HealthLevel   string `json:"health_level"`
+	HealthSummary string `json:"health_summary"`
+
+	// Counts duplicated from the existing Dashboard so the
+	// team-health JSON is self-contained for downstream consumers.
+	TotalIntents      int `json:"total_intents"`
+	OpenIntents       int `json:"open_intents"`
+	ProposedIntents   int `json:"proposed_intents"`
+	RiskIntentCount   int `json:"risk_intent_count"`
+	FilesWithHistory  int `json:"files_with_history"`
+
+	// Aging snapshot for review-queue / open-work freshness.
+	ProposedOlderThan12h int `json:"proposed_older_than_12h"`
+	ProposedOlderThan24h int `json:"proposed_older_than_24h"`
+	ProposedOlderThan48h int `json:"proposed_older_than_48h"`
+	OldestProposedHours  int `json:"oldest_proposed_hours"`
+	OpenOlderThan24h     int `json:"open_older_than_24h"`
+	OpenOlderThan72h     int `json:"open_older_than_72h"`
+
+	// Coverage subsection (spec §6). Available=false on repos where
+	// gaps data hasn't been computed; renderer must show partial-
+	// data wording rather than pretending healthy.
+	Coverage HubCoverageSummary `json:"coverage"`
+
+	// Risk radar (spec §8). MissingMitigation is left nil-able
+	// because the heuristic is fragile; renderer hides the line
+	// when it's not available rather than printing "0".
+	Risk HubRiskRadar `json:"risk"`
+
+	// Weekly digest (spec §10). 7-day rolling window.
+	Digest HubWeeklyDigest `json:"digest"`
+}
+
+// HubCoverageSummary encodes the "intent coverage" subsection. When
+// Available is false, render-side must show partial-data wording
+// instead of zero counts.
+type HubCoverageSummary struct {
+	Available                bool    `json:"available"`
+	CoveredCommits           int     `json:"covered_commits"`
+	UncoveredCommits         int     `json:"uncovered_commits"`
+	CoverageRatio            float64 `json:"coverage_ratio"`
+	HighRiskUncoveredCommits int     `json:"high_risk_uncovered_commits"`
+}
+
+// HubRiskRadar surfaces actionable risk signal — proposed intents
+// that carry risks, files with concentrated risk history, recent
+// risk-bearing intents. NOT a count of all risk-bearing intents
+// (that already lives on the dashboard); these are the actionable
+// subsets.
+type HubRiskRadar struct {
+	RiskBearingIntents     int                  `json:"risk_bearing_intents"`
+	RiskBearingProposed    int                  `json:"risk_bearing_proposed"`
+	RecentRiskBearing      int                  `json:"recent_risk_bearing"`
+	RisksMissingMitigation *int                 `json:"risks_missing_mitigation,omitempty"`
+	RiskHeavyFiles         []HubHotFile         `json:"risk_heavy_files,omitempty"`
+	RiskBearingProposedRows []HubFocusIntent    `json:"risk_bearing_proposed_rows,omitempty"`
+}
+
+// HubWeeklyDigest is the 7-day rolling rollup. ImportantDecisions /
+// RisksToWatch / AbandonedApproaches are pre-truncated to a small N
+// so the dashboard section stays scannable; the full lists live on
+// their dedicated pages.
+type HubWeeklyDigest struct {
+	WindowDays         int              `json:"window_days"`
+	SealedThisWindow   int              `json:"sealed_this_window"`
+	ProposedThisWindow int              `json:"proposed_this_window"`
+	AbandonedThisWindow int             `json:"abandoned_this_window"`
+	SupersededThisWindow int            `json:"superseded_this_window"`
+	RiskBearingThisWindow int           `json:"risk_bearing_this_window"`
+	HotFilesThisWindow []HubHotFile     `json:"hot_files_this_window,omitempty"`
+	ImportantDecisions []HubFocusIntent `json:"important_decisions,omitempty"`
+	RisksToWatch       []HubFocusIntent `json:"risks_to_watch,omitempty"`
+	AbandonedApproaches []HubFocusIntent `json:"abandoned_approaches,omitempty"`
 }
 
 // HubIntent is the per-intent record. Fields map 1:1 onto IntentView

@@ -126,3 +126,75 @@ section.commands pre { background: var(--panel); border: 1px solid var(--line); 
   .notice { display: block; }
   .notice a { display: block; margin-top: 4px; }
 }
+
+/* ----- Team-health redesign ----- */
+
+.team-health {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin: 16px 0;
+  background: var(--panel);
+}
+.team-health-headline { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.team-health-badge {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.team-health-level { font-size: 1.05em; font-weight: 700; }
+.team-health-summary { margin: 0; color: var(--fg); }
+
+.team-health-healthy { border-left: 4px solid var(--merged); }
+.team-health-attention { border-left: 4px solid #c4730d; }
+.team-health-attention .team-health-level { color: #c4730d; }
+.team-health-critical { border-left: 4px solid var(--risk); background: var(--risk-soft); }
+.team-health-critical .team-health-level { color: var(--risk); }
+
+.metric-aux {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.dashboard-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+.dashboard-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: var(--panel);
+}
+.dashboard-card h2 { margin: 0 0 8px; font-size: 0.95em; border-bottom: 0; padding-bottom: 0; }
+.card-headline { font-size: 1.4em; font-weight: 700; margin: 0 0 8px; }
+.card-headline-muted { font-size: 1em; margin: 0 0 6px; }
+.card-stats { list-style: none; padding: 0; margin: 0; color: var(--muted); font-size: 0.92em; }
+.card-stats li { margin: 3px 0; }
+.card-stats li.warn { color: #c4730d; }
+.card-stats li.risk { color: var(--risk); font-weight: 600; }
+
+.focus-high-risk { border-left: 3px solid var(--risk); }
+
+.digest {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin: 24px 0;
+  background: var(--panel);
+}
+.digest h2 { margin-top: 0; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.digest h3 { margin: 16px 0 6px; font-size: 0.95em; color: var(--muted); border: 0; padding: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.digest-stats { display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); margin: 8px 0 4px; font-size: 0.95em; }
+.digest-stats strong { color: var(--fg); font-size: 1.1em; }
+.digest-list { margin: 4px 0 12px; padding-left: 20px; }
+.digest-list li { margin: 4px 0; }
+
+@media (max-width: 720px) {
+  .dashboard-row { grid-template-columns: 1fr; }
+}
