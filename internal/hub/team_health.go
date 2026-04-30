@@ -399,11 +399,7 @@ func parseTime(s string) (time.Time, bool) {
 }
 
 func hasAnyAntiPattern(in HubIntent) bool {
-	// HubIntent doesn't carry anti_patterns directly today (they
-	// live in Decisions/Risks via the JSON view). Treat any
-	// non-empty Risks list as the surrogate signal — refine when
-	// HubIntent gains its own anti_patterns field.
-	return false
+	return len(in.AntiPatterns) > 0
 }
 
 func focusFromIntent(in HubIntent, reason string, now time.Time) HubFocusIntent {
