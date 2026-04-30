@@ -938,6 +938,133 @@ func (g *Git) CommitDates(commits []string) (map[string]string, error) {
 	return dates, nil
 }
 
+// CommitSubjects returns commit subjects (first line of message) keyed by
+// commit hash. One `log --no-walk` invocation regardless of N; replaces
+// per-commit CommitSubject when callers know the full set up-front.
+func (g *Git) CommitSubjects(commits []string) (map[string]string, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	// Use tab separator to handle subjects that may contain spaces.
+	args := append([]string{"log", "--no-walk", "--format=%H\t%s"}, commits...)
+	out, err := g.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	subjects := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) == 2 {
+			subjects[parts[0]] = parts[1]
+		}
+	}
+	return subjects, nil
+}
+
+// FullCommitMessages returns full commit messages keyed by commit hash.
+// Uses a single `git cat-file --batch` session to avoid N subprocess forks.
+func (g *Git) FullCommitMessages(commits []string) (map[string]string, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	batch, err := g.OpenCatFileBatch()
+	if err != nil {
+		// Fallback: run individually.
+		msgs := make(map[string]string)
+		for _, c := range commits {
+			msg, _ := g.FullCommitMessage(c)
+			msgs[c] = msg
+		}
+		return msgs, nil
+	}
+	defer batch.Close()
+
+	msgs := make(map[string]string)
+	for _, c := range commits {
+		body, err := batch.Read(c)
+		if err != nil || body == nil {
+			continue
+		}
+		// cat-file on a commit returns the raw commit object.
+		// The message starts after the first blank line.
+		s := string(body)
+		if idx := strings.Index(s, "\n\n"); idx >= 0 {
+			msgs[c] = strings.TrimSpace(s[idx+2:])
+		}
+	}
+	return msgs, nil
+}
+
+// NotesForCommits returns note contents keyed by commit hash for commits
+// that have notes in the mainline/intents ref. Uses `git notes list` to
+// get note blob OIDs, then reads them via `cat-file --batch` in one session.
+func (g *Git) NotesForCommits(commits []string) (map[string]string, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	// First, list all notes to get note_blob → commit mapping.
+	out, err := g.run("notes", "--ref=mainline/intents", "list")
+	if err != nil {
+		return nil, nil // no notes ref
+	}
+
+	// Build commit→noteBlob map, filtered to requested commits.
+	wantSet := make(map[string]struct{}, len(commits))
+	for _, c := range commits {
+		wantSet[c] = struct{}{}
+	}
+	type noteEntry struct {
+		blob   string
+		commit string
+	}
+	var toRead []noteEntry
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			continue
+		}
+		blob, commit := parts[0], parts[1]
+		if _, ok := wantSet[commit]; ok {
+			toRead = append(toRead, noteEntry{blob: blob, commit: commit})
+		}
+	}
+
+	if len(toRead) == 0 {
+		return map[string]string{}, nil
+	}
+
+	// Read note blobs via cat-file --batch.
+	batch, err := g.OpenCatFileBatch()
+	if err != nil {
+		// Fallback: read individually.
+		notes := make(map[string]string)
+		for _, c := range commits {
+			n, _ := g.NotesShow(c)
+			if n != "" {
+				notes[c] = n
+			}
+		}
+		return notes, nil
+	}
+	defer batch.Close()
+
+	notes := make(map[string]string)
+	for _, entry := range toRead {
+		body, err := batch.Read(entry.blob)
+		if err != nil || body == nil {
+			continue
+		}
+		notes[entry.commit] = strings.TrimSpace(string(body))
+	}
+	return notes, nil
+}
+
 // ConfigGet returns the value of a git config key, empty if not set.
 func (g *Git) ConfigGet(key string) string {
 	out, err := g.run("config", "--get-all", key)

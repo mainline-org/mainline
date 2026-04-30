@@ -309,28 +309,58 @@ func (s *Service) Pin() (*PinResult, error) {
 		treeOf = map[string]string{}
 	}
 
+	// Pre-batch: collect all unique CodeCommit values from proposed intents
+	// and fetch their tree hashes + subjects in one call each.
+	var codeCommits []string
+	codeCommitSeen := map[string]bool{}
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusProposed && iv.Status != domain.StatusMerged {
+			continue
+		}
+		if iv.CodeCommit != "" && !codeCommitSeen[iv.CodeCommit] {
+			codeCommits = append(codeCommits, iv.CodeCommit)
+			codeCommitSeen[iv.CodeCommit] = true
+		}
+	}
+	intentTreeOf, _ := s.Git.CommitTreeHashes(codeCommits)
+	if intentTreeOf == nil {
+		intentTreeOf = map[string]string{}
+	}
+	intentSubjects, _ := s.Git.CommitSubjects(codeCommits)
+	if intentSubjects == nil {
+		intentSubjects = map[string]string{}
+	}
+
+	// Pre-batch: full commit messages for goal_text strategy.
+	entryMessages, _ := s.Git.FullCommitMessages(hashes)
+	if entryMessages == nil {
+		entryMessages = map[string]string{}
+	}
+
+	// Pre-batch: all notes for lookback commits (for alreadyHasIntent checks).
+	noteCache, _ := s.Git.NotesForCommits(hashes)
+	if noteCache == nil {
+		noteCache = map[string]string{}
+	}
+
+	pinCtx := &pinContext{
+		treeOf:         treeOf,
+		intentTreeOf:   intentTreeOf,
+		intentSubjects: intentSubjects,
+		entryMessages:  entryMessages,
+		noteCache:      noteCache,
+	}
+
 	result := &PinResult{}
 	for _, iv := range view.Intents {
-		// Only proposed and merged intents go through the auto-pin
-		// path. Proposed → run the strategy cascade to find a primary
-		// commit. Merged → use the recorded MergedMainCommit as the
-		// primary so retroactive same-tree expansion can fix the
-		// canonical merge-commit + squash-content-commit pair where
-		// only one of the pair got the note historically.
 		if iv.Status != domain.StatusProposed && iv.Status != domain.StatusMerged {
 			continue
 		}
 
-		// v0.3 backfill: when the intent was started with --commits,
-		// pin to each listed commit explicitly. Bypasses the
-		// tree_hash/commit_hash/goal_text cascade — backfill IS the
-		// claim, not a heuristic match. Each commit gets the same
-		// intent ref via upsertCommitNote (multi-intent shared notes
-		// already supported).
 		if len(iv.BackfillCommits) > 0 {
 			pinnedAny := false
 			for _, target := range iv.BackfillCommits {
-				if alreadyHasIntent(s.Git, target, iv.IntentID) {
+				if alreadyHasIntentCached(pinCtx.noteCache, target, iv.IntentID) {
 					continue
 				}
 				hash, _ := core.CanonicalHash(iv)
@@ -363,29 +393,16 @@ func (s *Service) Pin() (*PinResult, error) {
 			continue
 		}
 
-		// Two cases share the same expand-and-write tail:
-		//
-		//   proposed → run the strategy cascade to FIND a match,
-		//              then expand to same-tree neighbors.
-		//   merged   → use the existing MergedMainCommit as the
-		//              primary, expand to same-tree neighbors, and
-		//              pin any that don't yet have the note. This
-		//              retroactively covers the canonical
-		//              GitHub merge-commit + squash-content-commit
-		//              pair, where the merge note historically
-		//              landed only on the merge commit.
 		var primary, strategy string
 		switch iv.Status {
 		case domain.StatusProposed:
-			primary, strategy = s.findPinMatch(iv, entries, treeOf)
+			primary, strategy = findPinMatchBatched(iv, entries, pinCtx)
 			if primary == "" {
 				continue
 			}
 		case domain.StatusMerged:
 			primary = iv.StatusEvidence.MergedMainCommit
 			if primary == "" || treeOf[primary] == "" {
-				// Either no recorded pin commit, or it's outside
-				// the lookback — skip retroactive expansion.
 				continue
 			}
 			strategy = "tree_hash"
@@ -393,11 +410,6 @@ func (s *Service) Pin() (*PinResult, error) {
 			continue
 		}
 
-		// expandToSameTreeNeighbors: a merge commit and the squash
-		// content commit it merged share an identical tree (no new
-		// content was added by the merge). Pinning all same-tree
-		// commits in the lookback closes the coverage gap where
-		// only one of the pair gets a note.
 		targets := []string{primary}
 		primaryTree := treeOf[primary]
 		if primaryTree != "" {
@@ -414,7 +426,7 @@ func (s *Service) Pin() (*PinResult, error) {
 		hash, _ := core.CanonicalHash(iv)
 		pinnedAny := false
 		for _, target := range targets {
-			if alreadyHasIntent(s.Git, target, iv.IntentID) {
+			if alreadyHasIntentCached(pinCtx.noteCache, target, iv.IntentID) {
 				continue
 			}
 			note := domain.CommitNote{
@@ -451,6 +463,89 @@ func (s *Service) Pin() (*PinResult, error) {
 	}
 
 	return result, nil
+}
+
+// pinContext holds pre-batched data for the pin sweep so findPinMatch
+// and alreadyHasIntent don't fork per-intent subprocess calls.
+type pinContext struct {
+	treeOf         map[string]string // main commit → tree hash
+	intentTreeOf   map[string]string // code_commit → tree hash
+	intentSubjects map[string]string // code_commit → subject line
+	entryMessages  map[string]string // main commit → full message
+	noteCache      map[string]string // main commit → note JSON (empty if no note)
+}
+
+// findPinMatchBatched is the batched version of findPinMatch that uses
+// pre-fetched data instead of forking per-intent git subprocesses.
+func findPinMatchBatched(iv domain.IntentView, entries []gitops.LogEntry, ctx *pinContext) (string, string) {
+	for _, strategy := range pinStrategies {
+		switch strategy {
+		case "tree_hash":
+			if iv.CodeCommit == "" {
+				continue
+			}
+			intentTree := ctx.intentTreeOf[iv.CodeCommit]
+			if intentTree == "" {
+				continue
+			}
+			for _, entry := range entries {
+				if ctx.treeOf[entry.Hash] == intentTree {
+					return entry.Hash, strategy
+				}
+			}
+		case "commit_hash":
+			if iv.CodeCommit == "" {
+				continue
+			}
+			for _, entry := range entries {
+				if entry.Hash == iv.CodeCommit {
+					return entry.Hash, strategy
+				}
+			}
+		case "subject":
+			if iv.CodeCommit == "" {
+				continue
+			}
+			intentSubject := ctx.intentSubjects[iv.CodeCommit]
+			if intentSubject == "" {
+				continue
+			}
+			for _, entry := range entries {
+				if entry.Subject == intentSubject {
+					return entry.Hash, strategy
+				}
+			}
+		case "goal_text":
+			if iv.Goal == "" {
+				continue
+			}
+			for _, entry := range entries {
+				msg := ctx.entryMessages[entry.Hash]
+				if msg != "" && strings.Contains(msg, iv.Goal) {
+					return entry.Hash, strategy
+				}
+			}
+		}
+	}
+	return "", ""
+}
+
+// alreadyHasIntentCached checks the note cache instead of forking git.
+func alreadyHasIntentCached(noteCache map[string]string, commit, intentID string) bool {
+	noteContent := noteCache[commit]
+	if noteContent == "" {
+		return false
+	}
+	var existing domain.CommitNote
+	if err := json.Unmarshal([]byte(noteContent), &existing); err != nil {
+		return false
+	}
+	for _, ref := range existing.Intents {
+		if ref.IntentID == intentID {
+			return true
+		}
+	}
+	return false
 }
 
 // PinExplicit writes a pin_explicit note pinning intentID to
