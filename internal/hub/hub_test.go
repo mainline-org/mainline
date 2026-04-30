@@ -540,6 +540,27 @@ func focusOrder(items []HubFocusIntent) []string {
 	return out
 }
 
+// AntiPattern-only intents must register on the Risk radar. Pre-fix
+// the radar relied on len(Risks)>0, so an intent that recorded a
+// hard constraint (anti_pattern) without a soft warning (risk) was
+// invisible — a real undercount on the load-bearing safety surface.
+func TestHubRiskRadar_AntiPatternOnlyIntentRegisters(t *testing.T) {
+	ap := intent("int_ap_only", "act", time.Now().UTC().Format(time.RFC3339), domain.StatusProposed)
+	ap.Summary.AntiPatterns = []domain.AntiPattern{
+		{What: "Do not delete /oauth", Why: "callback needs it", Severity: "high"},
+	}
+	v := makeView(ap)
+	m := buildHubModel(v)
+
+	if m.TeamHealth.Risk.RiskBearingProposed != 1 {
+		t.Errorf("anti-pattern-only intent should register as risk-bearing proposed; got count %d",
+			m.TeamHealth.Risk.RiskBearingProposed)
+	}
+	if len(m.Intents) != 1 || len(m.Intents[0].AntiPatterns) != 1 {
+		t.Errorf("HubIntent must carry AntiPatterns through; got %+v", m.Intents)
+	}
+}
+
 func TestHubRiskRadar_GroupsRiskBearingProposed(t *testing.T) {
 	v := makeView(
 		intentSealed("int_proposed_risky", "proposed", 1, []string{"a.go"}, []string{"r"}),
