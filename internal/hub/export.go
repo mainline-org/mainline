@@ -14,10 +14,17 @@ import (
 )
 
 // ExportOptions are the inputs to a single `mainline hub export` run.
-// OutputDir is required; other fields are reserved for future flags
-// (--limit, --since, etc) that v1 does not implement.
+// OutputDir is required; CoverageRows is optional engine-supplied
+// per-commit coverage data (see CoverageInputCommit). When nil, Hub
+// renders the partial-data wording on coverage cards / page rather
+// than fake zero counts.
 type ExportOptions struct {
-	OutputDir string
+	OutputDir    string
+	CoverageRows []CoverageInputCommit
+	// CoverageWindow is the engine's window size (commits scanned).
+	// Echoed into HubCoverageDetail.WindowSize so the page can show
+	// "last N commits on main" honestly.
+	CoverageWindow int
 }
 
 // ExportResult summarises what landed on disk. Returned to the CLI
@@ -51,6 +58,15 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	model := buildHubModel(view)
 	model.OpenIntents = buildOpenIntents(store, view)
 	model.Dashboard = buildDashboard(model)
+	if len(opts.CoverageRows) > 0 {
+		model.TeamHealth.Coverage = BuildCoverageSummary(opts.CoverageRows)
+		model.CoverageDetail = HubCoverageDetail{
+			WindowSize: opts.CoverageWindow,
+			Commits:    coverageCommitsFromInput(opts.CoverageRows),
+		}
+		// Re-run health-level since coverage availability flipped.
+		model.TeamHealth.populateHealthLevel()
+	}
 
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("hub: mkdir output: %w", err)
@@ -619,4 +635,22 @@ func fileSlug(path string) string {
 func actorSlug(id string) string {
 	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_")
 	return r.Replace(id)
+}
+
+// coverageCommitsFromInput shapes engine-supplied rows into the page
+// type. Order is preserved (engine returns newest-first already).
+func coverageCommitsFromInput(rows []CoverageInputCommit) []HubCoverageCommit {
+	out := make([]HubCoverageCommit, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, HubCoverageCommit{
+			Commit:      r.Commit,
+			Subject:     r.Subject,
+			Author:      r.Author,
+			CommittedAt: r.CommittedAt,
+			State:       r.State,
+			HighRisk:    r.HighRisk,
+			SkipReason:  r.SkipReason,
+		})
+	}
+	return out
 }

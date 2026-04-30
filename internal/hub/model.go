@@ -41,6 +41,12 @@ type HubModel struct {
 	ActorIndex  []HubActorEntry  `json:"actor_index"`
 	RiskIntents []string         `json:"risk_intents"`
 	Relations   []HubRelationRow `json:"relations"`
+
+	// CoverageDetail is the per-commit coverage rollup for the
+	// /coverage.html page. Populated by the engine→hub bridge in
+	// export.go (Service.Gaps + CoverageWindow); empty when no
+	// coverage input was provided.
+	CoverageDetail HubCoverageDetail `json:"coverage_detail,omitempty"`
 }
 
 // HubDashboard is the human-first landing view: small rollups and
@@ -136,6 +142,44 @@ type HubTeamHealth struct {
 
 	// Weekly digest (spec §10). 7-day rolling window.
 	Digest HubWeeklyDigest `json:"digest"`
+
+	// ActorActivity is per-actor distribution of in-flight + recent
+	// sealed work. NOT a leaderboard — sorted alphabetically and
+	// scoped to "what's currently open" + "what merged in the digest
+	// window". Spec §11.
+	ActorActivity []HubActorActivity `json:"actor_activity,omitempty"`
+
+	// Lifecycle is the status mix + supersession/abandonment ratios
+	// across the sealed catalog. Spec §12. Verdict empty when sample
+	// size is too small to judge.
+	Lifecycle HubLifecycleHealth `json:"lifecycle"`
+}
+
+// HubActorActivity rolls up per-actor work distribution for the
+// dashboard's actor section. Counts only — never rankings, never
+// productivity metrics. ActorID is unique; ActorName is the
+// human-friendly form for display.
+type HubActorActivity struct {
+	ActorID          string `json:"actor_id"`
+	ActorName        string `json:"actor_name,omitempty"`
+	OpenProposed     int    `json:"open_proposed"`
+	SealedThisWindow int    `json:"sealed_this_window"`
+}
+
+// HubLifecycleHealth captures the status distribution of all sealed
+// intents plus supersession + abandonment ratios. Verdict is one of
+// "healthy" | "attention" | "critical" | "" (when sample is too
+// small to judge — under 5 sealed intents).
+type HubLifecycleHealth struct {
+	Total            int     `json:"total"`
+	Proposed         int     `json:"proposed"`
+	Merged           int     `json:"merged"`
+	Abandoned        int     `json:"abandoned"`
+	Superseded       int     `json:"superseded"`
+	Reverted         int     `json:"reverted"`
+	SupersessionRate float64 `json:"supersession_rate"`
+	AbandonmentRate  float64 `json:"abandonment_rate"`
+	Verdict          string  `json:"verdict,omitempty"`
 }
 
 // HubCoverageSummary encodes the "intent coverage" subsection. When
@@ -147,6 +191,25 @@ type HubCoverageSummary struct {
 	UncoveredCommits         int     `json:"uncovered_commits"`
 	CoverageRatio            float64 `json:"coverage_ratio"`
 	HighRiskUncoveredCommits int     `json:"high_risk_uncovered_commits"`
+}
+
+// HubCoverageDetail is the per-commit list rendered on the standalone
+// /coverage.html page. Populated alongside HubCoverageSummary by the
+// engine→hub bridge in export.go. Order is newest-first to match the
+// rest of the Hub UI.
+type HubCoverageDetail struct {
+	WindowSize int                   `json:"window_size"`
+	Commits    []HubCoverageCommit   `json:"commits,omitempty"`
+}
+
+type HubCoverageCommit struct {
+	Commit      string `json:"commit"`
+	Subject     string `json:"subject"`
+	Author      string `json:"author"`
+	CommittedAt string `json:"committed_at"`
+	State       string `json:"state"`
+	HighRisk    bool   `json:"high_risk,omitempty"`
+	SkipReason  string `json:"skip_reason,omitempty"`
 }
 
 // HubRiskRadar surfaces actionable risk signal — proposed intents
@@ -291,6 +354,14 @@ type HubOpenIntent struct {
 	CreatedAt      string `json:"created_at,omitempty"`
 	LastModifiedAt string `json:"last_modified_at,omitempty"`
 	TurnCount      int    `json:"turn_count"`
+}
+
+// HubIntentFromView is the exported alias used by callers outside
+// this package (e.g. the `mainline digest` CLI) that need to flatten
+// view rows into the Hub shape. Internal callers still use the lower-
+// case form.
+func HubIntentFromView(v *domain.IntentView) HubIntent {
+	return hubIntentFromView(v)
 }
 
 // hubIntentFromView flattens an IntentView (+ embedded summary +

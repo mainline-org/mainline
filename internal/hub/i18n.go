@@ -53,6 +53,8 @@ var translations = map[string]map[string]string{
 	"nav.review_queue":    {LangEN: "Review queue", LangZH: "待审"},
 	"nav.files":           {LangEN: "Files", LangZH: "文件"},
 	"nav.risk_review":     {LangEN: "Risk review", LangZH: "风险"},
+	"nav.coverage":        {LangEN: "Coverage", LangZH: "覆盖率"},
+	"nav.digest":          {LangEN: "Digest", LangZH: "周报"},
 	"nav.relationships":   {LangEN: "Relationships", LangZH: "关系图"},
 	"nav.data":            {LangEN: "Data", LangZH: "数据"},
 
@@ -122,6 +124,44 @@ var translations = map[string]map[string]string{
 	"coverage.uncovered_commits": {LangEN: "uncovered commit", LangZH: "未覆盖 commit"},
 	"coverage.high_risk_uncovered": {LangEN: "high-risk uncovered change", LangZH: "高风险未覆盖变更"},
 
+	"coverage.eyebrow": {LangEN: "Coverage", LangZH: "覆盖率"},
+	"coverage.headline": {
+		LangEN: "How much of main is captured by sealed intents.",
+		LangZH: "main 上有多少 commit 被已封存 intent 覆盖。",
+	},
+	"coverage.lead": {
+		LangEN: "Each main-branch commit is covered, skipped, or uncovered. Uncovered commits are the ones that need an intent.",
+		LangZH: "main 上的每个 commit 都会被分类为已覆盖、已跳过或未覆盖。未覆盖的 commit 是需要补 intent 的目标。",
+	},
+	"coverage.covered_count":   {LangEN: "covered commits", LangZH: "已覆盖 commit"},
+	"coverage.uncovered_count": {LangEN: "uncovered commits", LangZH: "未覆盖 commit"},
+	"coverage.recent_commits":  {LangEN: "Recent main-branch commits", LangZH: "main 近期 commit"},
+	"coverage.window_prefix":   {LangEN: "Last", LangZH: "最近"},
+	"coverage.window_suffix":   {LangEN: "commits scanned.", LangZH: "个 commit。"},
+	"coverage.col_state":       {LangEN: "State", LangZH: "状态"},
+	"coverage.col_commit":      {LangEN: "Commit", LangZH: "Commit"},
+	"coverage.col_subject":     {LangEN: "Subject", LangZH: "标题"},
+	"coverage.col_author":      {LangEN: "Author", LangZH: "作者"},
+	"coverage.col_when":        {LangEN: "When", LangZH: "时间"},
+	"coverage.rescue_heading":  {LangEN: "Rescue uncovered commits", LangZH: "补救未覆盖 commit"},
+	"coverage.rescue_lead": {
+		LangEN: "Run for ready-to-paste commands per uncovered commit:",
+		LangZH: "运行下面命令查看每个未覆盖 commit 的补救建议：",
+	},
+
+	"digest.eyebrow":          {LangEN: "Digest", LangZH: "周报"},
+	"digest.headline":         {LangEN: "Recent intent activity at a glance.", LangZH: "近期 intent 活动一览。"},
+	"digest.lead": {
+		LangEN: "Use mainline digest --since 14d / 30d on the CLI for wider windows.",
+		LangZH: "命令行运行 mainline digest --since 14d / 30d 可以查看更长时间窗口。",
+	},
+	"digest.day_unit":         {LangEN: "days", LangZH: "天"},
+	"digest.cli_hint_heading": {LangEN: "From the CLI", LangZH: "命令行入口"},
+	"digest.cli_hint_lead": {
+		LangEN: "Same data, different windows:",
+		LangZH: "同样的数据，可以指定不同的时间窗口：",
+	},
+
 	"review.proposed_suffix": {LangEN: "proposed", LangZH: "提案"},
 	"review.no_proposed": {LangEN: "No proposed intents waiting review.", LangZH: "无待审 intent。"},
 	"review.oldest_waiting": {LangEN: "oldest waiting", LangZH: "最久等待"},
@@ -162,6 +202,27 @@ var translations = map[string]map[string]string{
 	"notice.in_flight_singular": {LangEN: "open local intent still in flight", LangZH: "个本地 intent 仍在进行中"},
 	"notice.in_flight_plural":   {LangEN: "open local intents still in flight", LangZH: "个本地 intents 仍在进行中"},
 	"notice.view_in_flight":     {LangEN: "View in-flight work", LangZH: "查看进行中的工作"},
+
+	"lifecycle.heading":      {LangEN: "Lifecycle health", LangZH: "生命周期健康"},
+	"lifecycle.sealed_total": {LangEN: "sealed intents", LangZH: "已封存 intents"},
+	"lifecycle.merged":       {LangEN: "merged", LangZH: "已合并"},
+	"lifecycle.proposed":     {LangEN: "proposed", LangZH: "提案中"},
+	"lifecycle.abandoned":    {LangEN: "abandoned", LangZH: "放弃"},
+	"lifecycle.superseded":   {LangEN: "superseded", LangZH: "被替代"},
+	"lifecycle.reverted":     {LangEN: "reverted", LangZH: "回滚"},
+	"lifecycle.note": {
+		LangEN: "Status mix only. Watch abandonment & supersession rates as a churn signal — not as a per-person score.",
+		LangZH: "仅展示状态分布。abandonment 和 supersession 比例反映返工信号，不是个人评分。",
+	},
+
+	"actor.heading": {LangEN: "Activity by actor", LangZH: "成员活动"},
+	"actor.lead": {
+		LangEN: "Distribution of in-flight and recently sealed work. Sorted alphabetically — not a leaderboard.",
+		LangZH: "进行中与近期封存工作的分布。按字母序排列，不是排行榜。",
+	},
+	"actor.in_review":          {LangEN: "in review", LangZH: "待审"},
+	"actor.sealed_window":      {LangEN: "sealed this week", LangZH: "本周封存"},
+	"actor.no_recent_activity": {LangEN: "no recent activity", LangZH: "本周无活动"},
 
 	"hotfile.intents_singular":   {LangEN: "intent", LangZH: "intent"},
 	"hotfile.intents_plural":     {LangEN: "intents", LangZH: "intents"},
