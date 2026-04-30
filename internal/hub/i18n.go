@@ -163,6 +163,11 @@ var translations = map[string]map[string]string{
 	"notice.in_flight_plural":   {LangEN: "open local intents still in flight", LangZH: "个本地 intents 仍在进行中"},
 	"notice.view_in_flight":     {LangEN: "View in-flight work", LangZH: "查看进行中的工作"},
 
+	"hotfile.intents_singular":   {LangEN: "intent", LangZH: "intent"},
+	"hotfile.intents_plural":     {LangEN: "intents", LangZH: "intents"},
+	"hotfile.with_risk_singular": {LangEN: "with risk", LangZH: "带风险"},
+	"hotfile.with_risk_plural":   {LangEN: "with risks", LangZH: "带风险"},
+
 	// Open work, Review, Files, Risks, Graph — minimal chrome only.
 	"open.heading":          {LangEN: "Open work", LangZH: "进行中工作"},
 	"open.empty":            {LangEN: "No open intents on disk.", LangZH: "本地无进行中 intent。"},
