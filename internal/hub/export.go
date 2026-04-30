@@ -679,7 +679,13 @@ func writeSearchIndex(dir string, m *HubModel) error {
 	if err != nil {
 		return fmt.Errorf("hub: marshal search index: %w", err)
 	}
-	return os.WriteFile(filepath.Join(dir, "data", "search_index.json"), data, 0o644)
+	dataDir := filepath.Join(dir, "data")
+	if err := os.WriteFile(filepath.Join(dataDir, "search_index.json"), data, 0o644); err != nil {
+		return err
+	}
+	// Also write a JS-loadable version for file:// protocol (XHR is blocked).
+	js := []byte("window.__searchIndex=" + string(data) + ";")
+	return os.WriteFile(filepath.Join(dataDir, "search_index.js"), js, 0o644)
 }
 
 func writeExportExtras(dir string, m *HubModel) error {
