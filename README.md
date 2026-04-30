@@ -508,25 +508,25 @@ mainline/
 
 ## Eval: does intent-first actually help?
 
-Yes. On 8 synthetic scenarios designed to test the core thesis:
+Yes. On 8 synthetic scenarios with 3 independent seeds (live LLM, not replay):
 
-| Mode | Violations (LLM-as-judge) | Declined-with-reference |
+| Mode | Violations | Consistency |
 |---|---|---|
-| **Intent-first** | **0 / 8 fixtures** | 18 items correctly declined |
-| Code-first | 4 violations in 3 / 8 fixtures | 0 |
+| **Intent-first** | **0 across all seeds** | 0/8 fixtures fail |
+| Code-first | 9 violations (3/seed) | 2/8 fixtures fail, 100% reproducible |
 
-The 4 violations code-first agents commit fall in scenarios where **code
-inspection alone cannot reveal the constraint:**
+Code-first fails on exactly the scenarios where **code cannot reveal the
+constraint:**
 
-1. A prior approach was **abandoned** — code still exists, but the reason
-   it failed (replication-lag) is only in the intent record.
-2. A decision was **superseded** — both old and new code coexist, but only
-   the intent says "CSV is deprecated, add to Parquet only" (2 violations).
-3. A convention lives in a **docs-only commit** — no source file carries
-   the terminology rule.
+1. A prior approach was **abandoned** — redis.go looks 60% done with TODOs and
+   docker-compose has Redis defined. Every code-first agent proposes finishing it.
+   Only intent reveals the replication-lag failure.
+2. A decision was **superseded** — Both CSV and Parquet endpoints work and receive
+   traffic. Every code-first agent adds the column to both. Only intent says
+   "CSV is deprecated, Parquet only".
 
-Intent-first agents read `mainline context`, see the anti-pattern,
-and explicitly decline with reference. Code-first agents have no signal.
+Intent-first agents read `mainline context`, see the anti-pattern, and
+explicitly decline with reference. Code-first agents have no signal.
 
 **Run it yourself:**
 
@@ -536,7 +536,7 @@ mainline eval agent --runner ./scripts/eval-runner-copilot.py \
   --judge ./scripts/eval-judge-copilot.py                  # layer 2: v2 scorer (CF=4, IF=0)
 ```
 
-Full methodology, caveats, and next steps →
+Full methodology, live results, and caveats →
 [docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)
 
 ## Roadmap
