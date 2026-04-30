@@ -553,17 +553,32 @@ func buildSharedFileRows(intents []HubIntent) []HubRelationRow {
 // writeSite emits the static directory layout. JSON dump goes first
 // (cheap, useful for debugging even if HTML rendering fails); then
 // CSS, then HTML pages.
+//
+// Directory layout (i18n):
+//
+//   <dir>/
+//     assets/style.css
+//     data/intents.json
+//     index.html  intents/X.html  files/X.html  actors/X.html  …  (EN)
+//     zh/
+//       index.html  intents/X.html  files/X.html  actors/X.html …  (ZH)
+//
+// /assets and /data are shared at root — they don't have UI text so
+// duplicating them would just bloat the site.
 func writeSite(dir string, m *HubModel) error {
+	// Per-language directory trees. EN at root; ZH under /zh/.
+	for _, lang := range SupportedLanguages {
+		base := dir
+		if lang != LangEN {
+			base = filepath.Join(dir, lang)
+		}
+		for _, sub := range []string{"intents", "files", "actors"} {
+			if err := os.MkdirAll(filepath.Join(base, sub), 0o755); err != nil {
+				return err
+			}
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "intents"), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "files"), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "actors"), 0o755); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o755); err != nil {
