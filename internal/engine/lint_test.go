@@ -210,3 +210,72 @@ func sevFor(issues []LintIssue, code string) string {
 	}
 	return ""
 }
+
+// LintInheritedAcknowledgement is the v1 awareness-not-conviction
+// gate: when a sealed intent's files overlap a prior intent's
+// anti_patterns, the seal must acknowledge the high-severity ones.
+
+func TestLintInherited_NoConstraints_NoIssues(t *testing.T) {
+	got := LintInheritedAcknowledgement(&domain.IntentSummary{}, nil)
+	if len(got) != 0 {
+		t.Errorf("expected zero issues, got %v", got)
+	}
+}
+
+func TestLintInherited_HighUnacknowledgedWarns(t *testing.T) {
+	summary := &domain.IntentSummary{
+		Decisions: []domain.Decision{{Point: "tests", Chose: "added unit tests"}},
+	}
+	inherited := []domain.InheritedConstraint{{
+		SourceIntent: "int_old",
+		What:         "Removing legacy session middleware on /oauth path",
+		Severity:     "high",
+	}}
+	issues := LintInheritedAcknowledgement(summary, inherited)
+	if !hasCode(issues, "inherited_anti_pattern_not_acknowledged") {
+		t.Errorf("expected warn issue, got %v", issues)
+	}
+	if sevFor(issues, "inherited_anti_pattern_not_acknowledged") != "warning" {
+		t.Errorf("v1 must be warning, not error")
+	}
+}
+
+func TestLintInherited_HighAcknowledgedViaDecision(t *testing.T) {
+	summary := &domain.IntentSummary{
+		Decisions: []domain.Decision{{
+			Point: "session middleware",
+			Chose: "kept the legacy session middleware in place",
+		}},
+	}
+	inherited := []domain.InheritedConstraint{{
+		SourceIntent: "int_old",
+		What:         "Removing legacy session middleware on /oauth path",
+		Severity:     "high",
+	}}
+	issues := LintInheritedAcknowledgement(summary, inherited)
+	if hasCode(issues, "inherited_anti_pattern_not_acknowledged") {
+		t.Errorf("acknowledged constraint must NOT warn: %v", issues)
+	}
+	if !hasCode(issues, "inherited_anti_pattern_acknowledged") {
+		t.Errorf("acknowledged-info issue should be present: %v", issues)
+	}
+}
+
+func TestLintInherited_MediumNeverWarns(t *testing.T) {
+	summary := &domain.IntentSummary{}
+	inherited := []domain.InheritedConstraint{{
+		SourceIntent: "int_old",
+		What:         "Skip token rotation",
+		Severity:     "medium",
+	}}
+	issues := LintInheritedAcknowledgement(summary, inherited)
+	if hasCode(issues, "inherited_anti_pattern_not_acknowledged") {
+		t.Errorf("v1 only warns on high-severity; got %v", issues)
+	}
+	if !hasCode(issues, "inherited_anti_pattern_surfaced") {
+		t.Errorf("medium should still surface as info: %v", issues)
+	}
+	if sevFor(issues, "inherited_anti_pattern_surfaced") != "info" {
+		t.Errorf("medium-severity surface must be info severity")
+	}
+}

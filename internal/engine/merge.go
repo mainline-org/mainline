@@ -635,7 +635,12 @@ func (s *Service) PRDescription(intentID string) (string, error) {
 	if view != nil {
 		for _, iv := range view.Intents {
 			if iv.IntentID == intentID && iv.Summary != nil {
-				return formatPRDescription(iv.IntentID, iv.Summary, iv.Fingerprint), nil
+				var inherited []domain.InheritedConstraint
+				if iv.Fingerprint != nil {
+					inherited = domain.BuildInheritedConstraints(view,
+						iv.Fingerprint.FilesTouched, iv.Fingerprint.Subsystems, iv.IntentID)
+				}
+				return formatPRDescription(iv.IntentID, iv.Summary, iv.Fingerprint, inherited), nil
 			}
 		}
 	}
@@ -651,7 +656,7 @@ func (s *Service) PRDescription(intentID string) (string, error) {
 }
 
 // rc3: pure human-readable markdown, no Mainline-* fields
-func formatPRDescription(intentID string, summary *domain.IntentSummary, fp *domain.SemanticFingerprint) string {
+func formatPRDescription(intentID string, summary *domain.IntentSummary, fp *domain.SemanticFingerprint, inherited []domain.InheritedConstraint) string {
 	var sb strings.Builder
 	sb.WriteString("## Mainline Intent\n\n")
 	sb.WriteString(fmt.Sprintf("**Intent:** `%s`\n", intentID))
@@ -690,6 +695,32 @@ func formatPRDescription(intentID string, summary *domain.IntentSummary, fp *dom
 		sb.WriteString("### Follow-ups\n\n")
 		for _, f := range summary.Followups {
 			sb.WriteString(fmt.Sprintf("- %s\n", f))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(inherited) > 0 {
+		sb.WriteString("### Inherited constraints considered\n\n")
+		sb.WriteString("Anti-patterns from prior intents whose touched files/subsystems overlap this change:\n\n")
+		for _, ic := range inherited {
+			ack := domain.AcknowledgementOf(ic, summary)
+			sev := ic.Severity
+			if sev == "" {
+				sev = "unspecified"
+			}
+			line := fmt.Sprintf("- **[%s]** %s — _from %s_", sev, ic.What, ic.SourceIntent)
+			if ack != domain.AckNone {
+				line += fmt.Sprintf(" — acknowledged via %s", ack)
+			} else {
+				line += " — NOT yet acknowledged"
+			}
+			sb.WriteString(line + "\n")
+			if ic.Why != "" {
+				sb.WriteString(fmt.Sprintf("  - Why: %s\n", ic.Why))
+			}
+			if len(ic.MatchedBy) > 0 {
+				sb.WriteString(fmt.Sprintf("  - Matched by: %s\n", strings.Join(ic.MatchedBy, ", ")))
+			}
 		}
 		sb.WriteString("\n")
 	}
