@@ -147,7 +147,13 @@ func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 	}
 }
 
-func TestBuildDashboard_PrioritizesHumanReviewQueues(t *testing.T) {
+// Focus list under the post-signal-reduction taxonomy is no longer
+// "proposed > risky > merged"; it surfaces only items that have a
+// concrete actionable reason (unack inherited high-severity, stale
+// proposed, stale open, or hot-file abandoned/superseded). Plain
+// "merged" intents are gone from the focus list — they belonged to
+// the vanity-grid era.
+func TestBuildDashboard_FocusListSurfacesOnlyActionableItems(t *testing.T) {
 	proposed := intent("int_proposed", "a", "2026-04-28T03:00:00Z", domain.StatusProposed, "src/hub.go")
 	risky := intent("int_risky", "a", "2026-04-28T02:00:00Z", domain.StatusMerged, "src/hub.go", "src/model.go")
 	risky.Summary.Risks = []string{"needs careful rollout"}
@@ -158,11 +164,23 @@ func TestBuildDashboard_PrioritizesHumanReviewQueues(t *testing.T) {
 	if m.Dashboard.TotalIntents != 3 || m.Dashboard.ProposedIntents != 1 || m.Dashboard.MergedIntents != 2 || m.Dashboard.RiskIntents != 1 {
 		t.Fatalf("dashboard counts wrong: %+v", m.Dashboard)
 	}
-	if len(m.Dashboard.Focus) < 3 {
-		t.Fatalf("expected proposed, risky, and recent merged focus rows, got %+v", m.Dashboard.Focus)
+	// The proposed intent must lead the queue.
+	if len(m.Dashboard.Focus) == 0 || m.Dashboard.Focus[0].ID != "int_proposed" {
+		t.Fatalf("proposed must lead focus list, got %+v", m.Dashboard.Focus)
 	}
-	if m.Dashboard.Focus[0].ID != "int_proposed" || m.Dashboard.Focus[0].Reason != "waiting for review" {
-		t.Errorf("proposed intent should lead focus queue, got %+v", m.Dashboard.Focus[0])
+	// Plain merged intents must NOT appear in focus.
+	for _, f := range m.Dashboard.Focus {
+		if f.ID == "int_merged" {
+			t.Errorf("plain merged intent must not appear in focus list: %+v", f)
+		}
+	}
+	// Risky-merged: only allowed if it's recent + in a hot-file as
+	// the abandoned/superseded bucket. Merged status with risks
+	// alone is no longer a focus reason.
+	for _, f := range m.Dashboard.Focus {
+		if f.ID == "int_risky" {
+			t.Errorf("risky merged intent must not appear in focus under new taxonomy: %+v", f)
+		}
 	}
 	if len(m.Dashboard.HotFiles) == 0 || m.Dashboard.HotFiles[0].Path != "src/hub.go" || m.Dashboard.HotFiles[0].IntentCount != 2 {
 		t.Errorf("hot files should sort by intent count, got %+v", m.Dashboard.HotFiles)
@@ -510,25 +528,35 @@ func TestHubTeamHealth_GeneratesSummary(t *testing.T) {
 	}
 }
 
-func TestHubReviewAging_SortsOldHighRiskFirst(t *testing.T) {
+// Under the post-signal-reduction taxonomy, focus ranks proposed
+// intents by (1) unack high-severity inherited constraints, then
+// (2) age past the stale-review threshold (24h). Plain "has Risks"
+// is no longer a focus-promotion signal — risks live on the intent
+// page, not the review queue.
+func TestHubReviewAging_OldestStaleProposedFirst(t *testing.T) {
 	v := makeView(
 		intentSealed("int_old_low", "proposed", 2, []string{"x.go"}, nil),
-		intentSealed("int_new_high_risk", "proposed", 0, []string{"x.go"}, []string{"breaking change"}),
-		intentSealed("int_old_high_risk", "proposed", 3, []string{"x.go"}, []string{"big risk"}),
+		intentSealed("int_new_with_risk", "proposed", 0, []string{"x.go"}, []string{"breaking change"}),
+		intentSealed("int_old_with_risk", "proposed", 3, []string{"x.go"}, []string{"big risk"}),
 	)
 	m := buildHubModel(v)
-	// Focus list should put high-risk proposed first; within
-	// high-risk, oldest first.
-	if len(m.Dashboard.Focus) < 3 {
-		t.Fatalf("expected 3 focus items, got %d", len(m.Dashboard.Focus))
+	if len(m.Dashboard.Focus) == 0 {
+		t.Fatalf("expected at least one focus item, got %d", len(m.Dashboard.Focus))
 	}
-	if m.Dashboard.Focus[0].ID != "int_old_high_risk" {
-		t.Errorf("oldest high-risk should be first; got order=%v",
-			focusOrder(m.Dashboard.Focus))
+	// Oldest stale proposed wins (3 days > 2 days); the new<24h
+	// proposed shouldn't appear ahead of stale ones, and risks
+	// don't promote.
+	if m.Dashboard.Focus[0].ID != "int_old_with_risk" {
+		t.Errorf("oldest stale proposed should be first; got order=%v", focusOrder(m.Dashboard.Focus))
 	}
-	if m.Dashboard.Focus[1].ID != "int_new_high_risk" {
-		t.Errorf("high-risk should come before low-risk; got order=%v",
-			focusOrder(m.Dashboard.Focus))
+	// The 0-day proposed is not stale yet but lands in the fallback
+	// bucket; it should still be ranked LAST among proposed.
+	idx := map[string]int{}
+	for i, f := range m.Dashboard.Focus {
+		idx[f.ID] = i
+	}
+	if idx["int_new_with_risk"] < idx["int_old_low"] {
+		t.Errorf("non-stale proposed should rank below stale, got order=%v", focusOrder(m.Dashboard.Focus))
 	}
 }
 
@@ -719,6 +747,106 @@ func extractStylesheet(html string) string {
 		return rest
 	}
 	return rest[:end]
+}
+
+// Hub signal-reduction guard: the dashboard MUST NOT contain the
+// vanity sections we deliberately removed (hero metric grid card
+// links, generic Risk radar card, Activity by actor block).
+// Catches accidental re-additions in future PRs.
+func TestHubDashboard_HasNoVanitySections(t *testing.T) {
+	dir := t.TempDir()
+	repoRoot := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := storage.New(repoRoot, nil)
+	v := makeView(
+		intentSealed("int_a", "merged", 1, []string{"a.go"}, []string{"r"}),
+	)
+	if err := store.WriteMainlineView(v); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "site")
+	if _, err := Export(store, ExportOptions{OutputDir: out}); err != nil {
+		t.Fatal(err)
+	}
+	indexBytes, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := string(indexBytes)
+	// Removed: the four-card hero metric grid (was inside class
+	// "metric-grid"; if reintroduced this guard fires).
+	if strings.Contains(idx, "class=\"metric-grid\"") {
+		t.Errorf("dashboard must not have metric-grid card row")
+	}
+	// Removed: standalone Risk radar card (was section.risk_radar).
+	if strings.Contains(idx, "section.risk_radar") || strings.Contains(idx, "Risk radar") {
+		t.Errorf("dashboard must not have Risk radar card")
+	}
+	// Removed: Activity by actor card (rendered via class actor-list).
+	if strings.Contains(idx, "actor-list") || strings.Contains(idx, "Activity by actor") {
+		t.Errorf("dashboard must not have Activity by actor block")
+	}
+}
+
+// Hub signal-reduction guard: /coverage.html and /digest.html must
+// not appear in the sidebar nav. The pages still render (data dump
+// useful) but should not be in the human nav surface.
+func TestHubSidebar_HidesCoverageAndDigest(t *testing.T) {
+	dir := t.TempDir()
+	repoRoot := filepath.Join(dir, "repo")
+	os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755)
+	store := storage.New(repoRoot, nil)
+	v := makeView(intentSealed("int_a", "merged", 1, []string{"a.go"}, nil))
+	store.WriteMainlineView(v)
+	out := filepath.Join(dir, "site")
+	if _, err := Export(store, ExportOptions{OutputDir: out}); err != nil {
+		t.Fatal(err)
+	}
+	idxBytes, _ := os.ReadFile(filepath.Join(out, "index.html"))
+	// Sidebar markup uses href="coverage.html" / href="digest.html"
+	// when nav entries exist; the test ensures they're gone.
+	if strings.Contains(string(idxBytes), `href="coverage.html"`) {
+		t.Errorf("sidebar must not link to /coverage.html")
+	}
+	if strings.Contains(string(idxBytes), `href="digest.html"`) {
+		t.Errorf("sidebar must not link to /digest.html")
+	}
+}
+
+// InheritedHotspots must be populated on the model when prior intents
+// have anti_patterns whose touched files overlap recent work.
+func TestBuildInheritedHotspots_PopulatesPerFile(t *testing.T) {
+	now := time.Now()
+	old := domain.IntentView{
+		IntentID: "int_old",
+		Status:   domain.StatusMerged,
+		SealedAt: now.Add(-3 * 24 * time.Hour).UTC().Format(time.RFC3339),
+		Summary: &domain.IntentSummary{
+			Title: "old",
+			AntiPatterns: []domain.AntiPattern{
+				{What: "Don't drop session middleware", Why: "oauth needs it", Severity: "high"},
+				{What: "Skip rotation", Why: "replay risk", Severity: "medium"},
+			},
+		},
+		Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"a.go"}},
+	}
+	v := &domain.MainlineView{Intents: []domain.IntentView{old}}
+	m := buildHubModel(v)
+	if len(m.InheritedHotspots) != 1 {
+		t.Fatalf("want 1 hotspot for a.go, got %d (%+v)", len(m.InheritedHotspots), m.InheritedHotspots)
+	}
+	h := m.InheritedHotspots[0]
+	if h.FilePath != "a.go" {
+		t.Errorf("file path: %q", h.FilePath)
+	}
+	if h.ConstraintCount != 2 {
+		t.Errorf("constraint count: want 2, got %d", h.ConstraintCount)
+	}
+	if h.HighSeverityCount != 1 {
+		t.Errorf("high severity count: want 1, got %d", h.HighSeverityCount)
+	}
 }
 
 // Spec §14 mandatory copy test: dashboard / digest / team-health

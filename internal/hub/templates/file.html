@@ -3,6 +3,27 @@
 <h1><code>{{.Path}}</code></h1>
 <p class="lead">{{len .IntentIDs}} intents touched this file.</p>
 {{end}}
+
+{{if .FileInherited}}
+<section>
+  <h2>{{t .Lang "file.inherited_heading"}}</h2>
+  <p class="muted">{{t .Lang "file.inherited_lead"}}</p>
+  <ul class="inherited-list">
+  {{range .FileInherited}}
+    <li class="inherited inherited-{{if .Severity}}{{.Severity}}{{else}}unspecified{{end}}">
+      <div class="inherited-row">
+        <span class="status status-{{if .Severity}}{{.Severity}}{{else}}unspecified{{end}}">{{if .Severity}}{{.Severity}}{{else}}{{t $.Lang "inherited.severity_unspecified"}}{{end}}</span>
+        <strong>{{.What}}</strong>
+      </div>
+      {{if .Why}}<p class="muted inherited-why">{{.Why}}</p>{{end}}
+      <p class="muted inherited-meta">{{t $.Lang "inherited.from"}} <a href="../intents/{{.SourceIntent}}.html"><code>{{shortID .SourceIntent}}</code></a></p>
+    </li>
+  {{end}}
+  </ul>
+</section>
+{{end}}
+
+<h2>{{t .Lang "intent.history_heading"}}</h2>
 <ul class="filelinks">
 {{range .IntentLinks}}<li><a href="../intents/{{.ID}}.html"><code>{{shortID .ID}}</code></a> — {{.Title}}</li>{{end}}
 </ul>
