@@ -1,24 +1,24 @@
 {{define "index"}}{{template "header" .}}
 <section class="hero">
   <div>
-    <p class="eyebrow">Project intent map</p>
-    <h1>What changed, why it changed, and what needs attention.</h1>
-    <p class="lead">{{len .Intents}} sealed intents on <code>{{.MainBranch}}</code>, newest first. Use this page to jump to review work, risky changes, or files with the most history.</p>
+    <p class="eyebrow">{{t .Lang "dashboard.eyebrow"}}</p>
+    <h1>{{t .Lang "dashboard.headline"}}</h1>
+    <p class="lead">{{len .Intents}} {{t .Lang "dashboard.sealed_intents"}} · <code>{{.MainBranch}}</code>. {{t .Lang "dashboard.lead"}}</p>
   </div>
   <div class="health-panel">
     <div class="health-number">{{.Dashboard.TotalIntents}}</div>
-    <div class="muted">sealed intents</div>
-    <div class="health-line"><span>{{.Dashboard.OpenIntents}}</span> open</div>
-    <div class="health-line"><span>{{.Dashboard.ProposedIntents}}</span> proposed</div>
-    <div class="health-line"><span>{{.Dashboard.RiskIntents}}</span> with risks</div>
+    <div class="muted">{{t .Lang "dashboard.sealed_intents"}}</div>
+    <div class="health-line"><span>{{.Dashboard.OpenIntents}}</span> {{t .Lang "dashboard.open"}}</div>
+    <div class="health-line"><span>{{.Dashboard.ProposedIntents}}</span> {{t .Lang "dashboard.proposed"}}</div>
+    <div class="health-line"><span>{{.Dashboard.RiskIntents}}</span> {{t .Lang "dashboard.with_risks"}}</div>
   </div>
 </section>
 
 {{with .TeamHealth}}
 <section class="team-health team-health-{{.HealthLevel}}">
   <div class="team-health-headline">
-    <span class="team-health-badge">Team health</span>
-    <strong class="team-health-level">{{healthLabel .HealthLevel}}</strong>
+    <span class="team-health-badge">{{t $.Lang "team_health.label"}}</span>
+    <strong class="team-health-level">{{tHealth $.Lang .HealthLevel}}</strong>
   </div>
   <p class="team-health-summary">{{.HealthSummary}}</p>
 </section>
@@ -26,36 +26,36 @@
 
 {{if .OpenIntents}}
 <section class="notice">
-  <strong>{{len .OpenIntents}} open local intent{{if ne (len .OpenIntents) 1}}s{{end}} still in flight</strong>
-  <a href="open.html">View in-flight work</a>
+  <strong>{{len .OpenIntents}} {{if eq (len .OpenIntents) 1}}{{t .Lang "notice.in_flight_singular"}}{{else}}{{t .Lang "notice.in_flight_plural"}}{{end}}</strong>
+  <a href="open.html">{{t .Lang "notice.view_in_flight"}}</a>
 </section>
 {{end}}
 
 <section class="metric-grid" aria-label="Project summary">
   <a class="metric-card" href="open.html">
     <span class="metric-value">{{.Dashboard.OpenIntents}}</span>
-    <span class="metric-label">Open work</span>
+    <span class="metric-label">{{t .Lang "metric.open_work"}}</span>
   </a>
   <a class="metric-card" href="review.html">
     <span class="metric-value">{{.Dashboard.ProposedIntents}}</span>
-    <span class="metric-label">Review queue</span>
-    {{with .TeamHealth}}{{if .OldestProposedHours}}<span class="metric-aux">oldest {{ageLabel .OldestProposedHours}}</span>{{end}}{{end}}
+    <span class="metric-label">{{t .Lang "metric.review_queue"}}</span>
+    {{with .TeamHealth}}{{if .OldestProposedHours}}<span class="metric-aux">{{t $.Lang "metric.oldest_prefix"}} {{ageLabel .OldestProposedHours}}</span>{{end}}{{end}}
   </a>
   <a class="metric-card" href="risks.html">
     <span class="metric-value">{{.Dashboard.RiskIntents}}</span>
-    <span class="metric-label">Risk-bearing intents</span>
-    {{with .TeamHealth.Risk}}{{if .RiskBearingProposed}}<span class="metric-aux">{{.RiskBearingProposed}} proposed</span>{{end}}{{end}}
+    <span class="metric-label">{{t .Lang "metric.risk_bearing_intents"}}</span>
+    {{with .TeamHealth.Risk}}{{if .RiskBearingProposed}}<span class="metric-aux">{{.RiskBearingProposed}} {{t $.Lang "metric.proposed_suffix"}}</span>{{end}}{{end}}
   </a>
   <a class="metric-card" href="files.html">
     <span class="metric-value">{{.Dashboard.FileCount}}</span>
-    <span class="metric-label">Files with history</span>
+    <span class="metric-label">{{t .Lang "metric.files_with_history"}}</span>
   </a>
 </section>
 
 <section class="split-grid">
   <div>
-    <h2>Needs attention</h2>
-    {{if not .Dashboard.Focus}}<p class="muted">No proposed, risky, or recently merged intents to highlight.</p>{{end}}
+    <h2>{{t .Lang "section.needs_attention"}}</h2>
+    {{if not .Dashboard.Focus}}<p class="muted">{{t .Lang "section.needs_attention_empty"}}</p>{{end}}
     <div class="focus-list">
     {{range .Dashboard.Focus}}
       <a class="focus-item{{if .HighRisk}} focus-high-risk{{end}}" href="intents/{{.ID}}.html">
@@ -73,17 +73,17 @@
     </div>
   </div>
   <div>
-    <h2>Decision hotspots</h2>
-    <p class="muted">Files with the most intent history. These are areas with concentrated decisions, risk, or repeated changes.</p>
-    {{if not .Dashboard.HotFiles}}<p class="muted">No file fingerprints recorded yet.</p>{{end}}
+    <h2>{{t .Lang "section.decision_hotspots"}}</h2>
+    <p class="muted">{{t .Lang "section.decision_hotspots_lead"}}</p>
+    {{if not .Dashboard.HotFiles}}<p class="muted">{{t .Lang "section.decision_hotspots_empty"}}</p>{{end}}
     <div class="hot-list">
     {{range .Dashboard.HotFiles}}
       <a class="hot-file" href="files/{{fileSlug .Path}}.html">
         <code>{{.Path}}</code>
         <span>
           {{.IntentCount}} intent{{if ne .IntentCount 1}}s{{end}}
-          {{if .RiskIntentCount}} · {{.RiskIntentCount}} with risk{{if ne .RiskIntentCount 1}}s{{end}}{{end}}
-          {{if .RecentCount}} · {{.RecentCount}} this week{{end}}
+          {{if .RiskIntentCount}} · {{.RiskIntentCount}} {{$.Lang | printf ""}}with risk{{if ne .RiskIntentCount 1}}s{{end}}{{end}}
+          {{if .RecentCount}} · {{.RecentCount}} {{t $.Lang "risk.this_week_suffix"}}{{end}}
         </span>
       </a>
     {{end}}
@@ -94,43 +94,43 @@
 {{with .TeamHealth}}
 <section class="dashboard-row">
   <article class="dashboard-card">
-    <h2>Intent coverage</h2>
+    <h2>{{t $.Lang "section.intent_coverage"}}</h2>
     {{if .Coverage.Available}}
-      <p class="card-headline">{{coverageRatio .Coverage.CoverageRatio}} covered</p>
+      <p class="card-headline">{{coverageRatio .Coverage.CoverageRatio}} {{t $.Lang "coverage.covered_suffix"}}</p>
       <ul class="card-stats">
-        <li>{{.Coverage.UncoveredCommits}} uncovered commit{{if ne .Coverage.UncoveredCommits 1}}s{{end}}</li>
-        {{if .Coverage.HighRiskUncoveredCommits}}<li class="risk">{{.Coverage.HighRiskUncoveredCommits}} high-risk uncovered change{{if ne .Coverage.HighRiskUncoveredCommits 1}}s{{end}}</li>{{end}}
+        <li>{{.Coverage.UncoveredCommits}} {{t $.Lang "coverage.uncovered_commits"}}{{if ne .Coverage.UncoveredCommits 1}}s{{end}}</li>
+        {{if .Coverage.HighRiskUncoveredCommits}}<li class="risk">{{.Coverage.HighRiskUncoveredCommits}} {{t $.Lang "coverage.high_risk_uncovered"}}{{if ne .Coverage.HighRiskUncoveredCommits 1}}s{{end}}</li>{{end}}
       </ul>
     {{else}}
-      <p class="muted card-headline-muted">Coverage data unavailable in this Hub build.</p>
-      <p class="muted">Run <code>mainline gaps --json</code> on the same repo to see uncovered commits with rescue options.</p>
+      <p class="muted card-headline-muted">{{t $.Lang "coverage.unavailable_headline"}}</p>
+      <p class="muted">{{t $.Lang "coverage.unavailable_hint_prefix"}} <code>mainline gaps --json</code> {{t $.Lang "coverage.unavailable_hint_suffix"}}</p>
     {{end}}
   </article>
 
   <article class="dashboard-card">
-    <h2>Review queue aging</h2>
+    <h2>{{t $.Lang "section.review_aging"}}</h2>
     {{if .ProposedIntents}}
-      <p class="card-headline">{{.ProposedIntents}} proposed</p>
+      <p class="card-headline">{{.ProposedIntents}} {{t $.Lang "review.proposed_suffix"}}</p>
       <ul class="card-stats">
-        {{if .OldestProposedHours}}<li>oldest waiting: {{ageLabel .OldestProposedHours}}</li>{{end}}
-        {{if .ProposedOlderThan12h}}<li>{{.ProposedOlderThan12h}} waiting &gt;12h</li>{{end}}
-        {{if .ProposedOlderThan24h}}<li class="warn">{{.ProposedOlderThan24h}} waiting &gt;24h</li>{{end}}
-        {{if .ProposedOlderThan48h}}<li class="risk">{{.ProposedOlderThan48h}} waiting &gt;48h (critical)</li>{{end}}
+        {{if .OldestProposedHours}}<li>{{t $.Lang "review.oldest_waiting"}}: {{ageLabel .OldestProposedHours}}</li>{{end}}
+        {{if .ProposedOlderThan12h}}<li>{{.ProposedOlderThan12h}} {{t $.Lang "review.waiting_over_12h"}}</li>{{end}}
+        {{if .ProposedOlderThan24h}}<li class="warn">{{.ProposedOlderThan24h}} {{t $.Lang "review.waiting_over_24h"}}</li>{{end}}
+        {{if .ProposedOlderThan48h}}<li class="risk">{{.ProposedOlderThan48h}} {{t $.Lang "review.waiting_over_48h_critical"}}</li>{{end}}
       </ul>
     {{else}}
-      <p class="muted card-headline-muted">No proposed intents waiting review.</p>
+      <p class="muted card-headline-muted">{{t $.Lang "review.no_proposed"}}</p>
     {{end}}
   </article>
 
   <article class="dashboard-card">
-    <h2>Risk radar</h2>
+    <h2>{{t $.Lang "section.risk_radar"}}</h2>
     {{with .Risk}}
-    <p class="card-headline">{{.RiskBearingIntents}} intent{{if ne .RiskBearingIntents 1}}s{{end}} with risks</p>
+    <p class="card-headline">{{.RiskBearingIntents}} {{t $.Lang "risk.intents_suffix"}}</p>
     <ul class="card-stats">
-      {{if .RiskBearingProposed}}<li class="warn">{{.RiskBearingProposed}} risk-bearing proposed</li>{{end}}
-      {{if .RecentRiskBearing}}<li>{{.RecentRiskBearing}} this week</li>{{end}}
-      {{if .RiskHeavyFiles}}<li>{{len .RiskHeavyFiles}} risk-heavy file{{if ne (len .RiskHeavyFiles) 1}}s{{end}}</li>{{end}}
-      {{if .RisksMissingMitigation}}<li class="risk">{{deref .RisksMissingMitigation}} risks missing mitigation</li>{{end}}
+      {{if .RiskBearingProposed}}<li class="warn">{{.RiskBearingProposed}} {{t $.Lang "risk.proposed_suffix"}}</li>{{end}}
+      {{if .RecentRiskBearing}}<li>{{.RecentRiskBearing}} {{t $.Lang "risk.this_week_suffix"}}</li>{{end}}
+      {{if .RiskHeavyFiles}}<li>{{len .RiskHeavyFiles}} {{t $.Lang "risk.heavy_files_suffix"}}{{if ne (len .RiskHeavyFiles) 1}}s{{end}}</li>{{end}}
+      {{if .RisksMissingMitigation}}<li class="risk">{{deref .RisksMissingMitigation}} {{t $.Lang "risk.missing_mitigation"}}</li>{{end}}
     </ul>
     {{end}}
   </article>
@@ -139,17 +139,17 @@
 
 {{with .TeamHealth.Digest}}
 <section class="digest">
-  <h2>This week</h2>
+  <h2>{{t $.Lang "digest.this_week"}}</h2>
   <div class="digest-stats">
-    <span><strong>{{.SealedThisWindow}}</strong> sealed</span>
-    <span><strong>{{.ProposedThisWindow}}</strong> proposed</span>
-    {{if .AbandonedThisWindow}}<span><strong>{{.AbandonedThisWindow}}</strong> abandoned</span>{{end}}
-    {{if .SupersededThisWindow}}<span><strong>{{.SupersededThisWindow}}</strong> superseded</span>{{end}}
-    <span><strong>{{.RiskBearingThisWindow}}</strong> risk-bearing</span>
+    <span><strong>{{.SealedThisWindow}}</strong> {{t $.Lang "digest.sealed"}}</span>
+    <span><strong>{{.ProposedThisWindow}}</strong> {{t $.Lang "digest.proposed"}}</span>
+    {{if .AbandonedThisWindow}}<span><strong>{{.AbandonedThisWindow}}</strong> {{t $.Lang "digest.abandoned"}}</span>{{end}}
+    {{if .SupersededThisWindow}}<span><strong>{{.SupersededThisWindow}}</strong> {{t $.Lang "digest.superseded"}}</span>{{end}}
+    <span><strong>{{.RiskBearingThisWindow}}</strong> {{t $.Lang "digest.risk_bearing"}}</span>
   </div>
 
   {{if .ImportantDecisions}}
-  <h3>Important decisions</h3>
+  <h3>{{t $.Lang "digest.important_decisions"}}</h3>
   <ul class="digest-list">
     {{range .ImportantDecisions}}
     <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
@@ -158,7 +158,7 @@
   {{end}}
 
   {{if .RisksToWatch}}
-  <h3>Risks to watch</h3>
+  <h3>{{t $.Lang "digest.risks_to_watch"}}</h3>
   <ul class="digest-list">
     {{range .RisksToWatch}}
     <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
@@ -167,7 +167,7 @@
   {{end}}
 
   {{if .AbandonedApproaches}}
-  <h3>Abandoned approaches</h3>
+  <h3>{{t $.Lang "digest.abandoned_approaches"}}</h3>
   <ul class="digest-list">
     {{range .AbandonedApproaches}}
     <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
@@ -176,21 +176,21 @@
   {{end}}
 
   {{if .HotFilesThisWindow}}
-  <h3>Files heating up</h3>
+  <h3>{{t $.Lang "digest.files_heating_up"}}</h3>
   <ul class="digest-list">
     {{range .HotFilesThisWindow}}
-    <li><a href="files/{{fileSlug .Path}}.html"><code>{{.Path}}</code></a> — <span class="muted">{{.IntentCount}} intents this window</span></li>
+    <li><a href="files/{{fileSlug .Path}}.html"><code>{{.Path}}</code></a> — <span class="muted">{{.IntentCount}} {{t $.Lang "digest.intents_this_window"}}</span></li>
     {{end}}
   </ul>
   {{end}}
 </section>
 {{end}}
 
-<h2>Recent intents</h2>
+<h2>{{t .Lang "recent.heading"}}</h2>
 <div class="table-scroll">
 <table class="intents">
 <thead>
-<tr><th>ID</th><th>Title</th><th>Status</th><th>Actor</th><th>Thread</th><th>Sealed</th><th>Files</th><th>Risks</th></tr>
+<tr><th>{{t .Lang "recent.col_id"}}</th><th>{{t .Lang "recent.col_title"}}</th><th>{{t .Lang "recent.col_status"}}</th><th>{{t .Lang "recent.col_actor"}}</th><th>{{t .Lang "recent.col_thread"}}</th><th>{{t .Lang "recent.col_sealed"}}</th><th>{{t .Lang "recent.col_files"}}</th><th>{{t .Lang "recent.col_risks"}}</th></tr>
 </thead>
 <tbody>
 {{range .Intents}}
