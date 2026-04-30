@@ -9,7 +9,8 @@
   {{if .Goal}}<p>{{.Goal}}</p>{{end}}
   <p class="tags">
     {{if .FilesTouched}}<span class="tag">{{len .FilesTouched}} files</span>{{end}}
-    {{if .Risks}}<span class="tag">{{len .Risks}} risks</span>{{end}}
+    {{if .Risks}}<span class="tag">{{len .Risks}} soft risks</span>{{end}}
+    {{if .AntiPatterns}}<span class="tag">{{len .AntiPatterns}} constraints</span>{{end}}
     {{if .Subsystems}}{{range .Subsystems}}<span class="tag">{{.}}</span>{{end}}{{end}}
   </p>
 </section>

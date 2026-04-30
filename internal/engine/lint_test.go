@@ -183,6 +183,52 @@ func TestLintSealResult_Wraps(t *testing.T) {
 	}
 }
 
+func TestLintIntent_GenericRiskWarns(t *testing.T) {
+	cases := []struct {
+		risk string
+		warn bool
+	}{
+		{"may break compatibility", true},
+		{"needs testing", true},
+		{"possible bug", true},
+		{"could have side effects", true},
+		{"too short", true}, // under 15 chars
+		{"OAuth callback still depends on session state; removing middleware would break login redirect. Mitigation: keep /oauth session path.", false},
+		{"The new batch git calls may race if two syncs run in parallel on the same repo.", false},
+	}
+	for _, tc := range cases {
+		r := LintIntent("int_x", &domain.IntentSummary{
+			What: "real work", Why: "y",
+			Decisions: nonEmptyDecisions(),
+			Risks:     []string{tc.risk},
+		}, nonEmptyFP(), "", nil)
+		got := hasCode(r.Issues, "generic_risk")
+		if got != tc.warn {
+			t.Errorf("risk=%q: expected generic_risk=%v, got %v (issues: %+v)", tc.risk, tc.warn, got, r.Issues)
+		}
+	}
+}
+
+func TestLintIntent_AntiPatternEmptyWhatOrWhyErrors(t *testing.T) {
+	r := LintIntent("int_x", &domain.IntentSummary{
+		What: "real work", Why: "y",
+		Decisions: nonEmptyDecisions(),
+		AntiPatterns: []domain.AntiPattern{
+			{What: "", Why: "some reason"},
+			{What: "don't do X", Why: ""},
+		},
+	}, nonEmptyFP(), "", nil)
+	if r.Pass {
+		t.Errorf("anti_pattern with empty what/why should fail")
+	}
+	if !hasCode(r.Issues, "anti_pattern_no_what") {
+		t.Errorf("missing anti_pattern_no_what")
+	}
+	if !hasCode(r.Issues, "anti_pattern_no_why") {
+		t.Errorf("missing anti_pattern_no_why")
+	}
+}
+
 // helpers
 
 func nonEmptyDecisions() []domain.Decision {
