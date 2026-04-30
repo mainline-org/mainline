@@ -289,19 +289,21 @@ type pageCtx struct {
 	// OtherLangPath so a single template variable drives the link.
 	OtherLangLabel string
 
-	Dashboard   HubDashboard
-	TeamHealth  HubTeamHealth
-	Intents     []HubIntent
-	OpenIntents []HubOpenIntent
-	FileIndex   []HubFileEntry
-	ReviewRows  []HubIntent
+	Dashboard         HubDashboard
+	TeamHealth        HubTeamHealth
+	InheritedHotspots []HubInheritedHotspot
+	Intents           []HubIntent
+	OpenIntents       []HubOpenIntent
+	FileIndex         []HubFileEntry
+	ReviewRows        []HubIntent
 
 	Intent       *HubIntent
 	RelatedFiles []string
 	IntentLinks  []intentLink
 
-	File  *HubFileEntry
-	Actor *HubActorEntry
+	File          *HubFileEntry
+	FileInherited []HubInheritedConstraint
+	Actor         *HubActorEntry
 
 	RiskRows []riskRow
 
@@ -348,16 +350,17 @@ func indexByID(intents []HubIntent) map[string]HubIntent {
 
 func indexCtx(m *HubModel) pageCtx {
 	return pageCtx{
-		Title:       "Recent intents",
-		GeneratedAt: m.GeneratedAt,
-		MainBranch:  m.MainBranch,
-		MainHead:    m.MainHead,
-		NavActive:   "index",
-		RootPath:    "",
-		Dashboard:   m.Dashboard,
-		TeamHealth:  m.TeamHealth,
-		Intents:     m.Intents,
-		OpenIntents: m.OpenIntents,
+		Title:             "Recent intents",
+		GeneratedAt:       m.GeneratedAt,
+		MainBranch:        m.MainBranch,
+		MainHead:          m.MainHead,
+		NavActive:         "index",
+		RootPath:          "",
+		Dashboard:         m.Dashboard,
+		TeamHealth:        m.TeamHealth,
+		InheritedHotspots: m.InheritedHotspots,
+		Intents:           m.Intents,
+		OpenIntents:       m.OpenIntents,
 	}
 }
 
@@ -430,15 +433,27 @@ func fileCtx(m *HubModel, f HubFileEntry, byID map[string]HubIntent) pageCtx {
 	for _, id := range f.IntentIDs {
 		links = append(links, linkFor(byID, id, ""))
 	}
+	// Pull this file's inherited-constraint list out of the heatmap
+	// roll-up so the file page can list each anti_pattern with
+	// severity and source — the load-bearing "read before editing"
+	// surface for the file.
+	var inherited []HubInheritedConstraint
+	for _, h := range m.InheritedHotspots {
+		if h.FilePath == f.Path {
+			inherited = h.Constraints
+			break
+		}
+	}
 	return pageCtx{
-		Title:       f.Path,
-		GeneratedAt: m.GeneratedAt,
-		MainBranch:  m.MainBranch,
-		MainHead:    m.MainHead,
-		NavActive:   "files",
-		RootPath:    "../",
-		File:        &f,
-		IntentLinks: links,
+		Title:         f.Path,
+		GeneratedAt:   m.GeneratedAt,
+		MainBranch:    m.MainBranch,
+		MainHead:      m.MainHead,
+		NavActive:     "files",
+		RootPath:      "../",
+		File:          &f,
+		FileInherited: inherited,
+		IntentLinks:   links,
 	}
 }
 

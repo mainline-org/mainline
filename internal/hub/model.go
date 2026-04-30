@@ -47,6 +47,26 @@ type HubModel struct {
 	// export.go (Service.Gaps + CoverageWindow); empty when no
 	// coverage input was provided.
 	CoverageDetail HubCoverageDetail `json:"coverage_detail,omitempty"`
+
+	// InheritedHotspots is the per-file roll-up of inherited
+	// anti_patterns. Drives the Inherited constraints heatmap on
+	// /index.html and the per-file inherited section on
+	// /files/<path>.html. Sorted by HighSeverityCount desc then
+	// UnacknowledgedRecentTouches desc.
+	InheritedHotspots []HubInheritedHotspot `json:"inherited_hotspots,omitempty"`
+}
+
+// HubInheritedHotspot mirrors domain.InheritedConstraintHotspot. We
+// keep it as its own type so the Hub JSON contract is independent of
+// the domain refactors and future fields (e.g. file slug pre-computed
+// for the renderer) can land without touching the domain shape.
+type HubInheritedHotspot struct {
+	FilePath                    string                   `json:"file_path"`
+	ConstraintCount             int                      `json:"constraint_count"`
+	HighSeverityCount           int                      `json:"high_severity_count"`
+	UnacknowledgedRecentTouches int                      `json:"unacknowledged_recent_touches"`
+	RecentTouches               int                      `json:"recent_touches"`
+	Constraints                 []HubInheritedConstraint `json:"constraints,omitempty"`
 }
 
 // HubDashboard is the human-first landing view: small rollups and
