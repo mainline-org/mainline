@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
@@ -298,19 +299,12 @@ func (s *Service) Pin() (*PinResult, error) {
 
 	entries, _ := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
 
-	// One `log --no-walk` for every tree hash — replaces N forks with 1
-	// during the auto-pin sweep over recent main commits.
 	hashes := make([]string, 0, len(entries))
 	for _, e := range entries {
 		hashes = append(hashes, e.Hash)
 	}
-	treeOf, _ := s.Git.CommitTreeHashes(hashes)
-	if treeOf == nil {
-		treeOf = map[string]string{}
-	}
 
-	// Pre-batch: collect all unique CodeCommit values from proposed intents
-	// and fetch their tree hashes + subjects in one call each.
+	// Collect all unique CodeCommit values from proposed/merged intents.
 	var codeCommits []string
 	codeCommitSeen := map[string]bool{}
 	for _, iv := range view.Intents {
@@ -322,23 +316,37 @@ func (s *Service) Pin() (*PinResult, error) {
 			codeCommitSeen[iv.CodeCommit] = true
 		}
 	}
-	intentTreeOf, _ := s.Git.CommitTreeHashes(codeCommits)
+
+	// Run all 5 batch git calls concurrently — each is an independent
+	// subprocess with no shared state.
+	var (
+		treeOf         map[string]string
+		intentTreeOf   map[string]string
+		intentSubjects map[string]string
+		entryMessages  map[string]string
+		noteCache      map[string]string
+		wg             sync.WaitGroup
+	)
+	wg.Add(5)
+	go func() { defer wg.Done(); treeOf, _ = s.Git.CommitTreeHashes(hashes) }()
+	go func() { defer wg.Done(); intentTreeOf, _ = s.Git.CommitTreeHashes(codeCommits) }()
+	go func() { defer wg.Done(); intentSubjects, _ = s.Git.CommitSubjects(codeCommits) }()
+	go func() { defer wg.Done(); entryMessages, _ = s.Git.FullCommitMessages(hashes) }()
+	go func() { defer wg.Done(); noteCache, _ = s.Git.NotesForCommits(hashes) }()
+	wg.Wait()
+
+	if treeOf == nil {
+		treeOf = map[string]string{}
+	}
 	if intentTreeOf == nil {
 		intentTreeOf = map[string]string{}
 	}
-	intentSubjects, _ := s.Git.CommitSubjects(codeCommits)
 	if intentSubjects == nil {
 		intentSubjects = map[string]string{}
 	}
-
-	// Pre-batch: full commit messages for goal_text strategy.
-	entryMessages, _ := s.Git.FullCommitMessages(hashes)
 	if entryMessages == nil {
 		entryMessages = map[string]string{}
 	}
-
-	// Pre-batch: all notes for lookback commits (for alreadyHasIntent checks).
-	noteCache, _ := s.Git.NotesForCommits(hashes)
 	if noteCache == nil {
 		noteCache = map[string]string{}
 	}
