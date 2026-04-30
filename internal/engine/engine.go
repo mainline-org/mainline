@@ -201,7 +201,7 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	// Write AGENTS.md if it doesn't exist
 	s.writeAgentsMD()
 
-	// Write PR template (no trailers, rc3)
+	// Write PR template.
 	s.writePRTemplate()
 
 	// Configure git notes + actor-log fetch/push so the dedicated
@@ -370,14 +370,10 @@ func (s *Service) Rewire() (*RewireResult, error) {
 		r.IDEStubsWritten = stubs
 	}
 
-	// PR template: as before, recreated only if missing — no upsert
-	// machinery needed because PR templates are typically not
-	// hand-edited and the template is short.
-	prtPath := filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md")
-	if _, err := os.Stat(prtPath); err != nil {
-		s.writePRTemplate()
-		r.PRTplWritten = true
-	}
+	// PR template: create when missing, or migrate the old
+	// Mainline-managed trailer template to the git-notes protocol.
+	// Custom templates without legacy Mainline markers are preserved.
+	r.PRTplWritten = s.writePRTemplate()
 
 	return r, nil
 }
@@ -415,30 +411,50 @@ func (s *Service) writeAgentsMD() {
 	_, _ = upsertAgentInstructionStubs(s.Git.RepoRoot)
 }
 
-func (s *Service) writePRTemplate() {
-	path := filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md")
-	if _, err := os.Stat(path); err == nil {
-		return
-	}
-	// Best-effort: PR template is a convenience for humans, not
-	// load-bearing for mainline correctness. Errors here fall through.
-	_ = os.MkdirAll(filepath.Dir(path), 0o755)
-	content := `## Summary
+const currentPRTemplate = `## Summary
 
 <!-- Describe what this PR does -->
 
-## Mainline Intent
+## Mainline
 
 <!--
-This section is auto-filled by mainline pr-description.
-It is for human reviewers; Mainline does not parse it.
+Mainline stores intent metadata in git notes and actor refs.
+Do not add Mainline-Intent / Mainline-Seal trailers to the PR or squash commit message.
 -->
 
 ## Tested
 
 <!-- How was this tested? -->
 `
-	_ = os.WriteFile(path, []byte(content), 0o644)
+
+func (s *Service) writePRTemplate() bool {
+	path := filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md")
+	if data, err := os.ReadFile(path); err == nil {
+		if !isLegacyPRTemplate(data) {
+			return false
+		}
+	} else if !os.IsNotExist(err) {
+		return false
+	}
+	// Best-effort: PR template is a convenience for humans, not
+	// load-bearing for mainline correctness. Errors here fall through.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false
+	}
+	return os.WriteFile(path, []byte(currentPRTemplate), 0o644) == nil
+}
+
+func prTemplateState(repoRoot string) (exists bool, legacy bool) {
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".github", "PULL_REQUEST_TEMPLATE.md"))
+	if err != nil {
+		return false, false
+	}
+	return true, isLegacyPRTemplate(data)
+}
+
+func isLegacyPRTemplate(data []byte) bool {
+	text := string(data)
+	return strings.Contains(text, "Mainline-Intent:") || strings.Contains(text, "Mainline-Seal:")
 }
 
 // -----------------------------------------------------------
