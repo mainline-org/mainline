@@ -44,6 +44,20 @@
   </div>
 </section>
 
+{{with .TeamHealth.Digest}}
+{{if .ImportantDecisions}}
+<section>
+  <h2>{{t $.Lang "digest.important_decisions"}}</h2>
+  <p class="muted">{{t $.Lang "digest.important_decisions_lead"}}</p>
+  <ul class="digest-list">
+    {{range .ImportantDecisions}}
+    <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
+    {{end}}
+  </ul>
+</section>
+{{end}}
+{{end}}
+
 {{if .InheritedHotspots}}
 <section>
   <h2>{{t .Lang "heatmap.heading"}}</h2>
@@ -52,14 +66,32 @@
   {{range $i, $row := .InheritedHotspots}}
   {{if lt $i 8}}
     <a class="heatmap-row{{if $row.UnacknowledgedRecentTouches}} heatmap-warn{{end}}" href="files/{{fileSlug $row.FilePath}}.html">
-      <code>{{$row.FilePath}}</code>
-      <span class="heatmap-meta">
-        <strong>{{$row.ConstraintCount}}</strong> {{t $.Lang "heatmap.constraints"}}
-        {{if $row.HighSeverityCount}} · <strong class="risk">{{$row.HighSeverityCount}}</strong> {{t $.Lang "heatmap.high_severity"}}{{end}}
-        {{if $row.UnacknowledgedRecentTouches}} · <strong class="risk">{{$row.UnacknowledgedRecentTouches}}</strong> {{t $.Lang "heatmap.unack_recent"}}{{end}}
-      </span>
+      <div class="heatmap-row-main">
+        <code>{{$row.FilePath}}</code>
+        <span class="heatmap-meta">
+          <strong>{{$row.ConstraintCount}}</strong> {{t $.Lang "heatmap.constraints"}}
+          {{if $row.HighSeverityCount}} · <strong class="risk">{{$row.HighSeverityCount}}</strong> {{t $.Lang "heatmap.high_severity"}}{{end}}
+          {{if $row.UnacknowledgedRecentTouches}} · <strong class="risk">{{$row.UnacknowledgedRecentTouches}}</strong> {{t $.Lang "heatmap.unack_recent"}}{{end}}
+        </span>
+      </div>
+      <span class="heatmap-cta">{{t $.Lang "heatmap.cta"}} →</span>
     </a>
   {{end}}
+  {{end}}
+  </div>
+</section>
+{{end}}
+
+{{if .Dashboard.HotFiles}}
+<section>
+  <h2>{{t .Lang "section.decision_hotspots"}}</h2>
+  <p class="muted">{{t .Lang "section.decision_hotspots_lead"}}</p>
+  <div class="hot-list">
+  {{range .Dashboard.HotFiles}}
+    <a class="hot-file" href="files/{{fileSlug .Path}}.html">
+      <code>{{.Path}}</code>
+      <span>{{.IntentCount}} {{if eq .IntentCount 1}}{{t $.Lang "hotfile.intents_singular"}}{{else}}{{t $.Lang "hotfile.intents_plural"}}{{end}}</span>
+    </a>
   {{end}}
   </div>
 </section>
@@ -77,35 +109,6 @@
   <p class="muted lifecycle-note">{{t $.Lang "lifecycle.note"}}</p>
 </section>
 {{end}}{{end}}
-
-{{if .Dashboard.HotFiles}}
-<section>
-  <h2>{{t .Lang "section.decision_hotspots"}}</h2>
-  <p class="muted">{{t .Lang "section.decision_hotspots_lead"}}</p>
-  <div class="hot-list">
-  {{range .Dashboard.HotFiles}}
-    <a class="hot-file" href="files/{{fileSlug .Path}}.html">
-      <code>{{.Path}}</code>
-      <span>{{.IntentCount}} {{if eq .IntentCount 1}}{{t $.Lang "hotfile.intents_singular"}}{{else}}{{t $.Lang "hotfile.intents_plural"}}{{end}}</span>
-    </a>
-  {{end}}
-  </div>
-</section>
-{{end}}
-
-{{with .TeamHealth.Digest}}
-{{if .ImportantDecisions}}
-<section>
-  <h2>{{t $.Lang "digest.important_decisions"}}</h2>
-  <p class="muted">{{t $.Lang "digest.important_decisions_lead"}}</p>
-  <ul class="digest-list">
-    {{range .ImportantDecisions}}
-    <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
-    {{end}}
-  </ul>
-</section>
-{{end}}
-{{end}}
 
 <section class="recent-fallback">
   <h2>{{t .Lang "recent.heading"}}</h2>

@@ -708,7 +708,7 @@ func TestHubExport_RendersBothLanguagesWithToggle(t *testing.T) {
 	}
 
 	// ZH chrome strings present (a couple of key ones).
-	for _, want := range []string{"团队健康", "总览", "生成于"} {
+	for _, want := range []string{"当前关注状态", "总览", "生成于"} {
 		if !strings.Contains(string(zhIndex), want) {
 			t.Errorf("ZH index missing chrome string %q", want)
 		}

@@ -49,6 +49,9 @@ var tplDigest string
 //go:embed assets/style.css
 var embeddedCSS string
 
+//go:embed assets/search.js
+var embeddedSearchJS string
+
 // renderAll writes every page in the site, once per supported
 // language. EN renders to <dir>/<page>.html (canonical paths kept
 // for backward compatibility); ZH renders to <dir>/zh/<page>.html.
@@ -303,6 +306,7 @@ type pageCtx struct {
 
 	File          *HubFileEntry
 	FileInherited []HubInheritedConstraint
+	FileBriefing  *fileBriefing
 	Actor         *HubActorEntry
 
 	RiskRows []riskRow
@@ -444,6 +448,7 @@ func fileCtx(m *HubModel, f HubFileEntry, byID map[string]HubIntent) pageCtx {
 			break
 		}
 	}
+	briefing := buildFileBriefing(f, byID)
 	return pageCtx{
 		Title:         f.Path,
 		GeneratedAt:   m.GeneratedAt,
@@ -453,8 +458,85 @@ func fileCtx(m *HubModel, f HubFileEntry, byID map[string]HubIntent) pageCtx {
 		RootPath:      "../",
 		File:          &f,
 		FileInherited: inherited,
+		FileBriefing:  briefing,
 		IntentLinks:   links,
 	}
+}
+
+// fileBriefing holds the "Before editing this file" data extracted
+// from all intents that touched a file, grouped by lifecycle status.
+type fileBriefing struct {
+	EffectiveDecisions []briefingDecision
+	AbandonedApproaches []briefingApproach
+	SupersededDecisions []briefingApproach
+	RecentProposed      []intentLink
+}
+
+type briefingDecision struct {
+	Point     string
+	Chose     string
+	Rationale string
+	IntentID  string
+}
+
+type briefingApproach struct {
+	Title    string
+	Reason   string
+	IntentID string
+}
+
+func (b *fileBriefing) HasContent() bool {
+	return len(b.EffectiveDecisions) > 0 || len(b.AbandonedApproaches) > 0 ||
+		len(b.SupersededDecisions) > 0 || len(b.RecentProposed) > 0
+}
+
+func buildFileBriefing(f HubFileEntry, byID map[string]HubIntent) *fileBriefing {
+	b := &fileBriefing{}
+	for _, id := range f.IntentIDs {
+		in, ok := byID[id]
+		if !ok {
+			continue
+		}
+		switch in.Status {
+		case "merged":
+			for _, d := range in.Decisions {
+				b.EffectiveDecisions = append(b.EffectiveDecisions, briefingDecision{
+					Point: d.Point, Chose: d.Chose, Rationale: d.Rationale, IntentID: in.ID,
+				})
+			}
+		case "abandoned":
+			reason := in.Why
+			if reason == "" && len(in.Risks) > 0 {
+				reason = in.Risks[0]
+			}
+			b.AbandonedApproaches = append(b.AbandonedApproaches, briefingApproach{
+				Title: in.Title, Reason: reason, IntentID: in.ID,
+			})
+		case "superseded":
+			reason := ""
+			if in.SupersededByIntent != "" {
+				if by, ok := byID[in.SupersededByIntent]; ok {
+					reason = "→ " + by.Title
+				}
+			}
+			if reason == "" {
+				reason = in.Why
+			}
+			b.SupersededDecisions = append(b.SupersededDecisions, briefingApproach{
+				Title: in.Title, Reason: reason, IntentID: in.ID,
+			})
+		case "proposed":
+			title := in.Title
+			if title == "" {
+				title = in.ID
+			}
+			b.RecentProposed = append(b.RecentProposed, intentLink{ID: in.ID, Title: title})
+		}
+	}
+	if !b.HasContent() {
+		return nil
+	}
+	return b
 }
 
 func actorCtx(m *HubModel, a HubActorEntry, byID map[string]HubIntent) pageCtx {

@@ -37,8 +37,8 @@ var LanguageLabel = map[string]string{
 var translations = map[string]map[string]string{
 	// Top-bar / sidebar
 	"header.tagline": {
-		LangEN: "Human view of the local intent history",
-		LangZH: "本地 intent 历史的人类阅读视图",
+		LangEN: "Human reading surface for intent memory",
+		LangZH: "Intent memory 的人类阅读入口",
 	},
 	"header.main_at": {
 		LangEN: "main",
@@ -68,15 +68,15 @@ var translations = map[string]map[string]string{
 		LangZH: "改了什么、为什么改、现在哪里需要注意。",
 	},
 	"dashboard.lead": {
-		LangEN: "Action signals only. The CLI (mainline status / log / context / digest) covers the day-to-day; this page surfaces what is not obvious from those.",
-		LangZH: "只展示需要行动的信号。日常用 CLI（mainline status / log / context / digest）；这个页面只暴露 CLI 不容易一眼看出的内容。",
+		LangEN: "Hub is the human reading surface for Mainline intent memory. Use it to review pending work, understand file-level constraints, and orient around important decisions. Use the CLI when you need to act: start, seal, lint, sync, or retrieve context.",
+		LangZH: "Hub 是 Mainline intent memory 的人类阅读入口。用它理解项目状态、review 待审 intent、查看文件背后的历史约束和重要决策。需要 start / seal / lint / sync / context 时，再回到 CLI 执行动作。",
 	},
 	"dashboard.sealed_intents": {LangEN: "sealed intents", LangZH: "已封存 intents"},
 	"dashboard.open":           {LangEN: "open", LangZH: "进行中"},
 	"dashboard.proposed":       {LangEN: "proposed", LangZH: "提案中"},
 	"dashboard.with_risks":     {LangEN: "with risks", LangZH: "带风险"},
 
-	"team_health.label": {LangEN: "Team health", LangZH: "团队健康"},
+	"team_health.label": {LangEN: "Current attention status", LangZH: "当前关注状态"},
 	"team_health.healthy":   {LangEN: "Good overall", LangZH: "整体良好"},
 	"team_health.attention": {LangEN: "Needs attention", LangZH: "需要注意"},
 	"team_health.critical":  {LangEN: "Critical", LangZH: "严重"},
@@ -205,12 +205,13 @@ var translations = map[string]map[string]string{
 
 	"heatmap.heading": {LangEN: "Inherited constraints heatmap", LangZH: "继承约束热点"},
 	"heatmap.lead": {
-		LangEN: "Files with anti_patterns from prior intents that future work must acknowledge. Sorted by high-severity count, then by recent unacknowledged touches.",
-		LangZH: "历史 intent 留下硬约束的文件，未来改动必须 acknowledge。先按 high-severity 数排序，再按近期未确认的接触次数。",
+		LangEN: "Files with anti_patterns from prior intents that future work must acknowledge. These are not automatic violation judgments — they flag files where reviewers should check whether inherited constraints were considered.",
+		LangZH: "这些文件带有历史 intent 留下的硬约束。「未确认约束触碰」表示最近有 intent 改到该文件，但没有明确说明已考虑这些约束。这不是自动判定违规，而是提醒 reviewer 重点检查。",
 	},
 	"heatmap.constraints":   {LangEN: "constraints", LangZH: "条约束"},
 	"heatmap.high_severity": {LangEN: "high-severity", LangZH: "高严重度"},
-	"heatmap.unack_recent":  {LangEN: "unacknowledged recent touch", LangZH: "近期未确认的接触"},
+	"heatmap.unack_recent":  {LangEN: "unacknowledged constraint touch", LangZH: "未确认约束触碰"},
+	"heatmap.cta":           {LangEN: "Before editing this file", LangZH: "查看编辑前须知"},
 
 	"lifecycle.abandonment":  {LangEN: "Abandonment", LangZH: "Abandonment 比例"},
 	"lifecycle.supersession": {LangEN: "Supersession", LangZH: "Supersession 比例"},
@@ -233,7 +234,7 @@ var translations = map[string]map[string]string{
 	},
 	"file.inherited_empty": {LangEN: "No inherited constraints recorded for this file.", LangZH: "本文件暂无继承约束。"},
 
-	"lifecycle.heading":      {LangEN: "Lifecycle health", LangZH: "生命周期健康"},
+	"lifecycle.heading":      {LangEN: "Long-term lifecycle signals", LangZH: "长期生命周期信号"},
 	"lifecycle.sealed_total": {LangEN: "sealed intents", LangZH: "已封存 intents"},
 	"lifecycle.merged":       {LangEN: "merged", LangZH: "已合并"},
 	"lifecycle.proposed":     {LangEN: "proposed", LangZH: "提案中"},
@@ -241,8 +242,8 @@ var translations = map[string]map[string]string{
 	"lifecycle.superseded":   {LangEN: "superseded", LangZH: "被替代"},
 	"lifecycle.reverted":     {LangEN: "reverted", LangZH: "回滚"},
 	"lifecycle.note": {
-		LangEN: "Status mix only. Watch abandonment & supersession rates as a churn signal — not as a per-person score.",
-		LangZH: "仅展示状态分布。abandonment 和 supersession 比例反映返工信号，不是个人评分。",
+		LangEN: "Long-term trend, not current alert. Abandonment and supersession rates reflect rework / decision evolution — not per-person scores.",
+		LangZH: "长期趋势，非当前告警。abandonment 和 supersession 比例反映返工/决策演化，不是个人评分。",
 	},
 
 	"intent.risks": {LangEN: "Risks", LangZH: "风险"},
@@ -279,6 +280,21 @@ var translations = map[string]map[string]string{
 	"files.heading":         {LangEN: "Files", LangZH: "文件"},
 	"risks.heading":         {LangEN: "Risk review", LangZH: "风险审查"},
 	"graph.heading":         {LangEN: "Relationships", LangZH: "关系图"},
+
+	// File briefing (§6)
+	"briefing.heading":              {LangEN: "Before editing this file", LangZH: "编辑前须知"},
+	"briefing.lead":                 {LangEN: "Read these before making changes to this file.", LangZH: "改这个文件前，先看看这些。"},
+	"briefing.effective_decisions":  {LangEN: "Current effective decisions", LangZH: "当前有效决策"},
+	"briefing.abandoned_approaches": {LangEN: "Abandoned approaches", LangZH: "已放弃方案"},
+	"briefing.superseded_decisions": {LangEN: "Superseded decisions", LangZH: "已被取代的旧决策"},
+	"briefing.recent_proposed":      {LangEN: "Recent proposed work", LangZH: "最近待审 work"},
+
+	// Search (§7)
+	"search.placeholder": {LangEN: "Search intents, files, decisions, risks, anti-patterns...", LangZH: "搜索 intents、文件、决策、风险、anti-patterns..."},
+	"search.no_results":  {LangEN: "No results found.", LangZH: "未找到结果。"},
+	"search.group_intent":     {LangEN: "Intents", LangZH: "Intents"},
+	"search.group_file":       {LangEN: "Files", LangZH: "文件"},
+	"search.group_constraint": {LangEN: "Constraints", LangZH: "约束"},
 }
 
 // translate is the function `t` template helper resolves to. Falls

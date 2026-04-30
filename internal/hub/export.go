@@ -606,7 +606,16 @@ func writeSite(dir string, m *HubModel) error {
 	if err := writeJSONDump(dir, m); err != nil {
 		return err
 	}
+	if err := writeSearchIndex(dir, m); err != nil {
+		return err
+	}
+	if err := writeExportExtras(dir, m); err != nil {
+		return err
+	}
 	if err := writeAsset(dir, "assets/style.css", embeddedCSS); err != nil {
+		return err
+	}
+	if err := writeAsset(dir, "assets/search.js", embeddedSearchJS); err != nil {
 		return err
 	}
 	return renderAll(dir, m)
@@ -622,6 +631,98 @@ func writeJSONDump(dir string, m *HubModel) error {
 
 func writeAsset(dir, rel, body string) error {
 	return os.WriteFile(filepath.Join(dir, rel), []byte(body), 0o644)
+}
+
+// searchEntry is one item in the client-side search index.
+type searchEntry struct {
+	Type  string `json:"type"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	Text  string `json:"text"`
+}
+
+func writeSearchIndex(dir string, m *HubModel) error {
+	var entries []searchEntry
+	for _, in := range m.Intents {
+		text := strings.Join([]string{
+			in.Title, in.What, in.Why, in.UserGoal,
+		}, " ")
+		for _, d := range in.Decisions {
+			text += " " + d.Point + " " + d.Chose
+		}
+		for _, r := range in.Risks {
+			text += " " + r
+		}
+		for _, ap := range in.AntiPatterns {
+			text += " " + ap.What
+		}
+		text += " " + strings.Join(in.Tags, " ")
+		text += " " + strings.Join(in.Subsystems, " ")
+		entries = append(entries, searchEntry{
+			Type: "intent", Title: in.Title, URL: "intents/" + in.ID + ".html", Text: text,
+		})
+	}
+	for _, f := range m.FileIndex {
+		text := f.Path
+		for _, h := range m.InheritedHotspots {
+			if h.FilePath == f.Path {
+				for _, c := range h.Constraints {
+					text += " " + c.What + " " + c.Why
+				}
+			}
+		}
+		entries = append(entries, searchEntry{
+			Type: "file", Title: f.Path, URL: "files/" + fileSlug(f.Path) + ".html", Text: text,
+		})
+	}
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return fmt.Errorf("hub: marshal search index: %w", err)
+	}
+	return os.WriteFile(filepath.Join(dir, "data", "search_index.json"), data, 0o644)
+}
+
+func writeExportExtras(dir string, m *HubModel) error {
+	readme := `# Mainline Hub
+
+This is a static, read-only view of this repo's intent memory.
+
+Use it to answer:
+
+1. What needs attention?
+2. Which files have inherited constraints?
+3. What important decisions happened recently?
+4. If I edit a file, what should I know first?
+
+Start at ` + "`index.html`" + `.
+`
+	feedback := `# Hub Feedback
+
+1. What was immediately useful?
+2. What was confusing?
+3. Which page would you open again?
+4. Which page would you never use?
+5. Did this help you understand why the code is the way it is?
+6. Did this reveal anything you would have missed in GitHub / git log?
+7. What would need to exist before your team used this regularly?
+`
+	manifest := fmt.Sprintf(`{
+  "generated_at": %q,
+  "main_head": %q,
+  "intent_count": %d,
+  "file_count": %d,
+  "actor_count": %d,
+  "data_schema_version": 1
+}
+`, m.GeneratedAt, m.MainHead, len(m.Intents), len(m.FileIndex), len(m.ActorIndex))
+
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "feedback.md"), []byte(feedback), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644)
 }
 
 // fileSlug encodes a repo file path into a single safe filename.

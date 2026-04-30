@@ -85,8 +85,8 @@
 {{end}}
 
 <section class="commands"><h2>CLI</h2>
-<pre>mainline show {{.Intent.ID}}
+<pre><code>mainline show {{.Intent.ID}}
 mainline trace {{.Intent.ID}}{{if .Intent.FilesTouched}}
-mainline context --files {{index .Intent.FilesTouched 0}}{{end}}</pre>
+mainline context --files {{index .Intent.FilesTouched 0}}{{end}}</code></pre>
 </section>
 {{template "footer" .}}{{end}}
