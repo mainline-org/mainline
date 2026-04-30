@@ -141,6 +141,28 @@ agent 用上面那些 JSON 命令。
 
 ---
 
+## 性能调优
+
+`mainline sync` 的瓶颈是 SSH 到 GitHub 的网络往返（~3s）。开启 SSH 连接复用后，重复 sync 可降到 ~1s：
+
+```ssh-config
+# ~/.ssh/config
+Host github.com
+  ControlMaster auto
+  ControlPath ~/.ssh/sockets/%r@%h-%p
+  ControlPersist 600
+```
+
+```bash
+mkdir -p ~/.ssh/sockets
+```
+
+首次 sync 仍需完整握手；之后在 `ControlPersist` 窗口内复用连接，省掉 ~2s 的密钥交换。
+
+`mainline doctor --setup` 会自动检测并提示。
+
+---
+
 ## Eval: intent-first 真的比 code-first 少犯错吗？
 
 是的。8 个合成场景 × 3 个独立 seed（真实 LLM 调用，非 replay）：

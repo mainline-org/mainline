@@ -456,6 +456,26 @@ auto_check_after_sync = true         # phase1 runs over the delta of new
 strategy = "squash"                  # only consulted by `mainline merge`
 ```
 
+## Performance tips
+
+`mainline sync` is bounded by `git fetch` network latency (~3s on SSH to GitHub). To cut repeat-sync latency to ~1s, enable SSH connection multiplexing:
+
+```ssh-config
+# ~/.ssh/config
+Host github.com
+  ControlMaster auto
+  ControlPath ~/.ssh/sockets/%r@%h-%p
+  ControlPersist 600
+```
+
+```bash
+mkdir -p ~/.ssh/sockets
+```
+
+The first sync still pays the full SSH handshake; subsequent syncs within the `ControlPersist` window reuse the tunnel and skip the ~2s key exchange.
+
+`mainline doctor --setup` will flag this if it's not configured.
+
 ## FAQ
 
 **Q: Why is there no `mainline merge` in the quick start?**

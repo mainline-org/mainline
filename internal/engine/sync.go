@@ -54,6 +54,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 	remote := s.remoteName()
 	fetched := false
 	if s.Git.HasRemote(remote) {
+		s.progress("fetching")
 		// One fetch, three refspecs: main branch + every actor log +
 		// the notes ref (rc3: notes are the source of truth for merged
 		// status). A single `git fetch` shares one ssh handshake with
@@ -87,6 +88,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 	}
 
 	// Rebuild view
+	s.progress("rebuilding view")
 	view, err := s.rebuildView(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("rebuild view: %w", err)
@@ -100,6 +102,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 	// should reflect.
 	var autoPinned []PinnedCommit
 	if cfg.Sync.AutoPinAfterSync {
+		s.progress("pinning")
 		if pinResult, err := s.Pin(); err == nil && pinResult != nil && pinResult.Pinned > 0 {
 			autoPinned = pinResult.Links
 			// Re-rebuild now that new pin notes have landed locally.
@@ -138,6 +141,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 	}
 
 	if cfg.Sync.AutoCheckAfterSync {
+		s.progress("checking conflicts")
 		// One scoring pass produces the FULL active conflict set;
 		// the cached snapshot lets `mainline log` answer "does this
 		// intent currently have any phase1 warning?" without
