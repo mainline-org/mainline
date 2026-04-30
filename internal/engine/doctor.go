@@ -40,28 +40,28 @@ type DoctorResult struct {
 // [mainline] remote in .mainline/config.toml). HasRemote checks
 // whether that named remote actually exists in `git remote`.
 type DoctorSetupReport struct {
-	RemoteName        string   `json:"remote_name"`
-	HasRemote         bool     `json:"has_remote"`
-	NotesFetchOK      bool     `json:"notes_fetch_ok"`
-	NotesPushOK       bool     `json:"notes_push_ok"`
-	ActorFetchOK      bool     `json:"actor_fetch_ok"`
-	ActorPushOK       bool     `json:"actor_push_ok"`
-	NotesDisplayRefOK bool     `json:"notes_display_ref_ok"`
-	IdentityOK        bool     `json:"identity_ok"`
-	IdentityActorID   string   `json:"identity_actor_id,omitempty"`
-	AgentsMDOK bool `json:"agents_md_ok"`
+	RemoteName        string `json:"remote_name"`
+	HasRemote         bool   `json:"has_remote"`
+	NotesFetchOK      bool   `json:"notes_fetch_ok"`
+	NotesPushOK       bool   `json:"notes_push_ok"`
+	ActorFetchOK      bool   `json:"actor_fetch_ok"`
+	ActorPushOK       bool   `json:"actor_push_ok"`
+	NotesDisplayRefOK bool   `json:"notes_display_ref_ok"`
+	IdentityOK        bool   `json:"identity_ok"`
+	IdentityActorID   string `json:"identity_actor_id,omitempty"`
+	AgentsMDOK        bool   `json:"agents_md_ok"`
 	// AgentsBlockState reports the state of the Mainline-managed
 	// block inside AGENTS.md (independent of file presence).
 	// Values: not_installed | legacy | in_sync | update_available |
 	// locally_modified. Use `mainline agents check` for the full
 	// per-file report including the IDE stubs.
-	AgentsBlockState        string `json:"agents_block_state,omitempty"`
-	AgentsBlockVersion      int    `json:"agents_block_version,omitempty"`
-	AgentsTemplateVersion   int    `json:"agents_template_version,omitempty"`
-	PRTemplateOK      bool     `json:"pr_template_ok"`
-	GitignoreOK       bool     `json:"gitignore_ok"`
-	Fixed             []string `json:"fixed,omitempty"` // refspecs added by --fix
-	Issues            []string `json:"issues,omitempty"`
+	AgentsBlockState      string   `json:"agents_block_state,omitempty"`
+	AgentsBlockVersion    int      `json:"agents_block_version,omitempty"`
+	AgentsTemplateVersion int      `json:"agents_template_version,omitempty"`
+	PRTemplateOK          bool     `json:"pr_template_ok"`
+	GitignoreOK           bool     `json:"gitignore_ok"`
+	Fixed                 []string `json:"fixed,omitempty"` // refspecs added by --fix
+	Issues                []string `json:"issues,omitempty"`
 }
 
 type DoctorDraftFinding struct {
@@ -204,9 +204,12 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 				"AGENTS.md agent guidance has local edits — run 'mainline agents check' to review")
 		}
 	}
-	rep.PRTemplateOK = fileExists(filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md"))
-	if !rep.PRTemplateOK {
+	prTemplateExists, prTemplateLegacy := prTemplateState(s.Git.RepoRoot)
+	rep.PRTemplateOK = prTemplateExists && !prTemplateLegacy
+	if !prTemplateExists {
 		rep.Issues = append(rep.Issues, ".github/PULL_REQUEST_TEMPLATE.md missing — run 'mainline init --rewire'")
+	} else if prTemplateLegacy {
+		rep.Issues = append(rep.Issues, ".github/PULL_REQUEST_TEMPLATE.md uses deprecated Mainline trailers — run 'mainline init --rewire'")
 	}
 	rep.GitignoreOK = gitignoreContains(s.Git.RepoRoot, ".ml-cache/")
 	if !rep.GitignoreOK {
