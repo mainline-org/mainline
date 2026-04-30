@@ -78,9 +78,15 @@ manually and follows the same protocol — both paths work.
 | New maintainer asks "why is this code like this?" | Slack archaeology | `mainline context --files src/auth/middleware.go` |
 | You want to know which commits on `main` have no recorded intent | No signal | `mainline gaps` |
 
+> **Does it actually work?** We ran a controlled eval: 8 scenarios × 3 seeds ×
+> 2 modes. Code-first agents committed 9 violations; intent-first agents
+> committed 0. The advantage is 100% reproducible on abandoned-approach and
+> superseded-decision tasks. [Full report →](./docs_for_ai/eval-results.md)
+
 ## Table of contents
 
 - [Install](#install)
+- [Eval: does intent-first actually help?](#eval-does-intent-first-actually-help)
 - [Five-minute quick start](#five-minute-quick-start)
 - [How it fits your workflow](#how-it-fits-your-workflow)
 - [Architecture](#architecture)
@@ -95,7 +101,6 @@ manually and follows the same protocol — both paths work.
 - [Development](#development)
 - [Project structure](#project-structure)
 - [Roadmap](#roadmap)
-- [Eval: does intent-first actually help?](#eval-does-intent-first-actually-help)
 
 ## Install
 
@@ -115,6 +120,39 @@ After installing, verify your setup at any time:
 ```bash
 mainline doctor --setup
 ```
+
+## Eval: does intent-first actually help?
+
+Yes. On 8 synthetic scenarios with 3 independent seeds (live LLM, not replay):
+
+| Mode | Violations | Consistency |
+|---|---|---|
+| **Intent-first** | **0 across all seeds** | 0/8 fixtures fail |
+| Code-first | 9 violations (3/seed) | 2/8 fixtures fail, 100% reproducible |
+
+Code-first fails on exactly the scenarios where **code cannot reveal the
+constraint:**
+
+1. A prior approach was **abandoned** — redis.go looks 60% done with TODOs and
+   docker-compose has Redis defined. Every code-first agent proposes finishing it.
+   Only intent reveals the replication-lag failure.
+2. A decision was **superseded** — Both CSV and Parquet endpoints work and receive
+   traffic. Every code-first agent adds the column to both. Only intent says
+   "CSV is deprecated, Parquet only".
+
+Intent-first agents read `mainline context`, see the anti-pattern, and
+explicitly decline with reference. Code-first agents have no signal.
+
+**Run it yourself:**
+
+```bash
+mainline eval run                                          # layer 1: retrieval preconditions (8/8 pass)
+mainline eval agent --runner ./scripts/eval-runner-copilot.py \
+  --judge ./scripts/eval-judge-copilot.py                  # layer 2: v2 scorer (CF=4, IF=0)
+```
+
+Full methodology, per-fixture breakdowns, and caveats →
+[docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)
 
 ## Five-minute quick start
 
@@ -505,39 +543,6 @@ mainline/
 ├── docs_for_ai/               # Spec patches (rc1 → rc5) + AGENTS.md
 └── .github/workflows/ci.yml
 ```
-
-## Eval: does intent-first actually help?
-
-Yes. On 8 synthetic scenarios with 3 independent seeds (live LLM, not replay):
-
-| Mode | Violations | Consistency |
-|---|---|---|
-| **Intent-first** | **0 across all seeds** | 0/8 fixtures fail |
-| Code-first | 9 violations (3/seed) | 2/8 fixtures fail, 100% reproducible |
-
-Code-first fails on exactly the scenarios where **code cannot reveal the
-constraint:**
-
-1. A prior approach was **abandoned** — redis.go looks 60% done with TODOs and
-   docker-compose has Redis defined. Every code-first agent proposes finishing it.
-   Only intent reveals the replication-lag failure.
-2. A decision was **superseded** — Both CSV and Parquet endpoints work and receive
-   traffic. Every code-first agent adds the column to both. Only intent says
-   "CSV is deprecated, Parquet only".
-
-Intent-first agents read `mainline context`, see the anti-pattern, and
-explicitly decline with reference. Code-first agents have no signal.
-
-**Run it yourself:**
-
-```bash
-mainline eval run                                          # layer 1: retrieval preconditions (8/8 pass)
-mainline eval agent --runner ./scripts/eval-runner-copilot.py \
-  --judge ./scripts/eval-judge-copilot.py                  # layer 2: v2 scorer (CF=4, IF=0)
-```
-
-Full methodology, live results, and caveats →
-[docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)
 
 ## Roadmap
 
