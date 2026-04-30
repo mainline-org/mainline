@@ -16,7 +16,12 @@ var syncCmd = &cobra.Command{
 			return
 		}
 
+		sp := newSpinner("Syncing...")
+		svc.ProgressFunc = func(phase string) { sp.update(phase) }
+		sp.start()
 		result, err := svc.Sync()
+		sp.done()
+
 		if err != nil {
 			outputError(err)
 			return

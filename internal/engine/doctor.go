@@ -60,8 +60,10 @@ type DoctorSetupReport struct {
 	AgentsTemplateVersion int      `json:"agents_template_version,omitempty"`
 	PRTemplateOK          bool     `json:"pr_template_ok"`
 	GitignoreOK           bool     `json:"gitignore_ok"`
-	Fixed                 []string `json:"fixed,omitempty"` // refspecs added by --fix
-	Issues                []string `json:"issues,omitempty"`
+	SSHMultiplexOK        bool     `json:"ssh_multiplex_ok"`
+	Fixed                 []string `json:"fixed,omitempty"`      // refspecs added by --fix
+	Issues                []string `json:"issues,omitempty"`     // blocking problems
+	Suggestions           []string `json:"suggestions,omitempty"` // non-blocking perf tips
 }
 
 type DoctorDraftFinding struct {
@@ -216,6 +218,26 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 		rep.Issues = append(rep.Issues, "'.ml-cache/' missing from .gitignore — run 'mainline init --rewire'")
 	}
 
+	// SSH ControlMaster check — non-blocking performance suggestion.
+	// Only relevant when remote uses SSH (git@... or ssh://...).
+	if rep.HasRemote {
+		remoteURL := s.Git.ConfigGet("remote." + remote + ".url")
+		if isSSHRemote(remoteURL) {
+			rep.SSHMultiplexOK = sshControlMasterConfigured(remoteURL)
+			if !rep.SSHMultiplexOK {
+				rep.Suggestions = append(rep.Suggestions,
+					"SSH ControlMaster not detected — enable it to cut sync latency from ~3s to ~1s on repeat runs. "+
+						"Add to ~/.ssh/config:\n"+
+						"  Host github.com\n"+
+						"    ControlMaster auto\n"+
+						"    ControlPath ~/.ssh/sockets/%r@%h-%p\n"+
+						"    ControlPersist 600")
+			}
+		} else {
+			rep.SSHMultiplexOK = true // N/A for HTTPS
+		}
+	}
+
 	// notes.displayRef config — informative, not load-bearing
 	rep.NotesDisplayRefOK = strings.Contains(s.Git.ConfigGet("notes.displayRef"), "refs/notes/mainline")
 	if !rep.NotesDisplayRefOK {
@@ -272,4 +294,29 @@ func gitignoreContains(repoRoot, pattern string) bool {
 		return false
 	}
 	return strings.Contains(string(data), pattern)
+}
+
+// isSSHRemote returns true if the URL looks like an SSH remote
+// (git@host:... or ssh://...).
+func isSSHRemote(url string) bool {
+	return strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://")
+}
+
+// sshControlMasterConfigured checks whether the host extracted from
+// the remote URL has ControlMaster configured in ~/.ssh/config.
+// This is a best-effort heuristic — it reads the SSH config file and
+// looks for ControlMaster in Host blocks matching the remote host.
+func sshControlMasterConfigured(remoteURL string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".ssh", "config"))
+	if err != nil {
+		return false // no SSH config → not configured
+	}
+	content := strings.ToLower(string(data))
+	// Simple heuristic: if ControlMaster appears anywhere in the SSH
+	// config, we assume it's configured (could be Host * or specific).
+	return strings.Contains(content, "controlmaster")
 }

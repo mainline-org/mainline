@@ -97,6 +97,7 @@ func renderSetupReport(r *engine.DoctorSetupReport, fixed bool) {
 	check(r.PRTemplateOK, ".github/PULL_REQUEST_TEMPLATE.md present")
 	check(r.GitignoreOK, ".gitignore contains .ml-cache/")
 	check(r.NotesDisplayRefOK, "git config notes.displayRef points at mainline")
+	check(r.SSHMultiplexOK, "SSH ControlMaster configured (sync perf)")
 	if r.HasRemote {
 		check(r.NotesFetchOK, fmt.Sprintf("remote.%s.fetch covers refs/notes/mainline/*", r.RemoteName))
 		check(r.NotesPushOK, fmt.Sprintf("remote.%s.push covers refs/notes/mainline/*", r.RemoteName))
@@ -115,14 +116,21 @@ func renderSetupReport(r *engine.DoctorSetupReport, fixed bool) {
 
 	if len(r.Issues) == 0 {
 		fmt.Println("\nAll checks passed.")
-		return
+	} else {
+		fmt.Printf("\n%d issue(s) found:\n", len(r.Issues))
+		for _, msg := range r.Issues {
+			fmt.Printf("  - %s\n", msg)
+		}
+		if !fixed && r.HasRemote {
+			fmt.Println("\nRun 'mainline doctor --setup --fix' to apply automatic fixes.")
+		}
 	}
-	fmt.Printf("\n%d issue(s) found:\n", len(r.Issues))
-	for _, msg := range r.Issues {
-		fmt.Printf("  - %s\n", msg)
-	}
-	if !fixed && r.HasRemote {
-		fmt.Println("\nRun 'mainline doctor --setup --fix' to apply automatic fixes.")
+
+	if len(r.Suggestions) > 0 {
+		fmt.Printf("\n💡 Performance tip(s):\n")
+		for _, msg := range r.Suggestions {
+			fmt.Printf("  %s\n", msg)
+		}
 	}
 }
 

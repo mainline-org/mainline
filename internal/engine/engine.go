@@ -30,6 +30,11 @@ type Service struct {
 	// it nil. We never block on Emit; the bus implementation is
 	// expected to enqueue and return.
 	Bus EventBus
+
+	// ProgressFunc, when non-nil, is called with a short human-readable
+	// phase label at key sync stages (e.g. "fetching", "rebuilding",
+	// "pinning"). CLI uses this to drive a spinner; agents ignore it.
+	ProgressFunc func(phase string)
 }
 
 // EventBus is the engine's view of the domain-event sink. Mirrors
@@ -77,6 +82,14 @@ func (s *Service) emit(name string, data any) {
 		_ = recover()
 	}()
 	s.Bus.Emit(name, data)
+}
+
+// progress calls ProgressFunc if set. Used by long-running commands
+// (sync, pin) to report phase transitions to the CLI spinner.
+func (s *Service) progress(phase string) {
+	if s != nil && s.ProgressFunc != nil {
+		s.ProgressFunc(phase)
+	}
 }
 
 // -----------------------------------------------------------
