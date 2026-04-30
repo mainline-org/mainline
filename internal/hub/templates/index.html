@@ -7,6 +7,9 @@
   </div>
 </section>
 
+<div class="dashboard-grid">
+<div class="dashboard-main">
+
 {{with .TeamHealth}}
 <section class="team-health team-health-{{.HealthLevel}}">
   <div class="team-health-headline">
@@ -110,30 +113,23 @@
 </section>
 {{end}}{{end}}
 
-<section class="recent-fallback">
-  <h2>{{t .Lang "recent.heading"}}</h2>
-  <details>
-    <summary class="muted">{{t .Lang "recent.expand"}}</summary>
-    <div class="table-scroll">
-    <table class="intents">
-    <thead>
-    <tr><th>{{t .Lang "recent.col_id"}}</th><th>{{t .Lang "recent.col_title"}}</th><th>{{t .Lang "recent.col_status"}}</th><th>{{t .Lang "recent.col_actor"}}</th><th>{{t .Lang "recent.col_thread"}}</th><th>{{t .Lang "recent.col_sealed"}}</th><th>{{t .Lang "recent.col_files"}}</th></tr>
-    </thead>
-    <tbody>
-    {{range .Intents}}
-    <tr>
-      <td><a href="intents/{{.ID}}.html"><code>{{shortID .ID}}</code></a></td>
-      <td>{{.Title}}</td>
-      <td><span class="status status-{{.Status}}">{{.Status}}</span></td>
-      <td>{{if .ActorID}}<a href="actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a>{{end}}</td>
-      <td><code class="thread">{{.Thread}}</code></td>
-      <td class="muted" title="{{.SealedAt}}">{{timeAgo .SealedAt}}</td>
-      <td class="num">{{len .FilesTouched}}</td>
-    </tr>
-    {{end}}
-    </tbody>
-    </table>
-    </div>
-  </details>
-</section>
+</div><!-- end dashboard-main -->
+
+<aside class="dashboard-sidebar">
+  <h3>{{t .Lang "recent.heading"}}</h3>
+  <ul class="intent-sidebar-list">
+  {{range .Intents}}
+    <li>
+      <a href="intents/{{.ID}}.html">
+        <span class="sidebar-intent-title">{{.Title}}</span>
+        <span class="sidebar-intent-meta">
+          <span class="status status-{{.Status}}">{{.Status}}</span>
+          <span class="muted">{{timeAgo .SealedAt}}</span>
+        </span>
+      </a>
+    </li>
+  {{end}}
+  </ul>
+</aside>
+</div><!-- end dashboard-grid -->
 {{template "footer" .}}{{end}}

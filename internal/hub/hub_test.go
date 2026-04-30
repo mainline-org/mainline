@@ -386,7 +386,7 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	// across pages must resolve, and this confirms the main table is
 	// populated rather than just the chrome.
 	idx, _ := os.ReadFile(filepath.Join(out, "index.html"))
-	for _, fragment := range []string{"int_a", "int_b", "Alice", "View in-flight work"} {
+	for _, fragment := range []string{"int_a", "int_b", "View in-flight work"} {
 		if !strings.Contains(string(idx), fragment) {
 			t.Errorf("index.html missing %q", fragment)
 		}
