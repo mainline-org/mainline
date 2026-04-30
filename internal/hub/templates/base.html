@@ -12,6 +12,10 @@
     <div class="meta">{{t .Lang "header.tagline"}}</div>
   </div>
   <div class="topbar-right">
+    <div class="search-wrapper">
+      <input type="search" id="hub-search" placeholder="{{t .Lang "search.placeholder"}}" autocomplete="off">
+      <div id="hub-search-results" class="search-results" style="display:none"></div>
+    </div>
     <span class="meta build-meta">{{t .Lang "header.main_at"}}: <code>{{shortCommit .MainHead}}</code> · {{t .Lang "header.generated"}} {{timeAgo .GeneratedAt}}</span>
     <a class="lang-toggle" href="{{.OtherLangPath}}" aria-label="{{t .Lang "toggle.aria"}}">{{.OtherLangLabel}}</a>
   </div>
@@ -31,5 +35,6 @@
 
 {{define "footer"}}  </main>
 </div>
+<script src="{{.RootPath}}assets/search.js"></script>
 </body>
 </html>{{end}}
