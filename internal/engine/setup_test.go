@@ -114,6 +114,80 @@ func TestRewireIsSafeOnHealthyRepo(t *testing.T) {
 	}
 }
 
+func TestRewireUpdatesLegacyPRTemplateTrailers(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	path := filepath.Join(dir, ".github", "PULL_REQUEST_TEMPLATE.md")
+	legacy := `## Summary
+
+<!-- Describe what this PR does -->
+
+## Mainline
+
+<!-- Do NOT remove. Verify trailers remain in the final squash commit message. -->
+
+` + "```" + `
+Mainline-Intent: <intent-id>
+Mainline-Seal: sha256:<hash>
+` + "```" + `
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy PR template: %v", err)
+	}
+
+	r, err := svc.Rewire()
+	if err != nil {
+		t.Fatalf("Rewire: %v", err)
+	}
+	if !r.PRTplWritten {
+		t.Fatal("Rewire should report PR template rewritten for legacy trailers")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read PR template: %v", err)
+	}
+	text := string(data)
+	for _, deprecated := range []string{"Mainline-Intent:", "Mainline-Seal:"} {
+		if strings.Contains(text, deprecated) {
+			t.Fatalf("rewritten PR template still contains deprecated marker %q:\n%s", deprecated, text)
+		}
+	}
+	if !strings.Contains(text, "git notes") || !strings.Contains(text, "actor refs") {
+		t.Fatalf("rewritten PR template should describe the notes protocol:\n%s", text)
+	}
+}
+
+func TestRewirePreservesCustomPRTemplate(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	path := filepath.Join(dir, ".github", "PULL_REQUEST_TEMPLATE.md")
+	custom := "## Summary\n\n## Review Checklist\n\n- Product owner approved\n"
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
+		t.Fatalf("write custom PR template: %v", err)
+	}
+
+	r, err := svc.Rewire()
+	if err != nil {
+		t.Fatalf("Rewire: %v", err)
+	}
+	if r.PRTplWritten {
+		t.Fatal("Rewire should not overwrite a custom PR template")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read PR template: %v", err)
+	}
+	if string(data) != custom {
+		t.Fatalf("custom PR template was modified:\n%s", string(data))
+	}
+}
+
 // doctor --setup populates a structured report and sets the per-check
 // booleans correctly for a freshly-initialised repo with origin
 // configured at init time.
@@ -152,6 +226,33 @@ func TestDoctorSetupReportClean(t *testing.T) {
 	}
 	if len(r.Issues) != 0 {
 		t.Errorf("expected no issues on a healthy repo, got %v", r.Issues)
+	}
+}
+
+func TestDoctorSetupFlagsLegacyPRTemplate(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Git.Run("remote", "add", "origin", "git@example.com:fake/fake.git"); err != nil {
+		t.Fatalf("git remote add: %v", err)
+	}
+	svc.Init("agent")
+
+	path := filepath.Join(dir, ".github", "PULL_REQUEST_TEMPLATE.md")
+	legacy := "Mainline-Intent: <intent-id>\nMainline-Seal: sha256:<hash>\n"
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy PR template: %v", err)
+	}
+
+	res, err := svc.Doctor(DoctorOptions{Setup: true})
+	if err != nil {
+		t.Fatalf("Doctor --setup: %v", err)
+	}
+	if res.Setup.PRTemplateOK {
+		t.Fatal("legacy PR template should not pass doctor --setup")
+	}
+	if !strings.Contains(strings.Join(res.Setup.Issues, "\n"), "deprecated Mainline trailers") {
+		t.Fatalf("doctor should report deprecated trailers, got %v", res.Setup.Issues)
 	}
 }
 

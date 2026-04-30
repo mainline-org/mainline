@@ -4,9 +4,11 @@
 
 ## Mainline
 
-<!-- Do NOT remove. Verify trailers remain in the final squash commit message. -->
+<!--
+Mainline stores intent metadata in git notes and actor refs.
+Do not add Mainline-Intent / Mainline-Seal trailers to the PR or squash commit message.
+-->
 
-```
-Mainline-Intent: <intent-id>
-Mainline-Seal: sha256:<hash>
-```
+## Tested
+
+<!-- How was this tested? -->
