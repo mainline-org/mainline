@@ -52,54 +52,63 @@ Mainline checks before broad code search or edits. If the repository does not
 appear to use Mainline and the user did not ask to set it up, do not initialize
 Mainline without user confirmation.
 
+## Hard Boundaries / NEVER
+
+These are load-bearing because Mainline writes collaboration metadata and can
+coexist with normal Git remote writes:
+
+- **NEVER treat `mainline publish`, `mainline sync`, or `mainline seal --submit`
+  as authorization to `git push` the working branch.** They may publish
+  Mainline metadata refs; Git branch push is a separate remote write.
+- **NEVER push `main` or `master` without explicit current-turn user
+  authorization that names that branch.** Prior push permission does not carry
+  over to later commits, other branches, or protected branches.
+- **NEVER run `mainline init`, `mainline init --rewire`, or
+  `mainline doctor --setup --fix` merely because checks fail.** These commands
+  modify repo guidance/refspecs; use them only for explicit setup/repair intent
+  or repository policy that delegates setup.
+- **NEVER reuse a sealed/proposed intent for new code changes.** Start a
+  follow-up intent so the new why, files, and conflicts are recorded cleanly.
+- **NEVER clean, revert, delete, or stage unrelated dirty/untracked user files
+  to satisfy Mainline.** Keep your evidence scoped; use `--allow-dirty` only
+  after noting the dirty state will be recorded.
+- **NEVER continue silently after seal/check conflicts.** Surface conflicts to
+  the user before proceeding so semantic overlap is visible.
+- **NEVER rewrite published Git history as a Mainline rescue shortcut.** Use
+  backfill/skip/accept-uncovered paths unless the user explicitly asks for
+  history rewrite.
+
 ## Setup Responsibility
 
-Do not assume the human has already installed or initialized Mainline. If the
-task needs Mainline and `mainline` is missing, install or help install it before
-continuing.
-
-First check:
+Do not assume the human has already installed or initialized Mainline. First
+separate **missing tool**, **missing repo setup**, and **normal coding work**:
 
 ```bash
 command -v mainline
 mainline status --json
 ```
 
-If the CLI is missing, prefer the public install channel once available. For
-the current private-repository phase, use Go's native installer:
+Decision tree:
 
-```bash
-GOPRIVATE=github.com/mainline-org/* go install github.com/mainline-org/mainline@main
-```
+- CLI missing -> install or help install it. During the private-repository phase,
+  use Go install (`GOPRIVATE=github.com/mainline-org/* go install
+  github.com/mainline-org/mainline@main`) and prefer SSH configuration over
+  embedded credentials if GitHub HTTPS auth fails.
+- Repo not initialized -> initialize only if the user asked to adopt/setup
+  Mainline; otherwise continue without creating `.mainline/`, AGENTS guidance,
+  or refspecs.
+- Identity missing -> choose an actor name from explicit user input, git
+  identity, or a stable local actor name, but only as part of setup/repair.
+- Existing repo with stale/missing guidance -> report `mainline agents check` /
+  `mainline agents diff`; do not rewrite guidance unless user requested setup,
+  update, or repair.
 
-If installing a fixed internal version:
-
-```bash
-GOPRIVATE=github.com/mainline-org/* go install github.com/mainline-org/mainline@v0.1.0
-```
-
-If Go cannot fetch the private GitHub repository over HTTPS, configure GitHub
-SSH access rather than embedding credentials:
-
-```bash
-git config --global url."git@github.com:".insteadOf "https://github.com/"
-```
-
-After install, ensure the Go binary directory, commonly `~/go/bin`, is on
-PATH. Re-run `mainline status --json`.
-
-If the CLI exists but the repository is not initialized and the user asked to
-set up Mainline, initialize it:
+If setup is authorized:
 
 ```bash
 mainline init --actor-name "<name>"
 mainline doctor --setup
 ```
-
-Choose `<name>` from explicit user input, existing git identity, or a stable
-local actor name. If initialization would modify shared repository guidance or
-Git refspecs and the user only asked for a narrow code change, ask before
-initializing.
 
 ## Hooks Are Optional
 
@@ -120,28 +129,25 @@ block code work solely because hooks are absent.
 
 ## Start Of Task
 
-At the start of a real task:
+At the start of real work, orient first:
 
 ```bash
 mainline status --json
-```
-
-If there is no active intent and the task will make non-trivial changes, start
-one using the user's actual goal:
-
-```bash
-mainline start "<user goal>" --json
-```
-
-If a sealed or proposed intent already exists for the same branch and the user
-is asking for follow-up changes, start a new intent for the follow-up rather
-than trying to mutate the sealed one.
-
-Before designing the change, inspect in-flight work:
-
-```bash
 mainline list-proposals --json
 ```
+
+Intent decision tree:
+
+- No active intent + non-trivial changes -> `mainline start "<user goal>" --json`.
+- Active intent matches the branch and is still drafting -> append meaningful
+  progress to it.
+- Active intent belongs to another branch, or the relevant same-branch intent is
+  sealed/proposed/merged -> start a new follow-up intent. Do not mutate old
+  sealed intent state.
+- User only asked a read-only question or one-file view -> no new intent unless
+  repository policy explicitly requires one.
+- Branch is behind remote -> you may inspect and merge/rebase according to repo
+  workflow, but this still does not authorize Git branch push.
 
 ## Intent-First Code Reading
 
@@ -195,16 +201,8 @@ own changes.
 
 ## Commit Workflow
 
-Before committing, inspect the staged and unstaged diff and make sure only the
-intended files are staged. Commit with the repository's commit convention.
-
-```bash
-git status --short
-git diff
-git diff --cached
-git add <files>
-git commit -m "<message>"
-```
+Before committing, inspect the unstaged and staged diff; stage only intended
+files and preserve unrelated user work. Commit with the repository convention.
 
 If the user asks for a commit or PR and the branch has no active intent, create
 or backfill one before committing unless the change is truly mechanical and the
@@ -315,20 +313,17 @@ work unfolded. Use `check` only when phase-1 overlap needs a semantic judgment.
 
 ## Coverage And Rescue
 
-If status or gaps reports uncovered commits:
+If status or gaps reports uncovered commits, inspect `mainline gaps --json` and
+choose the least destructive path:
 
-```bash
-mainline gaps --json
-```
-
-Choose the least destructive rescue path:
-
-- If the commit is local and unpushed, undo the commit with `git reset --soft
-  HEAD^`, start the proper intent, recommit, and seal.
-- If the commit is already pushed, backfill an intent with `mainline start
-  "<why>" --commits <sha>`, append the post-hoc explanation, then seal.
-- If it is routine and deliberately outside Mainline, add a
-  `Mainline-Skip:` trailer or configure a skip pattern.
+- Local and unpushed -> `git reset --soft HEAD^`, start the proper intent,
+  recommit, and seal.
+- Already pushed -> backfill an intent with `mainline start "<why>" --commits
+  <sha>`, append the post-hoc explanation, then seal.
+- Routine/out-of-scope -> add a `Mainline-Skip:` trailer or configure a skip
+  pattern.
+- Already distributed and not worth rewriting -> accept uncovered; the log is a
+  record of reality, not aspiration.
 
 Do not rewrite published history unless the user explicitly asks.
 
