@@ -81,7 +81,7 @@ manually and follows the same protocol — both paths work.
 > **Does it actually work?** We ran a controlled eval: 8 scenarios × 3 seeds ×
 > 2 modes. Code-first agents committed 9 violations; intent-first agents
 > committed 0. The advantage is 100% reproducible on abandoned-approach and
-> superseded-decision tasks. [Full report →](./docs_for_ai/eval-results.md)
+> superseded-decision tasks. [Full report →](./docs/eval-results.md)
 
 ## Table of contents
 
@@ -152,7 +152,7 @@ mainline eval agent --runner ./scripts/eval-runner-copilot.py \
 ```
 
 Full methodology, per-fixture breakdowns, and caveats →
-[docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)
+[docs/eval-results.md](./docs/eval-results.md)
 
 ## Five-minute quick start
 
