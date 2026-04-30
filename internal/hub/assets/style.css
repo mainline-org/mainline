@@ -79,6 +79,15 @@ table.intents .num.risk { color: var(--risk); font-weight: 600; }
 .status-reverted  { background: #fde2e2; color: var(--risk); }
 .status-drafting  { background: #e6f2ff; color: var(--accent); }
 .status-sealed_local { background: #e6f2ff; color: var(--accent); }
+.status-covered   { background: #ddf4e3; color: var(--merged); }
+.status-skipped   { background: #ececec; color: #555; }
+.status-uncovered { background: #fde2e2; color: var(--risk); }
+.status-healthy   { background: #ddf4e3; color: var(--merged); }
+.status-attention { background: #fff1e0; color: #c4730d; }
+.status-critical  { background: #fde2e2; color: var(--risk); }
+tr.cov-uncovered.risk td { background: #fff5f5; }
+.lifecycle-note { font-size: 0.85em; margin-top: 8px; }
+ul.actor-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 
 .intent-summary { display: grid; gap: 12px; margin: 20px 0; }
 .intent-summary > div { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }

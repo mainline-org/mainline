@@ -6,9 +6,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mainline-org/mainline/internal/engine"
 	"github.com/mainline-org/mainline/internal/hub"
 )
 
@@ -80,7 +82,12 @@ If [dir] is omitted, the site is written to
 		if len(args) == 1 {
 			out = args[0]
 		}
-		res, err := hub.Export(svc.Store, hub.ExportOptions{OutputDir: out})
+		covRows, covWin := buildHubCoverageInput(svc)
+		res, err := hub.Export(svc.Store, hub.ExportOptions{
+			OutputDir:      out,
+			CoverageRows:   covRows,
+			CoverageWindow: covWin,
+		})
 		if err != nil {
 			outputError(err)
 			return
@@ -109,7 +116,12 @@ var hubOpenCmd = &cobra.Command{
 			return
 		}
 		out := defaultHubDir(svc.Git.RepoRoot)
-		res, err := hub.Export(svc.Store, hub.ExportOptions{OutputDir: out})
+		covRows, covWin := buildHubCoverageInput(svc)
+		res, err := hub.Export(svc.Store, hub.ExportOptions{
+			OutputDir:      out,
+			CoverageRows:   covRows,
+			CoverageWindow: covWin,
+		})
 		if err != nil {
 			outputError(err)
 			return
@@ -136,6 +148,69 @@ func openInBrowser(path string) {
 	}
 	c.Stdout, c.Stderr = os.Stdout, os.Stderr
 	_ = c.Start()
+}
+
+// buildHubCoverageInput pulls the engine's CoverageWindow output and
+// flattens it into hub.CoverageInputCommit rows. Best-effort: any
+// error returns (nil, 0) and Hub falls back to the partial-data
+// rendering — coverage is a nice-to-have for the dashboard, never a
+// blocker. HighRisk is set when any intent that covers the commit
+// recorded at least one risk in its summary.
+func buildHubCoverageInput(svc *engine.Service) ([]hub.CoverageInputCommit, int) {
+	view, _ := svc.Store.ReadMainlineView()
+	cfg, _ := svc.GetTeamConfigForCLI()
+	if view == nil || cfg == nil {
+		return nil, 0
+	}
+	cov, err := svc.CoverageWindow(engine.CoverageWindowSize, view, cfg)
+	if err != nil {
+		return nil, 0
+	}
+	risky := map[string]bool{}
+	for i := range view.Intents {
+		iv := &view.Intents[i]
+		if iv.Summary != nil && len(iv.Summary.Risks) > 0 {
+			risky[iv.IntentID] = true
+		}
+	}
+	out := make([]hub.CoverageInputCommit, 0, len(cov))
+	for _, c := range cov {
+		row := hub.CoverageInputCommit{
+			Commit:      c.Commit,
+			Subject:     c.Subject,
+			Author:      c.Author,
+			CommittedAt: c.CommittedAt,
+			State:       string(c.State),
+			SkipReason:  c.SkipReason,
+		}
+		// HighRisk applies to uncovered commits in the spec — a
+		// covered commit's risk lives on its intent page. We mark
+		// uncovered as high-risk when its commit subject text suggests
+		// risky areas (security/auth/payment/etc); cheap heuristic, no
+		// false negatives matter (the page already lists the commit).
+		if c.State == engine.CoverageUncovered {
+			row.HighRisk = isLikelyHighRisk(c.Subject)
+		}
+		out = append(out, row)
+	}
+	return out, engine.CoverageWindowSize
+}
+
+// isLikelyHighRisk is a conservative subject-line scanner for
+// uncovered commits that need an intent the most. False positives
+// are cheap (the page just shows the commit with a flag); negatives
+// are also cheap (commit still appears, just unflagged).
+func isLikelyHighRisk(subject string) bool {
+	keywords := []string{"security", "auth", "payment", "credential",
+		"secret", "vuln", "permission", "migrat", "schema",
+		"production", "rollback", "hotfix", "incident", "outage"}
+	lower := strings.ToLower(subject)
+	for _, k := range keywords {
+		if strings.Contains(lower, k) {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {
