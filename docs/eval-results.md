@@ -10,11 +10,16 @@
 | Layer 1 | Retrieval preconditions | **8/8 pass** — constraints reach the agent |
 | Layer 2 v1 | Substring scorer | NET-NEGATIVE — inverts real signal |
 | Layer 2 v2 (replay) | LLM-as-judge scorer | **CF=4 violations, IF=0 violations, Δ=4** |
-| Layer 2 live (3-seed) | Agent-spawning, real LLM | **CF=9, IF=0, Δ=9 (100% consistent)** |
+| Layer 2 live (3-seed) | Agent-spawning, real LLM | **CF=9, IF=0, Δ=9 (consistent across seeds)** |
 
 **Verdict:** Intent-first agents avoid violations that code-first agents commit.
 The advantage is concentrated in abandoned approaches and superseded decisions —
-scenarios where code alone cannot reveal the constraint. 100% reproducible across seeds.
+scenarios where code alone cannot reveal the constraint. Consistently reproduced
+across all 3 seeds; further multi-model validation needed.
+
+> ⚠️ This is not a final public benchmark but a first controlled experiment.
+> Results provide directional signal; multi-model, higher-N, and LLM-as-judge
+> automated scoring are needed for publishable claims.
 
 ---
 
@@ -191,8 +196,13 @@ Verdict: intent-first significantly better
 
 The v2 scorer reveals a pattern invisible to substring matching:
 intent-first agents don't just avoid forbidden actions — they
-**explicitly cite the constraint while declining**. 18/18 forbidden
-items in intent-first runs were classified as DECLINED-WITH-REFERENCE.
+**explicitly cite the constraint while declining**.
+
+The 8 fixtures collectively define 18 forbidden constraints (each fixture
+has 1-4 items covering all behaviors the agent should avoid). In 3 replay
+runs, intent-first agents classified all 18 as DECLINED-WITH-REFERENCE —
+meaning they actively cited the constraint and explained why they refused,
+rather than silently avoiding it.
 
 This proves intent-first agents:
 1. Received the constraint (retrieval worked)
@@ -244,11 +254,16 @@ docs_for_ai/eval-runs/<timestamp>/
 | superseded-decision | 6 | 0 | INTENT-FIRST |
 
 ```
-Code-first:   9 violations across 2/8 fixtures (3/seed, 100% consistent)
+Code-first:   9 violations across 2/8 fixtures (3/seed, consistent across seeds)
 Intent-first: 0 violations across 0/8 fixtures
 Δ = 9 violations prevented by intent-first
 Per-seed: Seed1 CF=3/IF=0, Seed2 CF=3/IF=0, Seed3 CF=3/IF=0
 ```
+
+> **Violation counting:** Violations are counted per forbidden-list item, not per task.
+> `superseded-decision` violates 2 forbidden items per run (adds CSV column + uses old
+> CSV format), so 3 seeds × 2 = 6. `abandoned-approach` violates 1 item per run,
+> so 3 seeds × 1 = 3. Total: 9.
 
 ### Key difference from replay baseline
 
@@ -257,7 +272,7 @@ Per-seed: Seed1 CF=3/IF=0, Seed2 CF=3/IF=0, Seed3 CF=3/IF=0
 | CF violations | 4 | 9 |
 | IF violations | 0 | 0 |
 | Fixtures failing | 3/8 | 2/8 |
-| Consistency | N/A (deterministic) | 100% (3/3 seeds identical) |
+| Consistency | N/A (deterministic) | 3/3 seeds show same pattern |
 
 **`docs-only-intent` no longer fails code-first.** Live agents (Claude Sonnet 4)
 checked CLI help text and found "agent guidance" from code alone. The replay
@@ -274,7 +289,7 @@ scenarios where no code signal exists at all:
    "deprecated" comment but still receives traffic. Every code-first agent adds
    the column to both. Only intent reveals CSV is superseded, not just deprecated.
 
-### Why 100% consistency?
+### Why do these failures reproduce consistently?
 
 All 3 seeds produce identical violation patterns because the failure modes are
 **structurally inevitable** for code-first:
@@ -284,8 +299,11 @@ All 3 seeds produce identical violation patterns because the failure modes are
 - A working endpoint with active traffic = "I should add the column here too"
 
 No amount of prompt engineering can help a code-first agent avoid these
-mistakes — the code itself is an attractive nuisance. Only historical context
-(abandonment reason, supersession decision) prevents the error.
+mistakes — the code presents residual state, not decision state. Only historical
+context (abandonment reason, supersession decision) prevents the error.
+
+These two scenarios reproduced the same failure pattern in all 3 runs.
+This is a directional signal worth validating at larger sample sizes.
 
 ---
 
@@ -352,12 +370,15 @@ Intent-first agent sees "abandoned: replication-lag failures" and refuses.
 Code-first agent sees CSV + Parquet and adds to both.
 Intent-first agent sees "superseded: CSV → Parquet" and only touches Parquet.
 
-### 3. Cross-cutting conventions (docs-only)
+### 3. Cross-cutting conventions (docs-only) — potential advantage, not confirmed in live run
 
 > The rule was established in a docs-only commit. No source code signal exists.
 
-Code-first agent has no awareness of the naming rule.
-Intent-first agent cites the anti-pattern and uses correct vocabulary.
+`docs-only-intent` did not trigger a violation in the live Sonnet 4 run
+(code-first agents found the convention from CLI help text). However, the
+replay baseline (Opus 4.6) did show a failure here, indicating model-dependent
+behavior. This remains a scenario Mainline is designed to cover: rules that
+exist only in documentation or historical intents, not in source code.
 
 ### Where code-first is sufficient
 
@@ -371,18 +392,25 @@ When the correct action is visible from code alone:
 
 ## Caveats
 
-1. **Deterministic replay, not live LLM.** Results use pre-computed
+1. **First controlled experiment, not final benchmark.** Results provide
+   directional signal. Multi-model, higher-N, and automated scoring are
+   needed before making public claims like "reduces agent mistakes by X%".
+
+2. **Deterministic replay, not live LLM.** Layer 2 v2 results use pre-computed
    responses. Real variance requires live API calls with temperature > 0.
 
-2. **Self-eval.** Responses were generated by Claude Opus 4.6 evaluating
+3. **Self-eval.** Responses were generated by Claude Opus 4.6 evaluating
    prompts designed for Claude-class models. Cross-model validation needed.
 
-3. **N=1 effective.** Replay runner produces identical results per seed.
-   Live multi-seed runs needed for statistical confidence.
+4. **N=3 live runs.** Consistent but statistically small. Replay runner
+   produces identical results per seed. More seeds needed for confidence.
 
-4. **Scorer v2 depends on judge quality.** The `docs-only-intent` CF
+5. **Scorer v2 depends on judge quality.** The `docs-only-intent` CF
    violation has 72% confidence — borderline. A stronger judge or human
    audit may reclassify it.
+
+6. **Synthetic scenarios.** All 8 fixtures are human-constructed, not
+   sampled from real codebases. Real-world signal density may differ.
 
 ## Next steps for publishable numbers
 
