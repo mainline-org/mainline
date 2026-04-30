@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/storage"
@@ -465,4 +466,188 @@ func lookupFile(idx []HubFileEntry, path string) []string {
 		}
 	}
 	return nil
+}
+
+// -----------------------------------------------------------
+// Team-health / founder-dashboard tests (spec §14)
+// -----------------------------------------------------------
+
+func intentSealed(id, status string, daysAgo int, files []string, risks []string) domain.IntentView {
+	now := time.Now()
+	sealedAt := now.Add(-time.Duration(daysAgo) * 24 * time.Hour).UTC().Format(time.RFC3339)
+	iv := domain.IntentView{
+		IntentID: id,
+		Status:   domain.IntentStatus(status),
+		ActorID:  "actor_x",
+		Thread:   "t",
+		SealedAt: sealedAt,
+		Summary:  &domain.IntentSummary{Title: id, What: "did " + id, Risks: risks},
+		Fingerprint: &domain.SemanticFingerprint{
+			Subsystems:   []string{"sub"},
+			FilesTouched: files,
+		},
+	}
+	return iv
+}
+
+func TestHubTeamHealth_GeneratesSummary(t *testing.T) {
+	v := makeView(
+		intentSealed("int_p1", "proposed", 1, []string{"a.go"}, nil),
+		intentSealed("int_m1", "merged", 0, []string{"a.go"}, []string{"watch the rollout"}),
+		intentSealed("int_m2", "merged", 0, []string{"b.go"}, nil),
+	)
+	m := buildHubModel(v)
+	if m.TeamHealth.HealthSummary == "" {
+		t.Fatal("HealthSummary must not be empty")
+	}
+	if m.TeamHealth.HealthLevel == "" {
+		t.Fatal("HealthLevel must be populated; got empty")
+	}
+	// Coverage is unavailable in this layer — the partial-data
+	// banner is the spec-required honesty signal.
+	if !strings.Contains(m.TeamHealth.HealthSummary, "Coverage data unavailable") {
+		t.Errorf("partial-data summary should mention coverage unavailability: %q", m.TeamHealth.HealthSummary)
+	}
+}
+
+func TestHubReviewAging_SortsOldHighRiskFirst(t *testing.T) {
+	v := makeView(
+		intentSealed("int_old_low", "proposed", 2, []string{"x.go"}, nil),
+		intentSealed("int_new_high_risk", "proposed", 0, []string{"x.go"}, []string{"breaking change"}),
+		intentSealed("int_old_high_risk", "proposed", 3, []string{"x.go"}, []string{"big risk"}),
+	)
+	m := buildHubModel(v)
+	// Focus list should put high-risk proposed first; within
+	// high-risk, oldest first.
+	if len(m.Dashboard.Focus) < 3 {
+		t.Fatalf("expected 3 focus items, got %d", len(m.Dashboard.Focus))
+	}
+	if m.Dashboard.Focus[0].ID != "int_old_high_risk" {
+		t.Errorf("oldest high-risk should be first; got order=%v",
+			focusOrder(m.Dashboard.Focus))
+	}
+	if m.Dashboard.Focus[1].ID != "int_new_high_risk" {
+		t.Errorf("high-risk should come before low-risk; got order=%v",
+			focusOrder(m.Dashboard.Focus))
+	}
+}
+
+func focusOrder(items []HubFocusIntent) []string {
+	out := make([]string, 0, len(items))
+	for _, f := range items {
+		out = append(out, f.ID)
+	}
+	return out
+}
+
+func TestHubRiskRadar_GroupsRiskBearingProposed(t *testing.T) {
+	v := makeView(
+		intentSealed("int_proposed_risky", "proposed", 1, []string{"a.go"}, []string{"r"}),
+		intentSealed("int_merged_risky", "merged", 1, []string{"a.go"}, []string{"r"}),
+		intentSealed("int_proposed_clean", "proposed", 0, []string{"b.go"}, nil),
+	)
+	m := buildHubModel(v)
+	if m.TeamHealth.Risk.RiskBearingProposed != 1 {
+		t.Errorf("expected 1 risk-bearing proposed, got %d", m.TeamHealth.Risk.RiskBearingProposed)
+	}
+	if len(m.TeamHealth.Risk.RiskBearingProposedRows) != 1 ||
+		m.TeamHealth.Risk.RiskBearingProposedRows[0].ID != "int_proposed_risky" {
+		t.Errorf("expected the risky-proposed row to surface; got %+v",
+			m.TeamHealth.Risk.RiskBearingProposedRows)
+	}
+}
+
+func TestHubDecisionHotspots_UsesIntentHistoryCounts(t *testing.T) {
+	v := makeView(
+		intentSealed("int_a", "merged", 1, []string{"hot.go", "cold.go"}, []string{"r"}),
+		intentSealed("int_b", "merged", 2, []string{"hot.go"}, []string{"r"}),
+		intentSealed("int_c", "merged", 3, []string{"hot.go"}, nil),
+		intentSealed("int_d", "merged", 4, []string{"cold.go"}, nil),
+	)
+	m := buildHubModel(v)
+	if len(m.Dashboard.HotFiles) == 0 {
+		t.Fatal("hot files should be populated")
+	}
+	// "hot.go" should be first (3 intents) and carry risk + recent
+	// counts for the dashboard's Decision-hotspots metadata.
+	if m.Dashboard.HotFiles[0].Path != "hot.go" {
+		t.Errorf("hot.go should rank first, got %q", m.Dashboard.HotFiles[0].Path)
+	}
+	if m.Dashboard.HotFiles[0].IntentCount != 3 {
+		t.Errorf("hot.go should report 3 intents, got %d", m.Dashboard.HotFiles[0].IntentCount)
+	}
+	if m.Dashboard.HotFiles[0].RiskIntentCount != 2 {
+		t.Errorf("hot.go should report 2 risk-bearing intents, got %d",
+			m.Dashboard.HotFiles[0].RiskIntentCount)
+	}
+}
+
+func TestHubDigest_GeneratesSevenDaySummary(t *testing.T) {
+	v := makeView(
+		intentSealed("int_recent_merged", "merged", 1, []string{"a.go"},
+			[]string{"a real risk here that should appear"}),
+		intentSealed("int_recent_proposed", "proposed", 2, []string{"a.go"}, nil),
+		intentSealed("int_recent_abandoned", "abandoned", 3, []string{"a.go"}, nil),
+		intentSealed("int_old_merged", "merged", 60, []string{"a.go"}, nil), // outside 7-day window
+	)
+	m := buildHubModel(v)
+	d := m.TeamHealth.Digest
+	if d.WindowDays != 7 {
+		t.Errorf("expected 7-day window, got %d", d.WindowDays)
+	}
+	// SealedThisWindow counts merged intents in window only (1 here).
+	// ProposedThisWindow counts proposed (1). AbandonedThisWindow
+	// counts abandoned (1). int_old_merged is outside the window.
+	if d.SealedThisWindow != 1 || d.ProposedThisWindow != 1 || d.AbandonedThisWindow != 1 {
+		t.Errorf("digest counts wrong: sealed=%d proposed=%d abandoned=%d",
+			d.SealedThisWindow, d.ProposedThisWindow, d.AbandonedThisWindow)
+	}
+	// Risk-bearing this window should pick up the merged one with risks.
+	if d.RiskBearingThisWindow != 1 {
+		t.Errorf("expected 1 risk-bearing in window, got %d", d.RiskBearingThisWindow)
+	}
+	if len(d.RisksToWatch) == 0 || d.RisksToWatch[0].ID != "int_recent_merged" {
+		t.Errorf("RisksToWatch should surface int_recent_merged: %+v", d.RisksToWatch)
+	}
+}
+
+// Spec §14 mandatory copy test: dashboard / digest / team-health
+// output must NOT use productivity / leaderboard / performance
+// language. This test renders the template against a real fixture
+// and asserts none of those words appear — guards against future
+// edits silently turning Hub into a manager-monitoring panel.
+func TestHubDashboard_DoesNotUseLeaderboardLanguage(t *testing.T) {
+	dir := t.TempDir()
+	repoRoot := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := storage.New(repoRoot, nil)
+	v := makeView(
+		intentSealed("int_a", "merged", 1, []string{"a.go"}, []string{"r"}),
+		intentSealed("int_b", "proposed", 2, []string{"a.go"}, nil),
+	)
+	if err := store.WriteMainlineView(v); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "site")
+	if _, err := Export(store, ExportOptions{OutputDir: out}); err != nil {
+		t.Fatal(err)
+	}
+	indexBytes, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexLower := strings.ToLower(string(indexBytes))
+	for _, forbidden := range []string{
+		"productivity",
+		"performance",
+		"leaderboard",
+		"velocity",
+	} {
+		if strings.Contains(indexLower, forbidden) {
+			t.Errorf("Hub index must not contain %q — that turns it into a manager-monitoring panel",
+				forbidden)
+		}
+	}
 }
