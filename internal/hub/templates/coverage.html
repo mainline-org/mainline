@@ -1,0 +1,55 @@
+{{define "coverage"}}{{template "header" .}}
+<section class="hero">
+  <div>
+    <p class="eyebrow">{{t .Lang "coverage.eyebrow"}}</p>
+    <h1>{{t .Lang "coverage.headline"}}</h1>
+    <p class="lead">{{t .Lang "coverage.lead"}}</p>
+  </div>
+  {{if .TeamHealth.Coverage.Available}}
+  <div class="health-panel">
+    <div class="health-number">{{coverageRatio .TeamHealth.Coverage.CoverageRatio}}</div>
+    <div class="muted">{{t .Lang "coverage.covered_suffix"}}</div>
+    <div class="health-line"><span>{{.TeamHealth.Coverage.CoveredCommits}}</span> {{t .Lang "coverage.covered_count"}}</div>
+    <div class="health-line"><span>{{.TeamHealth.Coverage.UncoveredCommits}}</span> {{t .Lang "coverage.uncovered_count"}}</div>
+    {{if .TeamHealth.Coverage.HighRiskUncoveredCommits}}<div class="health-line risk"><span>{{.TeamHealth.Coverage.HighRiskUncoveredCommits}}</span> {{t .Lang "coverage.high_risk_uncovered"}}</div>{{end}}
+  </div>
+  {{end}}
+</section>
+
+{{if not .TeamHealth.Coverage.Available}}
+<section class="notice">
+  <strong>{{t .Lang "coverage.unavailable_headline"}}</strong>
+  <p class="muted">{{t .Lang "coverage.unavailable_hint_prefix"}} <code>mainline gaps --json</code> {{t .Lang "coverage.unavailable_hint_suffix"}}</p>
+</section>
+{{else}}
+
+{{if .CoverageDetail.Commits}}
+<h2>{{t .Lang "coverage.recent_commits"}}</h2>
+<p class="muted">{{t .Lang "coverage.window_prefix"}} {{.CoverageDetail.WindowSize}} {{t .Lang "coverage.window_suffix"}}</p>
+<div class="table-scroll">
+<table class="intents">
+<thead>
+<tr><th>{{t .Lang "coverage.col_state"}}</th><th>{{t .Lang "coverage.col_commit"}}</th><th>{{t .Lang "coverage.col_subject"}}</th><th>{{t .Lang "coverage.col_author"}}</th><th>{{t .Lang "coverage.col_when"}}</th></tr>
+</thead>
+<tbody>
+{{range .CoverageDetail.Commits}}
+<tr class="cov-{{.State}}{{if .HighRisk}} risk{{end}}">
+  <td><span class="status status-{{.State}}">{{.State}}</span></td>
+  <td><code>{{shortCommit .Commit}}</code></td>
+  <td>{{.Subject}}{{if .SkipReason}} <span class="muted">— {{.SkipReason}}</span>{{end}}</td>
+  <td>{{.Author}}</td>
+  <td class="muted" title="{{.CommittedAt}}">{{timeAgo .CommittedAt}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}
+
+<section class="notice">
+  <strong>{{t .Lang "coverage.rescue_heading"}}</strong>
+  <p class="muted">{{t .Lang "coverage.rescue_lead"}} <code>mainline gaps</code></p>
+</section>
+{{end}}
+
+{{template "footer" .}}{{end}}
