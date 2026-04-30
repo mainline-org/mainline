@@ -52,7 +52,7 @@ var translations = map[string]map[string]string{
 	"nav.open_work":       {LangEN: "Open work", LangZH: "进行中"},
 	"nav.review_queue":    {LangEN: "Review queue", LangZH: "待审"},
 	"nav.files":           {LangEN: "Files", LangZH: "文件"},
-	"nav.risk_review":     {LangEN: "Risk review", LangZH: "风险"},
+	"nav.risk_review":     {LangEN: "Constraints & risks", LangZH: "约束与风险"},
 	"nav.coverage":        {LangEN: "Coverage", LangZH: "覆盖率"},
 	"nav.digest":          {LangEN: "Digest", LangZH: "周报"},
 	"nav.relationships":   {LangEN: "Relationships", LangZH: "关系图"},
@@ -74,7 +74,7 @@ var translations = map[string]map[string]string{
 	"dashboard.sealed_intents": {LangEN: "sealed intents", LangZH: "已封存 intents"},
 	"dashboard.open":           {LangEN: "open", LangZH: "进行中"},
 	"dashboard.proposed":       {LangEN: "proposed", LangZH: "提案中"},
-	"dashboard.with_risks":     {LangEN: "with risks", LangZH: "带风险"},
+	"dashboard.with_risks":     {LangEN: "with constraints or risks", LangZH: "带约束或风险"},
 
 	"team_health.label": {LangEN: "Current attention status", LangZH: "当前关注状态"},
 	"team_health.healthy":   {LangEN: "Good overall", LangZH: "整体良好"},
@@ -84,20 +84,20 @@ var translations = map[string]map[string]string{
 
 	"metric.open_work": {LangEN: "Open work", LangZH: "进行中工作"},
 	"metric.review_queue": {LangEN: "Review queue", LangZH: "待审队列"},
-	"metric.risk_bearing_intents": {LangEN: "Risk-bearing intents", LangZH: "带风险的 intents"},
+	"metric.risk_bearing_intents": {LangEN: "Intents with constraints or risks", LangZH: "带约束或风险的 intents"},
 	"metric.files_with_history": {LangEN: "Files with history", LangZH: "有历史的文件"},
 	"metric.oldest_prefix": {LangEN: "oldest", LangZH: "最久"},
 	"metric.proposed_suffix": {LangEN: "proposed", LangZH: "提案"},
 
 	"section.needs_attention": {LangEN: "Needs attention", LangZH: "需要关注"},
 	"section.needs_attention_empty": {
-		LangEN: "No proposed, risky, or recently merged intents to highlight.",
-		LangZH: "暂无需要重点关注的提案、风险或新合并的 intent。",
+		LangEN: "No proposed intents, unacknowledged constraints, or recently merged intents to highlight.",
+		LangZH: "暂无需要重点关注的提案、未确认约束或新合并的 intent。",
 	},
 	"section.decision_hotspots": {LangEN: "Decision hotspots", LangZH: "决策热点文件"},
 	"section.decision_hotspots_lead": {
-		LangEN: "Files with the most intent history. These are areas with concentrated decisions, risk, or repeated changes.",
-		LangZH: "intent 历史最多的文件。这些区域聚集了决策、风险，或者反复变更。",
+		LangEN: "Files with the most intent history. These are areas with concentrated decisions, constraints, or repeated changes.",
+		LangZH: "intent 历史最多的文件。这些区域聚集了决策、约束，或者反复变更。",
 	},
 	"section.decision_hotspots_empty": {
 		LangEN: "No file fingerprints recorded yet.",
@@ -106,7 +106,7 @@ var translations = map[string]map[string]string{
 
 	"section.intent_coverage": {LangEN: "Intent coverage", LangZH: "Intent 覆盖率"},
 	"section.review_aging":    {LangEN: "Review queue aging", LangZH: "待审时长"},
-	"section.risk_radar":      {LangEN: "Risk radar", LangZH: "风险雷达"},
+	"section.risk_radar":      {LangEN: "Constraints & risks needing review", LangZH: "需要 review 的约束与风险"},
 
 	"coverage.unavailable_headline": {
 		LangEN: "Coverage data unavailable in this Hub build.",
@@ -122,7 +122,7 @@ var translations = map[string]map[string]string{
 	},
 	"coverage.covered_suffix": {LangEN: "covered", LangZH: "已覆盖"},
 	"coverage.uncovered_commits": {LangEN: "uncovered commit", LangZH: "未覆盖 commit"},
-	"coverage.high_risk_uncovered": {LangEN: "possibly high-risk uncovered change", LangZH: "可能高风险的未覆盖变更"},
+	"coverage.high_risk_uncovered": {LangEN: "possibly high-impact uncovered change", LangZH: "可能高影响的未覆盖变更"},
 
 	"coverage.eyebrow": {LangEN: "Coverage", LangZH: "覆盖率"},
 	"coverage.headline": {
@@ -169,10 +169,10 @@ var translations = map[string]map[string]string{
 	"review.waiting_over_24h": {LangEN: "waiting >24h", LangZH: "等待 >24h"},
 	"review.waiting_over_48h_critical": {LangEN: "waiting >48h (critical)", LangZH: "等待 >48h (严重)"},
 
-	"risk.intents_suffix": {LangEN: "intents with risks", LangZH: "intent 带风险"},
-	"risk.proposed_suffix": {LangEN: "risk-bearing proposed", LangZH: "带风险的提案"},
+	"risk.intents_suffix": {LangEN: "intents with constraints or risks", LangZH: "intent 带约束或风险"},
+	"risk.proposed_suffix": {LangEN: "constraint-bearing proposed", LangZH: "带约束的提案"},
 	"risk.this_week_suffix": {LangEN: "this week", LangZH: "本周"},
-	"risk.heavy_files_suffix": {LangEN: "risk-heavy file", LangZH: "高风险文件"},
+	"risk.heavy_files_suffix": {LangEN: "constraint-heavy file", LangZH: "约束密集文件"},
 	"risk.missing_mitigation": {LangEN: "risks missing mitigation", LangZH: "风险缺少缓解方案"},
 
 	"digest.this_week": {LangEN: "This week", LangZH: "本周"},
@@ -180,9 +180,9 @@ var translations = map[string]map[string]string{
 	"digest.proposed":  {LangEN: "proposed", LangZH: "提案"},
 	"digest.abandoned": {LangEN: "abandoned", LangZH: "放弃"},
 	"digest.superseded": {LangEN: "superseded", LangZH: "被替代"},
-	"digest.risk_bearing": {LangEN: "risk-bearing", LangZH: "带风险"},
+	"digest.risk_bearing": {LangEN: "with constraints/risks", LangZH: "带约束/风险"},
 	"digest.important_decisions": {LangEN: "Important decisions", LangZH: "重要决策"},
-	"digest.risks_to_watch":      {LangEN: "Risks to watch", LangZH: "需关注风险"},
+	"digest.risks_to_watch":      {LangEN: "Soft risks to watch", LangZH: "需关注的软风险"},
 	"digest.abandoned_approaches": {LangEN: "Abandoned approaches", LangZH: "被放弃的方案"},
 	"digest.files_heating_up": {LangEN: "Files heating up", LangZH: "升温中的文件"},
 	"digest.intents_this_window": {LangEN: "intents this window", LangZH: "本窗口 intents"},
@@ -195,7 +195,7 @@ var translations = map[string]map[string]string{
 	"recent.col_thread": {LangEN: "Thread", LangZH: "Thread"},
 	"recent.col_sealed": {LangEN: "Sealed", LangZH: "封存"},
 	"recent.col_files":  {LangEN: "Files", LangZH: "文件"},
-	"recent.col_risks":  {LangEN: "Risks", LangZH: "风险"},
+	"recent.col_risks":  {LangEN: "Constraints", LangZH: "约束"},
 
 	"toggle.aria":  {LangEN: "Switch language", LangZH: "切换语言"},
 
@@ -246,7 +246,7 @@ var translations = map[string]map[string]string{
 		LangZH: "长期趋势，非当前告警。abandonment 和 supersession 比例反映返工/决策演化，不是个人评分。",
 	},
 
-	"intent.risks": {LangEN: "Risks", LangZH: "风险"},
+	"intent.risks": {LangEN: "Soft risks", LangZH: "软风险"},
 
 	"inherited.heading": {LangEN: "Inherited constraints considered", LangZH: "继承的硬约束"},
 	"inherited.lead": {
@@ -270,15 +270,15 @@ var translations = map[string]map[string]string{
 
 	"hotfile.intents_singular":   {LangEN: "intent", LangZH: "intent"},
 	"hotfile.intents_plural":     {LangEN: "intents", LangZH: "intents"},
-	"hotfile.with_risk_singular": {LangEN: "with risk", LangZH: "带风险"},
-	"hotfile.with_risk_plural":   {LangEN: "with risks", LangZH: "带风险"},
+	"hotfile.with_risk_singular": {LangEN: "with constraint", LangZH: "带约束"},
+	"hotfile.with_risk_plural":   {LangEN: "with constraints", LangZH: "带约束"},
 
 	// Open work, Review, Files, Risks, Graph — minimal chrome only.
 	"open.heading":          {LangEN: "Open work", LangZH: "进行中工作"},
 	"open.empty":            {LangEN: "No open intents on disk.", LangZH: "本地无进行中 intent。"},
 	"review.heading":        {LangEN: "Review queue", LangZH: "待审队列"},
 	"files.heading":         {LangEN: "Files", LangZH: "文件"},
-	"risks.heading":         {LangEN: "Risk review", LangZH: "风险审查"},
+	"risks.heading":         {LangEN: "Constraints & risks needing review", LangZH: "需要 review 的约束与风险"},
 	"graph.heading":         {LangEN: "Relationships", LangZH: "关系图"},
 
 	// File briefing (§6)

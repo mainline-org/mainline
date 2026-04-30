@@ -140,6 +140,37 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 		})
 	}
 
+	// Risk quality lint: flag generic/boilerplate risks that add noise
+	// without actionable information. Soft risks should state impact +
+	// affected subsystem; ideally mention mitigation or test coverage.
+	for i, risk := range summary.Risks {
+		if isGenericRisk(risk) {
+			out.Issues = append(out.Issues, LintIssue{
+				Code: "generic_risk", Severity: "warning",
+				Field:   fmt.Sprintf("summary.risks[%d]", i),
+				Message: fmt.Sprintf("risk is too generic (%q); a good risk names the affected subsystem, the specific failure mode, and ideally a mitigation", truncate(risk, 60)),
+			})
+		}
+	}
+
+	// Anti-pattern quality: every anti_pattern must have both what and why.
+	for i, ap := range summary.AntiPatterns {
+		if strings.TrimSpace(ap.What) == "" {
+			out.Issues = append(out.Issues, LintIssue{
+				Code: "anti_pattern_no_what", Severity: "error",
+				Field:   fmt.Sprintf("summary.anti_patterns[%d].what", i),
+				Message: fmt.Sprintf("anti_patterns[%d].what is empty; hard constraints must state what is forbidden", i),
+			})
+		}
+		if strings.TrimSpace(ap.Why) == "" {
+			out.Issues = append(out.Issues, LintIssue{
+				Code: "anti_pattern_no_why", Severity: "error",
+				Field:   fmt.Sprintf("summary.anti_patterns[%d].why", i),
+				Message: fmt.Sprintf("anti_patterns[%d].why is empty; without a reason the constraint will be ignored by future agents", i),
+			})
+		}
+	}
+
 	if fingerprint != nil {
 		if len(fingerprint.Subsystems) == 0 {
 			out.Issues = append(out.Issues, LintIssue{
@@ -350,4 +381,41 @@ func nonEmpty(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// genericRiskPatterns catches boilerplate risks that provide no
+// actionable information. A good risk names the specific failure
+// mode, affected subsystem, and ideally mentions mitigation.
+var genericRiskPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)^(there\s+)?(may|might|could)\s+(be\s+)?(a\s+)?bugs?\.?\s*$`),
+	regexp.MustCompile(`(?i)^(may|might|could)\s+(affect|impact|break)\s+(users?|customers?|compatibility)\.?\s*$`),
+	regexp.MustCompile(`(?i)^(possible|potential)\s+(breaking\s+change|regression|issue|bug)s?\.?\s*$`),
+	regexp.MustCompile(`(?i)^unknown\s+(risk|impact|consequences?)\.?\s*$`),
+	regexp.MustCompile(`(?i)^needs?\s+(more\s+)?testing\.?\s*$`),
+	regexp.MustCompile(`(?i)^not\s+(fully\s+)?tested\.?\s*$`),
+	regexp.MustCompile(`(?i)^(could|may|might)\s+have\s+(unintended\s+)?(side\s+)?effects?\.?\s*$`),
+}
+
+// isGenericRisk returns true if the risk text is too vague to be
+// useful for retrieval or reviewer guidance.
+func isGenericRisk(risk string) bool {
+	risk = strings.TrimSpace(risk)
+	// Too short to be meaningful (under 15 chars)
+	if len(risk) < 15 {
+		return true
+	}
+	for _, re := range genericRiskPatterns {
+		if re.MatchString(risk) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncate(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }

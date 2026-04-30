@@ -96,7 +96,7 @@ If [dir] is omitted, the site is written to
 			outputJSON(res)
 		} else {
 			fmt.Printf("Hub exported to %s\n", res.OutputDir)
-			fmt.Printf("  intents: %d\n  files:   %d\n  actors:  %d\n  risks:   %d\n",
+			fmt.Printf("  intents: %d\n  files:   %d\n  actors:  %d\n  constraints: %d\n",
 				res.IntentCount, res.FileCount, res.ActorCount, res.RiskCount)
 			fmt.Printf("\nOpen %s in a browser, or run `mainline hub open`.\n", res.IndexPath)
 		}
@@ -154,8 +154,8 @@ func openInBrowser(path string) {
 // flattens it into hub.CoverageInputCommit rows. Best-effort: any
 // error returns (nil, 0) and Hub falls back to the partial-data
 // rendering — coverage is a nice-to-have for the dashboard, never a
-// blocker. HighRisk is set when any intent that covers the commit
-// recorded at least one risk in its summary.
+// blocker. HighRisk is set when an uncovered commit's subject
+// suggests a high-impact area (security/auth/payment/etc).
 func buildHubCoverageInput(svc *engine.Service) ([]hub.CoverageInputCommit, int) {
 	view, _ := svc.Store.ReadMainlineView()
 	cfg, _ := svc.GetTeamConfigForCLI()
@@ -183,11 +183,10 @@ func buildHubCoverageInput(svc *engine.Service) ([]hub.CoverageInputCommit, int)
 			State:       string(c.State),
 			SkipReason:  c.SkipReason,
 		}
-		// HighRisk applies to uncovered commits in the spec — a
-		// covered commit's risk lives on its intent page. We mark
-		// uncovered as high-risk when its commit subject text suggests
-		// risky areas (security/auth/payment/etc); cheap heuristic, no
-		// false negatives matter (the page already lists the commit).
+		// HighRisk applies to uncovered commits — a covered commit's
+		// constraints live on its intent page. We mark uncovered as
+		// high-impact when its commit subject text suggests sensitive
+		// areas (security/auth/payment/etc); cheap heuristic.
 		if c.State == engine.CoverageUncovered {
 			row.HighRisk = isLikelyHighRisk(c.Subject)
 		}
@@ -197,11 +196,10 @@ func buildHubCoverageInput(svc *engine.Service) ([]hub.CoverageInputCommit, int)
 }
 
 // isLikelyHighRisk is a conservative subject-line scanner for
-// uncovered commits that need an intent the most. False positives
-// are cheap (the page just shows the commit with a flag); negatives
-// are also cheap (commit still appears, just unflagged).
+// uncovered commits that probably need an intent the most. False
+// positives are cheap (the page just shows the commit with a flag).
 //
-// The flag is exposed in the UI as "possibly high-risk" rather than
+// The flag is exposed in the UI as "possibly high-impact" rather than
 // a definitive verdict — keyword match is a weak signal. The
 // keywords cover both English and Chinese commit subjects since the
 // repo is dogfooded across both languages.

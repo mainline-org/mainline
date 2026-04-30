@@ -106,11 +106,11 @@ func printDigest(d hub.HubWeeklyDigest) {
 		fmt.Print("s")
 	}
 	fmt.Println()
-	fmt.Printf("  sealed:        %d\n", d.SealedThisWindow)
-	fmt.Printf("  proposed:      %d\n", d.ProposedThisWindow)
-	fmt.Printf("  abandoned:     %d\n", d.AbandonedThisWindow)
-	fmt.Printf("  superseded:    %d\n", d.SupersededThisWindow)
-	fmt.Printf("  risk-bearing:  %d\n", d.RiskBearingThisWindow)
+	fmt.Printf("  sealed:              %d\n", d.SealedThisWindow)
+	fmt.Printf("  proposed:            %d\n", d.ProposedThisWindow)
+	fmt.Printf("  abandoned:           %d\n", d.AbandonedThisWindow)
+	fmt.Printf("  superseded:          %d\n", d.SupersededThisWindow)
+	fmt.Printf("  with constraints:    %d\n", d.RiskBearingThisWindow)
 	if len(d.ImportantDecisions) > 0 {
 		fmt.Println("\nImportant decisions:")
 		for _, x := range d.ImportantDecisions {
@@ -118,7 +118,7 @@ func printDigest(d hub.HubWeeklyDigest) {
 		}
 	}
 	if len(d.RisksToWatch) > 0 {
-		fmt.Println("\nRisks to watch:")
+		fmt.Println("\nSoft risks to watch:")
 		for _, x := range d.RisksToWatch {
 			fmt.Printf("  • %s — %s\n    %s\n", x.ID, x.Title, x.Reason)
 		}

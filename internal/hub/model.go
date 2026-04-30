@@ -232,11 +232,11 @@ type HubCoverageCommit struct {
 	SkipReason  string `json:"skip_reason,omitempty"`
 }
 
-// HubRiskRadar surfaces actionable risk signal — proposed intents
-// that carry risks, files with concentrated risk history, recent
-// risk-bearing intents. NOT a count of all risk-bearing intents
-// (that already lives on the dashboard); these are the actionable
-// subsets.
+// HubRiskRadar surfaces actionable constraint and risk signal —
+// proposed intents that carry constraints or soft risks, files with
+// concentrated constraint history. NOT a count of all intents with
+// risks (that already lives on the dashboard); these are the
+// actionable subsets needing review.
 type HubRiskRadar struct {
 	RiskBearingIntents     int                  `json:"risk_bearing_intents"`
 	RiskBearingProposed    int                  `json:"risk_bearing_proposed"`

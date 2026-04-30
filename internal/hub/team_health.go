@@ -138,7 +138,7 @@ func (t *HubTeamHealth) populateRisk(m *HubModel, now time.Time) {
 		if in.Status == "proposed" {
 			t.Risk.RiskBearingProposed++
 			t.Risk.RiskBearingProposedRows = append(t.Risk.RiskBearingProposedRows, focusFromIntent(in,
-				"risk-bearing proposed intent waiting review", now))
+				"proposed intent with constraints or risks waiting review", now))
 		}
 		// recent risk-bearing within the digest window.
 		if t, ok := parseTime(in.SealedAt); ok && !t.Before(cutoff) {
@@ -284,7 +284,7 @@ func BuildDigest(intents []HubIntent, windowDays int, now time.Time) HubWeeklyDi
 		if len(in.Risks) > 0 || hasAnyAntiPattern(in) {
 			out.RiskBearingThisWindow++
 			if len(out.RisksToWatch) < digestRisksN {
-				reason := "risk-bearing"
+				reason := "has constraints or risks"
 				if len(in.Risks) > 0 {
 					reason = trimReason(in.Risks[0])
 				}
@@ -495,7 +495,7 @@ func formatHealthSummary(prefix string, t *HubTeamHealth) string {
 	}
 	if t.Risk.RiskBearingProposed > 0 {
 		attentionBits = append(attentionBits,
-			fmt.Sprintf("%d risk-bearing proposed intents", t.Risk.RiskBearingProposed))
+			fmt.Sprintf("%d proposed with constraints/risks", t.Risk.RiskBearingProposed))
 	}
 	if t.Coverage.Available && t.Coverage.UncoveredCommits > 0 {
 		attentionBits = append(attentionBits,
