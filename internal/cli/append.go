@@ -4,9 +4,12 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 var appendGoal string
+var appendRefs []string
 
 var appendCmd = &cobra.Command{
 	Use:   "append [description]",
@@ -21,9 +24,19 @@ var appendCmd = &cobra.Command{
 
 		description := args[0]
 
+		// Collect references from --ref flags + env auto-discovery
+		var refs []domain.Reference
+		for _, r := range appendRefs {
+			ref := parseRefFlag(r)
+			if ref.Kind != "" && (ref.Ref != "" || ref.URL != "") {
+				refs = append(refs, ref)
+			}
+		}
+		refs = append(refs, discoverSessionRefs()...)
+
 		// If --goal is provided and no active intent, auto-create one
 		if appendGoal != "" {
-			result, err := svc.AppendWithAutoStart(description, appendGoal)
+			result, err := svc.AppendWithAutoStart(description, appendGoal, refs)
 			if err != nil {
 				outputError(err)
 				return
@@ -35,11 +48,14 @@ var appendCmd = &cobra.Command{
 					fmt.Printf("Intent auto-created: %s\n", result.IntentID)
 				}
 				fmt.Printf("Turn appended: %s (index %d)\n", result.TurnID, result.Index)
+				if len(refs) > 0 {
+					fmt.Printf("  References: %d attached\n", len(refs))
+				}
 			}
 			return
 		}
 
-		result, err := svc.Append(description)
+		result, err := svc.AppendWithRefs(description, refs)
 		if err != nil {
 			outputError(err)
 			return
@@ -50,10 +66,14 @@ var appendCmd = &cobra.Command{
 		} else {
 			fmt.Printf("Turn appended: %s (index %d)\n", result.TurnID, result.Index)
 			fmt.Printf("  Intent: %s\n", result.IntentID)
+			if len(refs) > 0 {
+				fmt.Printf("  References: %d attached\n", len(refs))
+			}
 		}
 	},
 }
 
 func init() {
 	appendCmd.Flags().StringVar(&appendGoal, "goal", "", "auto-create intent if none active")
+	appendCmd.Flags().StringArrayVar(&appendRefs, "ref", nil, "attach reference (format: kind:client:ref)")
 }
