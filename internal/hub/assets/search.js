@@ -14,13 +14,33 @@
 
   function loadIndex(cb) {
     if (index) return cb(index);
+    // Try inline data first (works with file:// protocol)
+    if (window.__searchIndex) {
+      index = window.__searchIndex;
+      return cb(index);
+    }
+    // Fallback: XHR (works when served over http)
     var xhr = new XMLHttpRequest();
     xhr.open('GET', rootPath + 'data/search_index.json');
     xhr.onload = function() {
-      if (xhr.status === 200) {
-        index = JSON.parse(xhr.responseText);
-        cb(index);
+      if (xhr.status === 200 || xhr.status === 0) {
+        try {
+          index = JSON.parse(xhr.responseText);
+          cb(index);
+        } catch(e) {}
       }
+    };
+    xhr.onerror = function() {
+      // file:// XHR blocked — try loading via script tag
+      var s = document.createElement('script');
+      s.src = rootPath + 'data/search_index.js';
+      s.onload = function() {
+        if (window.__searchIndex) {
+          index = window.__searchIndex;
+          cb(index);
+        }
+      };
+      document.head.appendChild(s);
     };
     xhr.send();
   }
