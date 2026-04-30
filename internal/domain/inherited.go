@@ -152,6 +152,150 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 	return out
 }
 
+// BuildInheritedHeatmap returns the per-file hotspot roll-up over
+// the catalog. For each file in the FileIndex, it collects the
+// inherited anti_patterns whose source intent's FilesTouched
+// contains that file (subsystem-only matches don't make the heatmap
+// because they don't pin to a single path) and counts how many
+// recent (within `recentWindow`) intents touched the file without
+// acknowledging at least one applicable high-severity constraint.
+//
+// recentWindow is the cutoff time: intents sealed at or after it are
+// "recent". Pass time.Now().AddDate(0, 0, -7) for the dashboard's
+// 7-day window.
+//
+// Output is sorted by HighSeverityCount desc, UnacknowledgedRecent
+// desc, then file path asc. Caller can truncate for display.
+//
+// Pure: no I/O.
+func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []InheritedConstraintHotspot {
+	if view == nil {
+		return nil
+	}
+	// Per-file constraint roll-up. We collect distinct (source, what)
+	// pairs; later runs that re-touch the same file under the same
+	// constraint don't multiply the count.
+	type cKey struct {
+		source string
+		what   string
+	}
+	perFile := map[string]map[cKey]InheritedConstraint{}
+	// Recent touches by file: which intents sealed within the window
+	// touched each file. We need the IntentView pointer so we can
+	// later check whether the intent acknowledged its applicable
+	// inherited constraints.
+	recentByFile := map[string][]*IntentView{}
+
+	for i := range view.Intents {
+		iv := &view.Intents[i]
+		if iv.Status == StatusAbandoned || iv.Status == StatusReverted {
+			continue
+		}
+		if iv.Fingerprint == nil {
+			continue
+		}
+		isRecent := false
+		if iv.SealedAt != "" {
+			if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil && !t.Before(recentWindow) {
+				isRecent = true
+			}
+		}
+		// Source role: this intent contributes anti_patterns to every
+		// file it touched.
+		if iv.Summary != nil {
+			for _, ap := range iv.Summary.AntiPatterns {
+				if strings.TrimSpace(ap.What) == "" {
+					continue
+				}
+				for _, f := range iv.Fingerprint.FilesTouched {
+					m, ok := perFile[f]
+					if !ok {
+						m = map[cKey]InheritedConstraint{}
+						perFile[f] = m
+					}
+					m[cKey{iv.IntentID, ap.What}] = InheritedConstraint{
+						SourceIntent: iv.IntentID,
+						What:         ap.What,
+						Why:          ap.Why,
+						Severity:     ap.Severity,
+						MatchedBy:    []string{"file:" + f},
+					}
+				}
+			}
+		}
+		// Recent-touch role: every recent intent contributes to
+		// per-file recent-touch counts.
+		if isRecent {
+			for _, f := range iv.Fingerprint.FilesTouched {
+				recentByFile[f] = append(recentByFile[f], iv)
+			}
+		}
+	}
+
+	out := make([]InheritedConstraintHotspot, 0, len(perFile))
+	for path, constraints := range perFile {
+		hs := InheritedConstraintHotspot{FilePath: path, ConstraintCount: len(constraints)}
+		highList := make([]InheritedConstraint, 0, len(constraints))
+		for _, c := range constraints {
+			if strings.EqualFold(strings.TrimSpace(c.Severity), "high") {
+				hs.HighSeverityCount++
+				highList = append(highList, c)
+			}
+			hs.Constraints = append(hs.Constraints, c)
+		}
+		// Stable order on Constraints: severity then source intent.
+		sort.SliceStable(hs.Constraints, func(i, j int) bool {
+			ri := severityRank(hs.Constraints[i].Severity)
+			rj := severityRank(hs.Constraints[j].Severity)
+			if ri != rj {
+				return ri < rj
+			}
+			return hs.Constraints[i].SourceIntent < hs.Constraints[j].SourceIntent
+		})
+
+		// UnacknowledgedRecentTouches: of the recent intents
+		// touching this file, how many failed to acknowledge ANY
+		// applicable high-severity inherited constraint? We count
+		// the intent itself as "unack" if for any high-severity
+		// constraint applicable here, it wasn't acknowledged in
+		// the intent's own summary.
+		recent := recentByFile[path]
+		hs.RecentTouches = len(recent)
+		for _, iv := range recent {
+			// An intent is itself a "source" for some constraints —
+			// they don't count as inherited from its own perspective.
+			anyUnack := false
+			for _, hc := range highList {
+				if hc.SourceIntent == iv.IntentID {
+					continue
+				}
+				if iv.Summary == nil {
+					anyUnack = true
+					break
+				}
+				if AcknowledgementOf(hc, iv.Summary) == AckNone {
+					anyUnack = true
+					break
+				}
+			}
+			if anyUnack {
+				hs.UnacknowledgedRecentTouches++
+			}
+		}
+		out = append(out, hs)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].HighSeverityCount != out[j].HighSeverityCount {
+			return out[i].HighSeverityCount > out[j].HighSeverityCount
+		}
+		if out[i].UnacknowledgedRecentTouches != out[j].UnacknowledgedRecentTouches {
+			return out[i].UnacknowledgedRecentTouches > out[j].UnacknowledgedRecentTouches
+		}
+		return out[i].FilePath < out[j].FilePath
+	})
+	return out
+}
+
 // matchedReasons returns the list of "<kind>:<value>" strings
 // describing why the source intent's anti_patterns propagate to the
 // current context. One entry per matched file or subsystem.

@@ -89,6 +89,23 @@ tr.cov-uncovered.risk td { background: #fff5f5; }
 .lifecycle-note { font-size: 0.85em; margin-top: 8px; }
 ul.actor-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 
+.heatmap-list { display: grid; gap: 6px; margin: 12px 0 24px; }
+.heatmap-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); text-decoration: none; color: inherit; }
+.heatmap-row:hover { border-color: var(--accent); }
+.heatmap-warn { border-left: 4px solid var(--risk); }
+.heatmap-meta { color: var(--muted); font-size: 0.9em; white-space: nowrap; }
+.heatmap-meta strong { color: inherit; }
+.heatmap-meta strong.risk { color: var(--risk); }
+
+.lifecycle-card { padding: 12px 16px; margin: 16px 0; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.lifecycle-healthy { border-left: 4px solid var(--merged); }
+.lifecycle-attention { border-left: 4px solid #c4730d; }
+.lifecycle-critical { border-left: 4px solid var(--risk); }
+.lifecycle-line { margin: 6px 0 8px; font-size: 0.95em; }
+
+details.recent summary, .recent-fallback summary { cursor: pointer; }
+.recent-fallback { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); }
+
 ul.inherited-list { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
 .inherited { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .inherited-high { border-left: 4px solid var(--risk); }
