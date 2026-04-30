@@ -97,6 +97,14 @@ func buildHubModel(view *domain.MainlineView) *HubModel {
 	for i := range view.Intents {
 		m.Intents = append(m.Intents, hubIntentFromView(&view.Intents[i]))
 	}
+	// Inherited-constraint propagation: for each intent, surface
+	// anti_patterns from prior sealed intents whose files/subsystems
+	// overlap. Done after the flatten loop so we can reuse the
+	// MainlineView's authoritative IntentSummary for acknowledgement
+	// matching. O(N²) worst case but each call is bounded by the
+	// number of intents that touch overlapping files; small in
+	// practice.
+	annotateInheritedConstraints(m, view)
 	sort.SliceStable(m.Intents, func(i, j int) bool {
 		return intentSortKey(m.Intents[i]) > intentSortKey(m.Intents[j])
 	})
@@ -635,6 +643,48 @@ func fileSlug(path string) string {
 func actorSlug(id string) string {
 	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_")
 	return r.Replace(id)
+}
+
+// annotateInheritedConstraints walks every HubIntent and attaches
+// the inherited anti_patterns from prior intents whose touched
+// files / subsystems overlap. Acknowledgement form is computed
+// against the source IntentSummary in the view (not the flattened
+// HubIntent) so we don't lose any field.
+func annotateInheritedConstraints(m *HubModel, view *domain.MainlineView) {
+	if view == nil {
+		return
+	}
+	summaryByID := map[string]*domain.IntentSummary{}
+	for i := range view.Intents {
+		iv := &view.Intents[i]
+		summaryByID[iv.IntentID] = iv.Summary
+	}
+	for i := range m.Intents {
+		hi := &m.Intents[i]
+		if len(hi.FilesTouched) == 0 && len(hi.Subsystems) == 0 {
+			continue
+		}
+		ics := domain.BuildInheritedConstraints(view, hi.FilesTouched, hi.Subsystems, hi.ID)
+		if len(ics) == 0 {
+			continue
+		}
+		out := make([]HubInheritedConstraint, 0, len(ics))
+		s := summaryByID[hi.ID]
+		for _, ic := range ics {
+			h := HubInheritedConstraint{
+				SourceIntent: ic.SourceIntent,
+				What:         ic.What,
+				Why:          ic.Why,
+				Severity:     ic.Severity,
+				MatchedBy:    append([]string(nil), ic.MatchedBy...),
+			}
+			if s != nil {
+				h.Acknowledgement = string(domain.AcknowledgementOf(ic, s))
+			}
+			out = append(out, h)
+		}
+		hi.InheritedConstraints = out
+	}
 }
 
 // coverageCommitsFromInput shapes engine-supplied rows into the page

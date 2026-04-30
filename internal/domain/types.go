@@ -226,6 +226,29 @@ type AntiPattern struct {
 	Severity string `json:"severity,omitempty"` // "high" | "medium" | "low"
 }
 
+// InheritedConstraint is an anti_pattern from a *prior* sealed intent
+// that the current change is at risk of touching, surfaced to the
+// agent during context retrieval and to the linter / Hub / PR
+// description as "this constraint pre-dates your work, you must at
+// least acknowledge it".
+//
+// SourceIntent is the intent that sealed the original anti_pattern.
+// MatchedBy lists the reasons this constraint propagated to the
+// current context — typically `file:<path>` for a touched-file match
+// or `subsystem:<name>` for a subsystem match. A single anti_pattern
+// can match by multiple files; we keep the full list so the linter
+// and the Hub can show "matched 3 files" without re-scanning.
+//
+// What/Why/Severity mirror AntiPattern verbatim — same shape, just
+// annotated with provenance and match reasons.
+type InheritedConstraint struct {
+	SourceIntent string   `json:"source_intent"`
+	What         string   `json:"what"`
+	Why          string   `json:"why"`
+	Severity     string   `json:"severity,omitempty"`
+	MatchedBy    []string `json:"matched_by"`
+}
+
 type Decision struct {
 	Point     string   `json:"point"`
 	Chose     string   `json:"chose"`

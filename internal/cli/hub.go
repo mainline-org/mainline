@@ -200,13 +200,37 @@ func buildHubCoverageInput(svc *engine.Service) ([]hub.CoverageInputCommit, int)
 // uncovered commits that need an intent the most. False positives
 // are cheap (the page just shows the commit with a flag); negatives
 // are also cheap (commit still appears, just unflagged).
+//
+// The flag is exposed in the UI as "possibly high-risk" rather than
+// a definitive verdict — keyword match is a weak signal. The
+// keywords cover both English and Chinese commit subjects since the
+// repo is dogfooded across both languages.
 func isLikelyHighRisk(subject string) bool {
-	keywords := []string{"security", "auth", "payment", "credential",
+	englishKeywords := []string{"security", "auth", "payment", "credential",
 		"secret", "vuln", "permission", "migrat", "schema",
 		"production", "rollback", "hotfix", "incident", "outage"}
 	lower := strings.ToLower(subject)
-	for _, k := range keywords {
+	for _, k := range englishKeywords {
 		if strings.Contains(lower, k) {
+			return true
+		}
+	}
+	// Chinese keywords: scan against the original (case-insensitive
+	// is a no-op for CJK). Curated to mirror the English set —
+	// authentication/authorisation, payment/billing, migration,
+	// database/schema, security, rollback/downgrade, deletion of
+	// data, and large refactors. The list stays short on purpose;
+	// over-broad keywords like 改 / 修 would flag every commit.
+	chineseKeywords := []string{
+		"认证", "鉴权", "权限", "登录",
+		"账单", "计费", "支付",
+		"迁移", "数据库", "数据模型", "schema",
+		"安全", "漏洞", "凭据", "凭证", "密钥", "敏感",
+		"回滚", "降级", "兼容", "热修", "热修复",
+		"删除", "重构", "数据丢失",
+	}
+	for _, k := range chineseKeywords {
+		if strings.Contains(subject, k) {
 			return true
 		}
 	}
