@@ -101,6 +101,8 @@ manually and follows the same protocol — both paths work.
 - [Development](#development)
 - [Project structure](#project-structure)
 - [Roadmap](#roadmap)
+- [Community and security](#community-and-security)
+- [License](#license)
 
 ## Install
 
@@ -409,12 +411,16 @@ auditing pipelines) subscribe:
 ```bash
 mainline webhook add https://hooks.example.com/mainline \
   --events intent_sealed,conflict_detected,sync_completed \
-  --secret "$WEBHOOK_SECRET"
+  --secret '$ENV:WEBHOOK_SECRET'
 mainline webhook list
 mainline webhook test <id>             # send a synthetic event
 mainline webhook retry                 # re-queue past failures
 mainline webhook remove <id>
 ```
+
+The single quotes are intentional: Mainline stores the literal
+`$ENV:WEBHOOK_SECRET` reference in committed config and resolves the
+environment variable only at delivery time.
 
 Delivery is fire-and-forget: each event is serialized into
 `.ml-cache/webhook-queue/`, then a detached subprocess (`mainline
@@ -425,7 +431,7 @@ are persisted as `*.failed.json` for `mainline webhook retry`.
 Privacy: only domain events are emitted. Prompt content from the
 agent is intentionally **never** included in webhook payloads.
 Payloads are HMAC-SHA256-signed using the per-subscription secret
-(header: `X-Mainline-Signature: sha256=<hex>`).
+(header: `X-Mainline-Signature: <hex>`).
 
 ## Configuration
 
@@ -540,13 +546,16 @@ mainline/
 │   ├── agent/                 # Agent adapter interface
 │   └── cli/                   # cobra commands; PersistentPreRun is the
 │                              #   auto-before-command sync wrapper
-├── docs_for_ai/               # Spec patches (rc1 → rc5) + AGENTS.md
+├── docs/                      # Eval reports and public-facing docs
+├── docs_for_ai/               # Historical specs and agent-facing notes
 └── .github/workflows/ci.yml
 ```
 
 ## Roadmap
 
-The current line is **v0.1-rc5** in spec, with the implementation tracking it.
+The current implementation is on the **v0.3** line: coverage invariants,
+seal snapshot evidence, auto-pin on sync, context reliability, hub export,
+and eval reporting are already part of the working product.
 
 | Milestone | Focus | Status |
 |---|---|---|
@@ -556,9 +565,16 @@ The current line is **v0.1-rc5** in spec, with the implementation tracking it.
 | rc5 | Conflict detection on sync + seal; auto-before-command sync; status staleness; AGENTS.md v3 | Implemented |
 | rc6 | `[check:X]` cascade with phase 1 / phase 2 priority; per-intent phase 1 cache; column drops on terminal status | Implemented |
 | v0.2 | Drop deprecated `reconcile` alias; auto-pin on sync (no separate `pin` step in daily use; manual `pin <intent> <commit>` retained as fallback) | Implemented |
-| v0.3 (planned) | GitHub Action for post-merge pin | Planned |
+| v0.3 | Coverage model, seal snapshot contract, context reliability, eval reporting, hub export | Implemented |
+| v0.4 | Release packaging, public security process, CI hardening, hosted docs polish | In progress |
 | v0.5 | Reviewer dashboards; multi-repo intent threading | Planned |
+
+## Community and security
+
+- Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Security reporting: [SECURITY.md](./SECURITY.md)
+- Bug reports and feature requests: [GitHub issue templates](./.github/ISSUE_TEMPLATE/)
 
 ## License
 
-MIT
+MIT. See [LICENSE](./LICENSE).
