@@ -64,7 +64,15 @@ type ContextRetrievalRequest struct {
 type ContextRetrievalResult struct {
 	Query           ContextQueryEcho  `json:"query"`
 	RelevantIntents []ContextRelevant `json:"relevant_intents"`
-	Notes           []string          `json:"notes"`
+	// InheritedConstraints aggregates anti_patterns from prior sealed
+	// intents whose touched files / subsystems overlap with the
+	// current change. Distinct from RelevantIntents: a constraint
+	// can land here even when the source intent itself is not in
+	// the relevance result (e.g. low score for the current query
+	// but it touched the same file). NEVER truncated — these are
+	// hard constraints the agent must see before editing.
+	InheritedConstraints []domain.InheritedConstraint `json:"inherited_constraints,omitempty"`
+	Notes                []string                     `json:"notes"`
 }
 
 // ContextQueryEcho echoes back what mode/inputs were used so an agent
@@ -269,11 +277,46 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		scored = scored[:req.Limit]
 	}
 
+	// Aggregate inherited anti_patterns from prior sealed intents
+	// whose FilesTouched / Subsystems overlap with the current change.
+	// Files come from the request (or from `currentRelevantFiles` for
+	// --current); subsystems are derived from the same files via the
+	// conflict-detector's path→subsystem map so retrieval and conflict
+	// detection agree on what counts as the "auth" or "engine"
+	// subsystem.
+	subsystems := subsystemsFromFiles(files)
+	excludeID := ""
+	if req.Mode == "current" {
+		if d, _ := s.Store.FindActiveDraft(branch); d != nil {
+			excludeID = d.IntentID
+		}
+	}
+	inherited := domain.BuildInheritedConstraints(view, files, subsystems, excludeID)
+
+	notes := contextNotes()
+	if hasHighSeverity(inherited) {
+		notes = append(notes,
+			"Inherited high-severity anti_patterns surfaced — read inherited_constraints; acknowledge each in your seal's decisions, risks, or rejected_alternatives before sealing.")
+	}
+
 	return &ContextRetrievalResult{
-		Query:           ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
-		RelevantIntents: scored,
-		Notes:           contextNotes(),
+		Query:                ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
+		RelevantIntents:      scored,
+		InheritedConstraints: inherited,
+		Notes:                notes,
 	}, nil
+}
+
+// hasHighSeverity reports whether any inherited constraint carries
+// severity == "high". Used to decide whether to add the
+// acknowledgement-required note to the retrieval result.
+func hasHighSeverity(constraints []domain.InheritedConstraint) bool {
+	for _, c := range constraints {
+		if strings.EqualFold(strings.TrimSpace(c.Severity), "high") {
+			return true
+		}
+	}
+	return false
 }
 
 // candidateSetForRetrieval picks the intents the scorer iterates

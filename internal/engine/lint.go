@@ -71,6 +71,10 @@ const rationaleThreshold = 50
 // fine — those checks are skipped.
 //
 // Pure, no I/O — easy to unit-test.
+//
+// LintIntent does NOT take a view because it must stay pure for
+// unit tests. The inherited-anti-pattern check lives in
+// LintWithInheritedConstraints below; Service.Lint composes both.
 func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.SemanticFingerprint, supersedesRef string, viewIntents map[string]bool) LintResult {
 	out := LintResult{IntentID: id}
 
@@ -222,6 +226,15 @@ func (s *Service) Lint(id string) (*LintResult, error) {
 				continue
 			}
 			res := LintIntent(iv.IntentID, iv.Summary, iv.Fingerprint, iv.StatusEvidence.SupersededByIntent, knownIDs)
+			// Inherited-AP acknowledgement check: any sealed intent
+			// in the catalog whose touched files / subsystems
+			// overlap this one's contributes anti_patterns the
+			// current seal must have acknowledged.
+			if iv.Fingerprint != nil {
+				inherited := domain.BuildInheritedConstraints(view, iv.Fingerprint.FilesTouched, iv.Fingerprint.Subsystems, iv.IntentID)
+				res.Issues = append(res.Issues, LintInheritedAcknowledgement(iv.Summary, inherited)...)
+				res.Pass = !hasErrors(res.Issues)
+			}
 			return &res, nil
 		}
 	}
@@ -259,4 +272,82 @@ func LintSealResult(sr *domain.SealResult, viewIntents map[string]bool) LintResu
 		}}}
 	}
 	return LintIntent(sr.IntentID, &sr.Summary, &sr.Fingerprint, "", viewIntents)
+}
+
+// LintInheritedAcknowledgement walks the supplied inherited
+// constraints and emits a warning per *high-severity* constraint
+// that is not acknowledged by any of: a decision text, a rejected
+// alternative, the seal's own anti_patterns, or a risk text.
+//
+// Pure, no I/O. Severity is "warning" by default — the user wanted
+// awareness rather than violation conviction in v1. A future flag
+// (`--strict`) can promote to "error" without changing this code:
+// the caller filters or remaps issues post-hoc.
+//
+// Medium / low / unknown severity inherited constraints are reported
+// as severity "info" (still in the lint output for visibility, but
+// don't flip Pass even under --strict). v1 makes only high-severity
+// constraints required to acknowledge — that keeps the warning bar
+// tight enough that real signal isn't drowned out.
+func LintInheritedAcknowledgement(summary *domain.IntentSummary, inherited []domain.InheritedConstraint) []LintIssue {
+	if summary == nil || len(inherited) == 0 {
+		return nil
+	}
+	var issues []LintIssue
+	for i, ic := range inherited {
+		ack := domain.AcknowledgementOf(ic, summary)
+		isHigh := strings.EqualFold(strings.TrimSpace(ic.Severity), "high")
+		if ack != domain.AckNone {
+			// Acknowledgement found — emit an info-level note for
+			// reviewer visibility ("the agent did acknowledge X
+			// via decision"); skip when not high-severity to keep
+			// the lint output focused.
+			if isHigh {
+				issues = append(issues, LintIssue{
+					Code:     "inherited_anti_pattern_acknowledged",
+					Severity: "info",
+					Field:    fmt.Sprintf("summary.inherited[%d]", i),
+					Message: fmt.Sprintf("inherited high-severity anti_pattern from %s acknowledged via %s: %s",
+						ic.SourceIntent, ack, briefWhat(ic.What)),
+				})
+			}
+			continue
+		}
+		if !isHigh {
+			// Lower-severity unacknowledged constraints are info-only
+			// so reviewers can see them surfaced without the lint
+			// becoming noisy. v1 only *requires* high-severity ack.
+			issues = append(issues, LintIssue{
+				Code:     "inherited_anti_pattern_surfaced",
+				Severity: "info",
+				Field:    fmt.Sprintf("summary.inherited[%d]", i),
+				Message: fmt.Sprintf("inherited %s-severity anti_pattern from %s touches your files: %s — consider acknowledging",
+					nonEmpty(ic.Severity, "unspecified"), ic.SourceIntent, briefWhat(ic.What)),
+			})
+			continue
+		}
+		issues = append(issues, LintIssue{
+			Code:     "inherited_anti_pattern_not_acknowledged",
+			Severity: "warning",
+			Field:    fmt.Sprintf("summary.inherited[%d]", i),
+			Message: fmt.Sprintf("high-severity inherited anti_pattern from %s not acknowledged in this seal: %s — add a decision, rejected_alternative, risk, or your own anti_pattern that references it",
+				ic.SourceIntent, briefWhat(ic.What)),
+		})
+	}
+	return issues
+}
+
+func briefWhat(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= 100 {
+		return s
+	}
+	return s[:99] + "…"
+}
+
+func nonEmpty(s, fallback string) string {
+	if strings.TrimSpace(s) == "" {
+		return fallback
+	}
+	return s
 }

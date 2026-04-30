@@ -89,6 +89,26 @@ tr.cov-uncovered.risk td { background: #fff5f5; }
 .lifecycle-note { font-size: 0.85em; margin-top: 8px; }
 ul.actor-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 
+ul.inherited-list { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
+.inherited { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.inherited-high { border-left: 4px solid var(--risk); }
+.inherited-medium { border-left: 4px solid #c4730d; }
+.inherited-low { border-left: 4px solid var(--muted); }
+.inherited-unspecified { border-left: 4px solid var(--line); }
+.inherited-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inherited-why { margin: 6px 0 0 0; }
+.inherited-meta { margin: 6px 0 0 0; font-size: 0.9em; }
+.status-high { background: #fde2e2; color: var(--risk); }
+.status-medium { background: #fff1e0; color: #c4730d; }
+.status-low { background: #ececec; color: #555; }
+.status-unspecified { background: #ececec; color: #777; }
+.ack-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 0.75em; font-weight: 600; }
+.ack-decision { background: #ddf4e3; color: var(--merged); }
+.ack-rejected_alternative { background: #e9e9f3; color: var(--proposed); }
+.ack-anti_pattern { background: #fff1e0; color: #c4730d; }
+.ack-risk { background: #fff1e0; color: #c4730d; }
+.ack-none { background: #fde2e2; color: var(--risk); }
+
 .intent-summary { display: grid; gap: 12px; margin: 20px 0; }
 .intent-summary > div { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .intent-summary p { margin: 4px 0 0; }

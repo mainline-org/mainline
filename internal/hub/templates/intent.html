@@ -35,8 +35,30 @@
 {{end}}
 
 {{if .Risks}}
-<section><h2>Risks</h2>
+<section><h2>{{t $.Lang "intent.risks"}}</h2>
 <ul class="risks risk-list">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+{{if .InheritedConstraints}}
+<section><h2>{{t $.Lang "inherited.heading"}}</h2>
+<p class="muted">{{t $.Lang "inherited.lead"}}</p>
+<ul class="inherited-list">
+{{range .InheritedConstraints}}
+<li class="inherited inherited-{{if .Severity}}{{.Severity}}{{else}}unspecified{{end}}{{if .Acknowledgement}} inherited-ack{{end}}">
+  <div class="inherited-row">
+    <span class="status status-{{if .Severity}}{{.Severity}}{{else}}unspecified{{end}}">{{if .Severity}}{{.Severity}}{{else}}{{t $.Lang "inherited.severity_unspecified"}}{{end}}</span>
+    <strong>{{.What}}</strong>
+    {{if .Acknowledgement}}<span class="ack-badge ack-{{.Acknowledgement}}">{{t $.Lang "inherited.ack_via"}} {{.Acknowledgement}}</span>{{else}}<span class="ack-badge ack-none">{{t $.Lang "inherited.unack"}}</span>{{end}}
+  </div>
+  {{if .Why}}<p class="muted inherited-why">{{.Why}}</p>{{end}}
+  <p class="muted inherited-meta">
+    {{t $.Lang "inherited.from"}} <a href="{{.SourceIntent}}.html"><code>{{shortID .SourceIntent}}</code></a>
+    {{if .MatchedBy}} · {{t $.Lang "inherited.matched_by"}} {{join .MatchedBy ", "}}{{end}}
+  </p>
+</li>
+{{end}}
+</ul>
 </section>
 {{end}}
 
