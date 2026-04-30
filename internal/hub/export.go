@@ -89,6 +89,11 @@ func buildHubModel(view *domain.MainlineView) *HubModel {
 	m.RiskIntents = buildRiskList(m.Intents)
 	m.Relations = buildRelations(m.Intents)
 	m.Dashboard = buildDashboard(m)
+	// TeamHealth must run AFTER Dashboard / Intents / OpenIntents
+	// have been populated — every field reads from them. Pure;
+	// shares the same now() reference so age buckets line up
+	// between the dashboard and the team-health summary.
+	m.TeamHealth = buildTeamHealth(m, time.Now())
 	return m
 }
 
@@ -259,25 +264,58 @@ func buildDashboard(m *HubModel) HubDashboard {
 		}
 	}
 
+	now := time.Now()
 	seen := map[string]bool{}
 	addFocus := func(in HubIntent, reason string) {
 		if len(d.Focus) >= 6 || seen[in.ID] {
 			return
 		}
 		seen[in.ID] = true
+		hours := ageHours(in.SealedAt, now)
 		d.Focus = append(d.Focus, HubFocusIntent{
-			ID:     in.ID,
-			Title:  in.Title,
-			Status: in.Status,
-			Reason: reason,
+			ID:        in.ID,
+			Title:     in.Title,
+			Status:    in.Status,
+			Reason:    reason,
+			AgeHours:  hours,
+			RiskCount: len(in.Risks),
+			FileCount: len(in.FilesTouched),
+			HighRisk:  len(in.Risks) > 0,
 		})
+	}
+	// Order matters per spec §5.1: proposed first (review queue),
+	// high-risk proposed next, then risk-bearing, then recent
+	// merged. Within proposed, prefer the oldest so the review
+	// queue order matches the dashboard rendering.
+	proposed := make([]HubIntent, 0)
+	for _, in := range m.Intents {
+		if in.Status == string(domain.StatusProposed) {
+			proposed = append(proposed, in)
+		}
+	}
+	sort.SliceStable(proposed, func(i, j int) bool {
+		ai := ageHours(proposed[i].SealedAt, now)
+		aj := ageHours(proposed[j].SealedAt, now)
+		// High-risk proposed first; within each bucket, oldest
+		// first (largest age).
+		hi := len(proposed[i].Risks) > 0
+		hj := len(proposed[j].Risks) > 0
+		if hi != hj {
+			return hi
+		}
+		return ai > aj
+	})
+	for _, in := range proposed {
+		reason := "waiting for review"
+		if len(in.Risks) > 0 {
+			reason = fmt.Sprintf("waiting for review · %d recorded risk", len(in.Risks))
+		}
+		addFocus(in, reason)
 	}
 	for _, in := range m.Intents {
 		if in.Status == string(domain.StatusProposed) {
-			addFocus(in, "waiting for review")
+			continue
 		}
-	}
-	for _, in := range m.Intents {
 		if len(in.Risks) > 0 {
 			addFocus(in, fmt.Sprintf("%d recorded risk", len(in.Risks)))
 		}
@@ -295,11 +333,39 @@ func buildDashboard(m *HubModel) HubDashboard {
 		}
 		return files[i].Path < files[j].Path
 	})
+	// Pre-index risk + recent counts per intent so we can populate
+	// the decision-hotspots metadata in one pass without an
+	// O(intents * files) walk inside the cap loop.
+	cutoff := time.Now().AddDate(0, 0, -digestWindowDays)
+	intentRisky := map[string]bool{}
+	intentRecent := map[string]bool{}
+	for _, in := range m.Intents {
+		if len(in.Risks) > 0 {
+			intentRisky[in.ID] = true
+		}
+		if t, err := time.Parse(time.RFC3339, in.SealedAt); err == nil && !t.Before(cutoff) {
+			intentRecent[in.ID] = true
+		}
+	}
 	for _, f := range files {
 		if len(d.HotFiles) >= 8 {
 			break
 		}
-		d.HotFiles = append(d.HotFiles, HubHotFile{Path: f.Path, IntentCount: len(f.IntentIDs)})
+		risk, recent := 0, 0
+		for _, id := range f.IntentIDs {
+			if intentRisky[id] {
+				risk++
+			}
+			if intentRecent[id] {
+				recent++
+			}
+		}
+		d.HotFiles = append(d.HotFiles, HubHotFile{
+			Path:            f.Path,
+			IntentCount:     len(f.IntentIDs),
+			RiskIntentCount: risk,
+			RecentCount:     recent,
+		})
 	}
 	return d
 }
