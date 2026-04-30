@@ -105,6 +105,7 @@ func buildHubModel(view *domain.MainlineView) *HubModel {
 	// number of intents that touch overlapping files; small in
 	// practice.
 	annotateInheritedConstraints(m, view)
+	m.InheritedHotspots = buildInheritedHotspots(view)
 	sort.SliceStable(m.Intents, func(i, j int) bool {
 		return intentSortKey(m.Intents[i]) > intentSortKey(m.Intents[j])
 	})
@@ -288,67 +289,7 @@ func buildDashboard(m *HubModel) HubDashboard {
 		}
 	}
 
-	now := time.Now()
-	seen := map[string]bool{}
-	addFocus := func(in HubIntent, reason string) {
-		if len(d.Focus) >= 6 || seen[in.ID] {
-			return
-		}
-		seen[in.ID] = true
-		hours := ageHours(in.SealedAt, now)
-		d.Focus = append(d.Focus, HubFocusIntent{
-			ID:        in.ID,
-			Title:     in.Title,
-			Status:    in.Status,
-			Reason:    reason,
-			AgeHours:  hours,
-			RiskCount: len(in.Risks),
-			FileCount: len(in.FilesTouched),
-			HighRisk:  len(in.Risks) > 0,
-		})
-	}
-	// Order matters per spec §5.1: proposed first (review queue),
-	// high-risk proposed next, then risk-bearing, then recent
-	// merged. Within proposed, prefer the oldest so the review
-	// queue order matches the dashboard rendering.
-	proposed := make([]HubIntent, 0)
-	for _, in := range m.Intents {
-		if in.Status == string(domain.StatusProposed) {
-			proposed = append(proposed, in)
-		}
-	}
-	sort.SliceStable(proposed, func(i, j int) bool {
-		ai := ageHours(proposed[i].SealedAt, now)
-		aj := ageHours(proposed[j].SealedAt, now)
-		// High-risk proposed first; within each bucket, oldest
-		// first (largest age).
-		hi := len(proposed[i].Risks) > 0
-		hj := len(proposed[j].Risks) > 0
-		if hi != hj {
-			return hi
-		}
-		return ai > aj
-	})
-	for _, in := range proposed {
-		reason := "waiting for review"
-		if len(in.Risks) > 0 {
-			reason = fmt.Sprintf("waiting for review · %d recorded risk", len(in.Risks))
-		}
-		addFocus(in, reason)
-	}
-	for _, in := range m.Intents {
-		if in.Status == string(domain.StatusProposed) {
-			continue
-		}
-		if len(in.Risks) > 0 {
-			addFocus(in, fmt.Sprintf("%d recorded risk", len(in.Risks)))
-		}
-	}
-	for _, in := range m.Intents {
-		if in.Status == string(domain.StatusMerged) {
-			addFocus(in, "recently merged")
-		}
-	}
+	d.Focus = buildFocusList(m, time.Now())
 
 	files := append([]HubFileEntry(nil), m.FileIndex...)
 	sort.SliceStable(files, func(i, j int) bool {
@@ -645,6 +586,157 @@ func actorSlug(id string) string {
 	return r.Replace(id)
 }
 
+// buildFocusList produces the dashboard "Needs attention" list with
+// concrete actionable reasons. Order:
+//
+//  1. proposed intents touching files with unacknowledged
+//     high-severity inherited constraints — the most load-bearing
+//     review surface
+//  2. proposed waiting > review-aging stale threshold (24h)
+//  3. stale open work (open intents with no activity > 24h)
+//  4. recently abandoned/superseded items that touched files with
+//     concentrated history (decision hotspots)
+//
+// Each item carries a reason string that names a concrete signal —
+// "waiting for review · 26h" beats "waiting for review", and
+// "touches file with unacknowledged high-severity constraint" is
+// the most useful pointer of all.
+//
+// Capped at focusCap entries; we'd rather show fewer with reasons
+// than many with vague language.
+func buildFocusList(m *HubModel, now time.Time) []HubFocusIntent {
+	const focusCap = 6
+	seen := map[string]bool{}
+	out := make([]HubFocusIntent, 0, focusCap)
+	add := func(in HubIntent, reason string, hours int) {
+		if len(out) >= focusCap || seen[in.ID] {
+			return
+		}
+		seen[in.ID] = true
+		out = append(out, HubFocusIntent{
+			ID:        in.ID,
+			Title:     in.Title,
+			Status:    in.Status,
+			Reason:    reason,
+			AgeHours:  hours,
+			RiskCount: len(in.Risks),
+			FileCount: len(in.FilesTouched),
+			HighRisk:  hasHighSeverityInherited(in) || len(in.Risks) > 0,
+		})
+	}
+
+	// Index hotfile paths so we can name "decision hotspot" reasons.
+	hotPaths := map[string]bool{}
+	for _, hf := range m.Dashboard.HotFiles {
+		hotPaths[hf.Path] = true
+	}
+
+	// 1. Proposed touching unack'd high-severity inherited constraint.
+	type proposedRow struct {
+		in      HubIntent
+		hours   int
+		hasUnack bool
+	}
+	rows := make([]proposedRow, 0)
+	for _, in := range m.Intents {
+		if in.Status != string(domain.StatusProposed) {
+			continue
+		}
+		hasUnack := false
+		for _, ic := range in.InheritedConstraints {
+			if !strings.EqualFold(strings.TrimSpace(ic.Severity), "high") {
+				continue
+			}
+			if ic.Acknowledgement == "" {
+				hasUnack = true
+				break
+			}
+		}
+		rows = append(rows, proposedRow{in: in, hours: ageHours(in.SealedAt, now), hasUnack: hasUnack})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].hasUnack != rows[j].hasUnack {
+			return rows[i].hasUnack
+		}
+		return rows[i].hours > rows[j].hours
+	})
+	for _, r := range rows {
+		if !r.hasUnack {
+			continue
+		}
+		add(r.in, "touches file with unacknowledged high-severity inherited constraint", r.hours)
+	}
+	// 2. Proposed waiting longer than the stale threshold.
+	for _, r := range rows {
+		if r.hasUnack {
+			continue // already added
+		}
+		if r.hours < agingProposedStaleHours {
+			continue
+		}
+		add(r.in, fmt.Sprintf("proposed for %s, past %dh review threshold", ageLabel(r.hours), agingProposedStaleHours), r.hours)
+	}
+	// 3. Stale open work (no activity beyond stale threshold).
+	for _, op := range m.OpenIntents {
+		hours := openIntentAgeHours(op, now)
+		if hours < agingOpenStaleHours {
+			continue
+		}
+		add(HubIntent{ID: op.ID, Title: firstNonEmpty(op.Goal, op.ID), Status: op.Status,
+			FilesTouched: nil}, fmt.Sprintf("open work no activity for %s", ageLabel(hours)), hours)
+	}
+	// 4. Recently abandoned / superseded items in decision hotspots.
+	cutoff := now.AddDate(0, 0, -digestWindowDays)
+	for _, in := range m.Intents {
+		if in.Status != string(domain.StatusAbandoned) && in.Status != string(domain.StatusSuperseded) {
+			continue
+		}
+		t, ok := parseTime(in.SealedAt)
+		if !ok || t.Before(cutoff) {
+			continue
+		}
+		matchesHotFile := false
+		for _, f := range in.FilesTouched {
+			if hotPaths[f] {
+				matchesHotFile = true
+				break
+			}
+		}
+		if !matchesHotFile {
+			continue
+		}
+		reason := "abandoned in a decision-hotspot file — read why before re-attempting"
+		if in.Status == string(domain.StatusSuperseded) {
+			reason = "superseded recently in a decision-hotspot file — check the replacement"
+		}
+		add(in, reason, ageHours(in.SealedAt, now))
+	}
+	// 5. Fallback: proposed under stale threshold (anything left)
+	// surfaces with its current age. Only when we still have room
+	// after the load-bearing reasons; we prefer "fewer items, real
+	// reasons" over a padded list.
+	for _, r := range rows {
+		if seen[r.in.ID] {
+			continue
+		}
+		add(r.in, fmt.Sprintf("proposed, waiting %s for review", ageLabel(r.hours)), r.hours)
+	}
+	return out
+}
+
+// hasHighSeverityInherited reports whether any of the intent's
+// inherited constraints are high-severity. Used as the
+// HighRisk pin signal on the focus list since v1 prefers
+// constraint-driven attention over generic risk presence.
+func hasHighSeverityInherited(in HubIntent) bool {
+	for _, ic := range in.InheritedConstraints {
+		if strings.EqualFold(strings.TrimSpace(ic.Severity), "high") {
+			return true
+		}
+	}
+	return false
+}
+
 // annotateInheritedConstraints walks every HubIntent and attaches
 // the inherited anti_patterns from prior intents whose touched
 // files / subsystems overlap. Acknowledgement form is computed
@@ -686,6 +778,68 @@ func annotateInheritedConstraints(m *HubModel, view *domain.MainlineView) {
 		hi.InheritedConstraints = out
 	}
 }
+
+// buildInheritedHotspots reshapes the domain heatmap into Hub's
+// JSON DTO and pre-resolves constraint acknowledgement against each
+// constraint's source intent's summary so the Hub renderer can show
+// "acknowledged via decision" badges without re-walking summaries.
+func buildInheritedHotspots(view *domain.MainlineView) []HubInheritedHotspot {
+	if view == nil {
+		return nil
+	}
+	cutoff := time.Now().AddDate(0, 0, -hubInheritedRecentDays)
+	rolls := domain.BuildInheritedHeatmap(view, cutoff)
+	if len(rolls) == 0 {
+		return nil
+	}
+	summaryByID := map[string]*domain.IntentSummary{}
+	for i := range view.Intents {
+		summaryByID[view.Intents[i].IntentID] = view.Intents[i].Summary
+	}
+	out := make([]HubInheritedHotspot, 0, len(rolls))
+	for _, r := range rolls {
+		// Skip files whose entire heatmap row is zeroed — happens
+		// when every contributing intent was abandoned. The domain
+		// layer already filters those, but a defensive check keeps
+		// the dashboard clean.
+		if r.ConstraintCount == 0 {
+			continue
+		}
+		hot := HubInheritedHotspot{
+			FilePath:                    r.FilePath,
+			ConstraintCount:             r.ConstraintCount,
+			HighSeverityCount:           r.HighSeverityCount,
+			UnacknowledgedRecentTouches: r.UnacknowledgedRecentTouches,
+			RecentTouches:               r.RecentTouches,
+		}
+		for _, c := range r.Constraints {
+			hc := HubInheritedConstraint{
+				SourceIntent: c.SourceIntent,
+				What:         c.What,
+				Why:          c.Why,
+				Severity:     c.Severity,
+				MatchedBy:    append([]string(nil), c.MatchedBy...),
+			}
+			// Acknowledgement here is computed against the SOURCE
+			// intent's own summary — meaningful when an intent's
+			// own anti_pattern is also present in its decisions.
+			// Mostly empty for inherited constraints; the per-recent
+			// "is it acknowledged" question is on the file detail
+			// page.
+			if s := summaryByID[c.SourceIntent]; s != nil {
+				hc.Acknowledgement = string(domain.AcknowledgementOf(c, s))
+			}
+			hot.Constraints = append(hot.Constraints, hc)
+		}
+		out = append(out, hot)
+	}
+	return out
+}
+
+// hubInheritedRecentDays defines how far back the heatmap looks for
+// "recent touches". Aligns with the dashboard's 7-day digest window
+// so reviewers reading both signals see the same time slice.
+const hubInheritedRecentDays = 7
 
 // coverageCommitsFromInput shapes engine-supplied rows into the page
 // type. Order is preserved (engine returns newest-first already).

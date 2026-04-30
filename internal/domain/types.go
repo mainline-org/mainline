@@ -226,6 +226,28 @@ type AntiPattern struct {
 	Severity string `json:"severity,omitempty"` // "high" | "medium" | "low"
 }
 
+// InheritedConstraintHotspot is the per-file roll-up of inherited
+// anti_patterns. The Hub dashboard renders the top files sorted by
+// HighSeverityCount (desc) then UnacknowledgedRecentTouches (desc),
+// so reviewers land on the surfaces where unack'd hard constraints
+// pile up. This is the load-bearing answer to "which file should
+// the reviewer look at first?".
+//
+// HighSeverityCount counts distinct (source_intent, what) pairs —
+// duplicate anti_patterns from the same intent that match by both
+// file and subsystem collapse to one. UnacknowledgedRecentTouches
+// counts intents sealed within the digest window that touched this
+// file AND failed to acknowledge at least one applicable
+// high-severity inherited constraint.
+type InheritedConstraintHotspot struct {
+	FilePath                     string             `json:"file_path"`
+	ConstraintCount              int                `json:"constraint_count"`
+	HighSeverityCount            int                `json:"high_severity_count"`
+	UnacknowledgedRecentTouches  int                `json:"unacknowledged_recent_touches"`
+	RecentTouches                int                `json:"recent_touches"`
+	Constraints                  []InheritedConstraint `json:"constraints,omitempty"`
+}
+
 // InheritedConstraint is an anti_pattern from a *prior* sealed intent
 // that the current change is at risk of touching, surfaced to the
 // agent during context retrieval and to the linter / Hub / PR

@@ -68,8 +68,8 @@ var translations = map[string]map[string]string{
 		LangZH: "改了什么、为什么改、现在哪里需要注意。",
 	},
 	"dashboard.lead": {
-		LangEN: "Use this page to jump to review work, risky changes, or files with the most history.",
-		LangZH: "用这个页面跳转到待审工作、有风险的变更，或者历史最复杂的文件。",
+		LangEN: "Action signals only. The CLI (mainline status / log / context / digest) covers the day-to-day; this page surfaces what is not obvious from those.",
+		LangZH: "只展示需要行动的信号。日常用 CLI（mainline status / log / context / digest）；这个页面只暴露 CLI 不容易一眼看出的内容。",
 	},
 	"dashboard.sealed_intents": {LangEN: "sealed intents", LangZH: "已封存 intents"},
 	"dashboard.open":           {LangEN: "open", LangZH: "进行中"},
@@ -202,6 +202,36 @@ var translations = map[string]map[string]string{
 	"notice.in_flight_singular": {LangEN: "open local intent still in flight", LangZH: "个本地 intent 仍在进行中"},
 	"notice.in_flight_plural":   {LangEN: "open local intents still in flight", LangZH: "个本地 intents 仍在进行中"},
 	"notice.view_in_flight":     {LangEN: "View in-flight work", LangZH: "查看进行中的工作"},
+
+	"heatmap.heading": {LangEN: "Inherited constraints heatmap", LangZH: "继承约束热点"},
+	"heatmap.lead": {
+		LangEN: "Files with anti_patterns from prior intents that future work must acknowledge. Sorted by high-severity count, then by recent unacknowledged touches.",
+		LangZH: "历史 intent 留下硬约束的文件，未来改动必须 acknowledge。先按 high-severity 数排序，再按近期未确认的接触次数。",
+	},
+	"heatmap.constraints":   {LangEN: "constraints", LangZH: "条约束"},
+	"heatmap.high_severity": {LangEN: "high-severity", LangZH: "高严重度"},
+	"heatmap.unack_recent":  {LangEN: "unacknowledged recent touch", LangZH: "近期未确认的接触"},
+
+	"lifecycle.abandonment":  {LangEN: "Abandonment", LangZH: "Abandonment 比例"},
+	"lifecycle.supersession": {LangEN: "Supersession", LangZH: "Supersession 比例"},
+	"lifecycle.queue_size":   {LangEN: "Review queue", LangZH: "待审队列"},
+	"lifecycle.oldest":       {LangEN: "oldest", LangZH: "最久"},
+
+	"recent.expand": {LangEN: "Show full intent table", LangZH: "展开全部 intent 表格"},
+
+	"digest.important_decisions_lead": {
+		LangEN: "Recent intents that recorded a real decision with rationale.",
+		LangZH: "最近留下了真实决策与理由的 intent。",
+	},
+
+	"intent.history_heading": {LangEN: "Intent history", LangZH: "Intent 历史"},
+
+	"file.inherited_heading": {LangEN: "Inherited constraints for this file", LangZH: "本文件的继承约束"},
+	"file.inherited_lead": {
+		LangEN: "Anti_patterns recorded by prior intents that touched this file. Read these before editing.",
+		LangZH: "历史 intent 在该文件上留下的硬约束。改这个文件前先看一遍。",
+	},
+	"file.inherited_empty": {LangEN: "No inherited constraints recorded for this file.", LangZH: "本文件暂无继承约束。"},
 
 	"lifecycle.heading":      {LangEN: "Lifecycle health", LangZH: "生命周期健康"},
 	"lifecycle.sealed_total": {LangEN: "sealed intents", LangZH: "已封存 intents"},
