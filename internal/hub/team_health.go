@@ -15,23 +15,23 @@ import (
 //
 // What this file does NOT do:
 //
-//   - Coverage data computation. Coverage requires git-log access
-//     (uncovered commits = main HEAD's last N commits with no
-//     pinned intent), which lives in the engine layer. The spec is
-//     explicit: "v1 can support partial; do not rewrite coverage
-//     engine". TeamHealth.Coverage.Available stays false when the
-//     hub layer has no coverage input — Hub renders the partial-
-//     data wording instead of a fake "100% covered".
+// Coverage data is wired in by the export step (engine.CoverageWindow
+// → HubCoverageSummary); when the engine layer hasn't supplied it the
+// summary stays Available=false and renderer shows the partial-data
+// wording rather than a fake "100% covered".
 //
-//   - Per-actor activity / lifecycle health. Optional in the spec
-//     and explicitly forbidden from being a productivity panel;
-//     deferred to a follow-up that can carefully word it.
+// Actor activity + Lifecycle health are populated here too — see
+// populateActorActivity and populateLifecycle. They are explicitly
+// non-rankings: actor activity shows distribution of in-flight work,
+// lifecycle shows status mix + supersession/abandonment ratios. Spec
+// §11/§12 reminder: never read like a productivity panel.
 
 const (
 	// digestWindowDays is the rolling time window for the weekly
-	// digest section. Spec §10 default is 7 days; we hardcode
-	// because the digest is render-time; future per-call windows
-	// (`mainline digest --since`) would compute this independently.
+	// digest section on the hub dashboard. Spec §10 default is 7
+	// days. populateDigest is parametric (BuildDigest takes a
+	// windowDays arg) so `mainline digest --since 30d` reuses the
+	// same code path with a different window.
 	digestWindowDays = 7
 
 	// agingProposedWarningHours / agingProposedStaleHours / etc.
@@ -72,10 +72,12 @@ func buildTeamHealth(m *HubModel, now time.Time) HubTeamHealth {
 
 	t.populateAging(m, now)
 	t.populateRisk(m, now)
-	t.populateDigest(m, now)
-	// Coverage stays unavailable in this layer — engine wires it
-	// later when real gaps data flows through. Default zero-value
-	// has Available=false.
+	t.Digest = BuildDigest(m.Intents, digestWindowDays, now)
+	t.populateActorActivity(m, now)
+	t.populateLifecycle(m)
+	// Coverage may already be set by the export step. When it is not
+	// (Available=false), populateHealthLevel surfaces the partial-
+	// data wording rather than pretending healthy.
 	t.populateHealthLevel()
 
 	return t
@@ -202,48 +204,97 @@ func (t *HubTeamHealth) populateRisk(m *HubModel, now time.Time) {
 	})
 }
 
-func (t *HubTeamHealth) populateDigest(m *HubModel, now time.Time) {
-	cutoff := now.AddDate(0, 0, -digestWindowDays)
-	t.Digest.WindowDays = digestWindowDays
+// CoverageInputCommit is the engine→hub bridge type for coverage. It
+// is intentionally narrow (covered/skipped/uncovered + commit + risk
+// flag) so the engine layer can build it from CommitCoverage without
+// the hub package importing engine.
+type CoverageInputCommit struct {
+	Commit      string `json:"commit"`
+	Subject     string `json:"subject"`
+	Author      string `json:"author"`
+	CommittedAt string `json:"committed_at"`
+	State       string `json:"state"` // "covered" | "skipped" | "uncovered"
+	HighRisk    bool   `json:"high_risk,omitempty"`
+	SkipReason  string `json:"skip_reason,omitempty"`
+}
 
+// BuildCoverageSummary collapses a slice of per-commit coverage rows
+// into the HubCoverageSummary shape. Keep separate from BuildCoverage
+// for callers that only need the aggregate counts (e.g. JSON dump
+// and the team-health card).
+func BuildCoverageSummary(rows []CoverageInputCommit) HubCoverageSummary {
+	out := HubCoverageSummary{Available: true}
+	for _, c := range rows {
+		switch c.State {
+		case "covered":
+			out.CoveredCommits++
+		case "uncovered":
+			out.UncoveredCommits++
+			if c.HighRisk {
+				out.HighRiskUncoveredCommits++
+			}
+		}
+	}
+	total := out.CoveredCommits + out.UncoveredCommits
+	if total > 0 {
+		out.CoverageRatio = float64(out.CoveredCommits) / float64(total)
+	}
+	return out
+}
+
+// BuildDigest computes a HubWeeklyDigest over an arbitrary window.
+// Pure: takes the intent slice + window in days + reference time and
+// returns the rollup. Used by both the hub dashboard's 7-day digest
+// and the `mainline digest --since` CLI (which can set
+// windowDays = 7 / 14 / 30 / etc.).
+//
+// Counts are computed across SealedAt timestamps: an intent is "in
+// the window" if SealedAt parses and is within [now-windowDays, now].
+// HotFilesThisWindow / ImportantDecisions / RisksToWatch /
+// AbandonedApproaches are bounded by the digest* caps so the
+// dashboard view stays scannable; the CLI human-format render shows
+// the same caps.
+func BuildDigest(intents []HubIntent, windowDays int, now time.Time) HubWeeklyDigest {
+	if windowDays <= 0 {
+		windowDays = digestWindowDays
+	}
+	out := HubWeeklyDigest{WindowDays: windowDays}
+	cutoff := now.AddDate(0, 0, -windowDays)
 	hotByPath := map[string]int{}
 
-	for _, in := range m.Intents {
+	for _, in := range intents {
 		ts, ok := parseTime(in.SealedAt)
 		if !ok || ts.Before(cutoff) {
 			continue
 		}
 		switch in.Status {
 		case "merged":
-			t.Digest.SealedThisWindow++
+			out.SealedThisWindow++
 		case "proposed":
-			t.Digest.ProposedThisWindow++
+			out.ProposedThisWindow++
 		case "abandoned":
-			t.Digest.AbandonedThisWindow++
-			if len(t.Digest.AbandonedApproaches) < digestAbandonedN {
-				t.Digest.AbandonedApproaches = append(t.Digest.AbandonedApproaches,
+			out.AbandonedThisWindow++
+			if len(out.AbandonedApproaches) < digestAbandonedN {
+				out.AbandonedApproaches = append(out.AbandonedApproaches,
 					focusFromIntent(in, "abandoned this window", now))
 			}
 		case "superseded":
-			t.Digest.SupersededThisWindow++
+			out.SupersededThisWindow++
 		}
 		if len(in.Risks) > 0 || hasAnyAntiPattern(in) {
-			t.Digest.RiskBearingThisWindow++
-			if len(t.Digest.RisksToWatch) < digestRisksN {
+			out.RiskBearingThisWindow++
+			if len(out.RisksToWatch) < digestRisksN {
 				reason := "risk-bearing"
 				if len(in.Risks) > 0 {
 					reason = trimReason(in.Risks[0])
 				}
-				t.Digest.RisksToWatch = append(t.Digest.RisksToWatch, focusFromIntent(in, reason, now))
+				out.RisksToWatch = append(out.RisksToWatch, focusFromIntent(in, reason, now))
 			}
 		}
-		// Important-decisions: an intent with at least one decision
-		// AND a non-empty rationale is the heuristic for "this seal
-		// recorded a real choice", not just a status flip.
-		if hasMaterialDecision(in) && len(t.Digest.ImportantDecisions) < digestImportantDecisionsN {
+		if hasMaterialDecision(in) && len(out.ImportantDecisions) < digestImportantDecisionsN {
 			d := in.Decisions[0]
 			reason := d.Point + ": " + d.Chose
-			t.Digest.ImportantDecisions = append(t.Digest.ImportantDecisions,
+			out.ImportantDecisions = append(out.ImportantDecisions,
 				focusFromIntent(in, trimReason(reason), now))
 		}
 		for _, f := range in.FilesTouched {
@@ -251,9 +302,6 @@ func (t *HubTeamHealth) populateDigest(m *HubModel, now time.Time) {
 		}
 	}
 
-	// Hot files in this window — the digest's "files heating up"
-	// rollup. Different from Dashboard.HotFiles which spans all
-	// time; this one shows churn THIS week.
 	type wp struct {
 		path  string
 		count int
@@ -275,11 +323,107 @@ func (t *HubTeamHealth) populateDigest(m *HubModel, now time.Time) {
 		if w.count < 2 {
 			break
 		}
-		t.Digest.HotFilesThisWindow = append(t.Digest.HotFilesThisWindow, HubHotFile{
+		out.HotFilesThisWindow = append(out.HotFilesThisWindow, HubHotFile{
 			Path:        w.path,
 			IntentCount: w.count,
 		})
 	}
+	return out
+}
+
+// populateActorActivity surfaces how work is distributed across
+// agents/humans WITHOUT framing the section as a productivity panel.
+// The wording is "who is in flight right now" / "who sealed in the
+// window", not rankings or output counts. Spec §11 reminder: this
+// must never read as performance review fodder; we omit any "best /
+// most" ordering and present alphabetically by actor.
+func (t *HubTeamHealth) populateActorActivity(m *HubModel, now time.Time) {
+	cutoff := now.AddDate(0, 0, -digestWindowDays)
+	openByActor := map[string]int{}
+	sealedByActor := map[string]int{}
+	nameByActor := map[string]string{}
+
+	for _, op := range m.OpenIntents {
+		// Open intents on disk don't carry an actor label in the v1
+		// HubOpenIntent shape; skip them. The view-side intents below
+		// cover the merged/proposed/etc. surface that does have actor.
+		_ = op
+	}
+	for _, in := range m.Intents {
+		if in.ActorID == "" {
+			continue
+		}
+		if in.ActorName != "" {
+			nameByActor[in.ActorID] = in.ActorName
+		}
+		if in.Status == "proposed" {
+			openByActor[in.ActorID]++
+		}
+		if ts, ok := parseTime(in.SealedAt); ok && !ts.Before(cutoff) && in.Status == "merged" {
+			sealedByActor[in.ActorID]++
+		}
+	}
+
+	rows := make([]HubActorActivity, 0, len(nameByActor))
+	for id := range nameByActor {
+		rows = append(rows, HubActorActivity{
+			ActorID:           id,
+			ActorName:         nameByActor[id],
+			OpenProposed:      openByActor[id],
+			SealedThisWindow:  sealedByActor[id],
+		})
+	}
+	// Alphabetical by ActorID — deliberate. Ranking by counts would
+	// turn the section into a leaderboard; we only show distribution.
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rows[i].ActorID < rows[j].ActorID
+	})
+	t.ActorActivity = rows
+}
+
+// populateLifecycle is the status-mix card. Counts of intents in each
+// terminal state plus two derived ratios (supersession rate,
+// abandonment rate) over the full sealed catalog. Used by the
+// dashboard "Lifecycle health" card and as a precursor to the
+// historical view that v2 will offer.
+func (t *HubTeamHealth) populateLifecycle(m *HubModel) {
+	out := HubLifecycleHealth{}
+	for _, in := range m.Intents {
+		switch in.Status {
+		case "proposed":
+			out.Proposed++
+		case "merged":
+			out.Merged++
+		case "abandoned":
+			out.Abandoned++
+		case "superseded":
+			out.Superseded++
+		case "reverted":
+			out.Reverted++
+		}
+	}
+	total := out.Proposed + out.Merged + out.Abandoned + out.Superseded + out.Reverted
+	out.Total = total
+	if total > 0 {
+		out.SupersessionRate = float64(out.Superseded) / float64(total)
+		out.AbandonmentRate = float64(out.Abandoned+out.Reverted) / float64(total)
+	}
+	// Verdict heuristic: spec §12. Not tied to coverage availability;
+	// purely lifecycle distribution. Critical when supersession or
+	// abandonment + reverted dominate (>30% combined). Attention when
+	// either rate alone is over 15%. Otherwise healthy.
+	combined := out.SupersessionRate + out.AbandonmentRate
+	switch {
+	case total < 5:
+		out.Verdict = "" // not enough sample to judge
+	case combined >= 0.30:
+		out.Verdict = "critical"
+	case out.AbandonmentRate >= 0.15 || out.SupersessionRate >= 0.15:
+		out.Verdict = "attention"
+	default:
+		out.Verdict = "healthy"
+	}
+	t.Lifecycle = out
 }
 
 // populateHealthLevel: spec §4.3 three-bucket classifier. Order

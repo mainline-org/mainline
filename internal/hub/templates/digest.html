@@ -1,0 +1,72 @@
+{{define "digest"}}{{template "header" .}}
+<section class="hero">
+  <div>
+    <p class="eyebrow">{{t .Lang "digest.eyebrow"}}</p>
+    <h1>{{t .Lang "digest.headline"}}</h1>
+    <p class="lead">{{t .Lang "digest.lead"}}</p>
+  </div>
+</section>
+
+{{with .TeamHealth.Digest}}
+<section class="dashboard-row">
+  <article class="dashboard-card">
+    <h2>{{t $.Lang "digest.this_window"}}</h2>
+    <p class="card-headline">{{.WindowDays}} {{t $.Lang "digest.day_unit"}}</p>
+    <ul class="card-stats">
+      <li><strong>{{.SealedThisWindow}}</strong> {{t $.Lang "digest.sealed"}}</li>
+      <li><strong>{{.ProposedThisWindow}}</strong> {{t $.Lang "digest.proposed"}}</li>
+      {{if .AbandonedThisWindow}}<li><strong>{{.AbandonedThisWindow}}</strong> {{t $.Lang "digest.abandoned"}}</li>{{end}}
+      {{if .SupersededThisWindow}}<li><strong>{{.SupersededThisWindow}}</strong> {{t $.Lang "digest.superseded"}}</li>{{end}}
+      <li><strong>{{.RiskBearingThisWindow}}</strong> {{t $.Lang "digest.risk_bearing"}}</li>
+    </ul>
+  </article>
+
+  <article class="dashboard-card">
+    <h2>{{t $.Lang "digest.cli_hint_heading"}}</h2>
+    <p class="muted">{{t $.Lang "digest.cli_hint_lead"}}</p>
+    <ul class="card-stats">
+      <li><code>mainline digest --since 7d</code></li>
+      <li><code>mainline digest --since 30d</code></li>
+      <li><code>mainline digest --json --since 14d</code></li>
+    </ul>
+  </article>
+</section>
+
+{{if .ImportantDecisions}}
+<h2>{{t $.Lang "digest.important_decisions"}}</h2>
+<ul class="digest-list">
+  {{range .ImportantDecisions}}
+  <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
+  {{end}}
+</ul>
+{{end}}
+
+{{if .RisksToWatch}}
+<h2>{{t $.Lang "digest.risks_to_watch"}}</h2>
+<ul class="digest-list">
+  {{range .RisksToWatch}}
+  <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
+  {{end}}
+</ul>
+{{end}}
+
+{{if .AbandonedApproaches}}
+<h2>{{t $.Lang "digest.abandoned_approaches"}}</h2>
+<ul class="digest-list">
+  {{range .AbandonedApproaches}}
+  <li><a href="intents/{{.ID}}.html">{{.Title}}</a></li>
+  {{end}}
+</ul>
+{{end}}
+
+{{if .HotFilesThisWindow}}
+<h2>{{t $.Lang "digest.files_heating_up"}}</h2>
+<ul class="digest-list">
+  {{range .HotFilesThisWindow}}
+  <li><a href="files/{{fileSlug .Path}}.html"><code>{{.Path}}</code></a> — <span class="muted">{{.IntentCount}} {{t $.Lang "digest.intents_this_window"}}</span></li>
+  {{end}}
+</ul>
+{{end}}
+{{end}}
+
+{{template "footer" .}}{{end}}

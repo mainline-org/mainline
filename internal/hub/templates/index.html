@@ -137,6 +137,44 @@
 </section>
 {{end}}
 
+{{if or .TeamHealth.Lifecycle.Total .TeamHealth.ActorActivity}}
+<section class="dashboard-row">
+  {{with .TeamHealth.Lifecycle}}{{if .Total}}
+  <article class="dashboard-card">
+    <h2>{{t $.Lang "lifecycle.heading"}}</h2>
+    <p class="card-headline">{{.Total}} {{t $.Lang "lifecycle.sealed_total"}}{{if .Verdict}} · <span class="status status-{{.Verdict}}">{{tHealth $.Lang .Verdict}}</span>{{end}}</p>
+    <ul class="card-stats">
+      {{if .Merged}}<li>{{.Merged}} {{t $.Lang "lifecycle.merged"}}</li>{{end}}
+      {{if .Proposed}}<li>{{.Proposed}} {{t $.Lang "lifecycle.proposed"}}</li>{{end}}
+      {{if .Abandoned}}<li class="warn">{{.Abandoned}} {{t $.Lang "lifecycle.abandoned"}} ({{lifecycleRatio .AbandonmentRate}})</li>{{end}}
+      {{if .Superseded}}<li>{{.Superseded}} {{t $.Lang "lifecycle.superseded"}} ({{lifecycleRatio .SupersessionRate}})</li>{{end}}
+      {{if .Reverted}}<li class="risk">{{.Reverted}} {{t $.Lang "lifecycle.reverted"}}</li>{{end}}
+    </ul>
+    <p class="muted lifecycle-note">{{t $.Lang "lifecycle.note"}}</p>
+  </article>
+  {{end}}{{end}}
+  {{if .TeamHealth.ActorActivity}}
+  <article class="dashboard-card">
+    <h2>{{t .Lang "actor.heading"}}</h2>
+    <p class="muted">{{t .Lang "actor.lead"}}</p>
+    <ul class="card-stats actor-list">
+      {{range .TeamHealth.ActorActivity}}
+      <li>
+        <strong>{{if .ActorName}}{{.ActorName}}{{else}}{{.ActorID}}{{end}}</strong>
+        <span class="muted">
+          {{if .OpenProposed}}{{.OpenProposed}} {{t $.Lang "actor.in_review"}}{{end}}
+          {{if and .OpenProposed .SealedThisWindow}} · {{end}}
+          {{if .SealedThisWindow}}{{.SealedThisWindow}} {{t $.Lang "actor.sealed_window"}}{{end}}
+          {{if and (not .OpenProposed) (not .SealedThisWindow)}}{{t $.Lang "actor.no_recent_activity"}}{{end}}
+        </span>
+      </li>
+      {{end}}
+    </ul>
+  </article>
+  {{end}}
+</section>
+{{end}}
+
 {{with .TeamHealth.Digest}}
 <section class="digest">
   <h2>{{t $.Lang "digest.this_week"}}</h2>

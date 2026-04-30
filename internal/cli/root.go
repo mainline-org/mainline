@@ -75,6 +75,7 @@ var autoSyncCommands = map[string]bool{
 	"check":      true,
 	"status":     true,
 	"gaps":       true,
+	"digest":     true,
 	"hub export": true,
 	"hub open":   true,
 }
@@ -199,6 +200,7 @@ func init() {
 	traceCmd.GroupID = groupDaily.ID
 	syncCmd.GroupID = groupDaily.ID
 	gapsCmd.GroupID = groupDaily.ID
+	digestCmd.GroupID = groupDaily.ID
 	checkCmd.GroupID = groupDaily.ID
 	contextCmd.GroupID = groupDaily.ID
 	listProposalsCmd.GroupID = groupDaily.ID
@@ -245,7 +247,7 @@ func init() {
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, pinCmd, contextCmd,
-		listProposalsCmd, canonicalHashCmd, gapsCmd, abandonCmd,
+		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
 		hubCmd, lintCmd, evalCmd,

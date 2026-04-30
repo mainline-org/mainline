@@ -40,6 +40,12 @@ var tplRisks string
 //go:embed templates/graph.html
 var tplGraph string
 
+//go:embed templates/coverage.html
+var tplCoverage string
+
+//go:embed templates/digest.html
+var tplDigest string
+
 //go:embed assets/style.css
 var embeddedCSS string
 
@@ -123,6 +129,12 @@ func renderForLang(dir string, m *HubModel, tpl *template.Template, lang string)
 		return err
 	}
 	if err := render("graph.html", "graph", graphCtx(m, intentByID)); err != nil {
+		return err
+	}
+	if err := render("coverage.html", "coverage", coverageCtx(m)); err != nil {
+		return err
+	}
+	if err := render("digest.html", "digest", digestCtx(m)); err != nil {
 		return err
 	}
 	return nil
@@ -210,13 +222,14 @@ func buildTemplates() (*template.Template, error) {
 		"hasPrefix":     strings.HasPrefix,
 		"healthLabel":   healthLabel,
 		"ageLabel":      ageLabel,
-		"coverageRatio": coverageRatio,
-		"deref":         derefInt,
-		"t":             translate,
-		"tHealth":       translateHealthLabel,
+		"coverageRatio":  coverageRatio,
+		"lifecycleRatio": lifecycleRatio,
+		"deref":          derefInt,
+		"t":              translate,
+		"tHealth":        translateHealthLabel,
 	}
 	tpl := template.New("hub").Funcs(funcs)
-	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplReview, tplActor, tplRisks, tplGraph} {
+	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplReview, tplActor, tplRisks, tplGraph, tplCoverage, tplDigest} {
 		var err error
 		tpl, err = tpl.Parse(src)
 		if err != nil {
@@ -294,6 +307,8 @@ type pageCtx struct {
 
 	Relations      []relationRow
 	RelationGroups []relationGroup
+
+	CoverageDetail HubCoverageDetail
 }
 
 type intentLink struct {
@@ -459,6 +474,31 @@ func risksCtx(m *HubModel, byID map[string]HubIntent) pageCtx {
 		NavActive:   "risks",
 		RootPath:    "",
 		RiskRows:    rows,
+	}
+}
+
+func coverageCtx(m *HubModel) pageCtx {
+	return pageCtx{
+		Title:          "Coverage",
+		GeneratedAt:    m.GeneratedAt,
+		MainBranch:     m.MainBranch,
+		MainHead:       m.MainHead,
+		NavActive:      "coverage",
+		RootPath:       "",
+		TeamHealth:     m.TeamHealth,
+		CoverageDetail: m.CoverageDetail,
+	}
+}
+
+func digestCtx(m *HubModel) pageCtx {
+	return pageCtx{
+		Title:       "Digest",
+		GeneratedAt: m.GeneratedAt,
+		MainBranch:  m.MainBranch,
+		MainHead:    m.MainHead,
+		NavActive:   "digest",
+		RootPath:    "",
+		TeamHealth:  m.TeamHealth,
 	}
 }
 
@@ -642,6 +682,21 @@ func ageLabel(hours int) string {
 	}
 	days := hours / 24
 	return fmt.Sprintf("%dd", days)
+}
+
+// lifecycleRatio formats a 0..1 float as a one-decimal percentage
+// for the lifecycle card. Different from coverageRatio because the
+// numbers are smaller (typical 5-15% range) and one decimal carries
+// meaningful signal: "5.5% abandoned" reads better than "6%".
+func lifecycleRatio(r float64) string {
+	if r <= 0 {
+		return "0%"
+	}
+	pct := r * 100
+	if pct >= 100 {
+		return "100%"
+	}
+	return fmt.Sprintf("%.1f%%", pct)
 }
 
 // coverageRatio formats a 0..1 float as a percentage with one
