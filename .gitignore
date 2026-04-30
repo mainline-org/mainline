@@ -18,3 +18,5 @@
 internal/engine/testdata/rapid/
 .cursor/
 .tmp-bin/
+# eval run outputs (generated per-run, not committed):
+docs_for_ai/eval-runs/

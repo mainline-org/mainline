@@ -139,16 +139,24 @@ agent 用上面那些 JSON 命令。
 
 ## Eval: intent-first 真的比 code-first 少犯错吗？
 
-是的。在 8 个合成场景上的测试结果：
+是的。在 8 个合成场景上，使用 LLM-as-judge scorer (v2) 的测试结果：
 
-| 模式 | 语义违规 | 上下文检索 |
+| 模式 | 违规数 (LLM judge) | 主动引用约束并拒绝 |
 |---|---|---|
-| **Intent-first** | **0 / 8** | 8 / 8 |
-| Code-first | 3 / 8 | 0 / 8 |
+| **Intent-first** | **0 / 8 fixture** | 18 项正确拒绝 |
+| Code-first | 4 个违规 (3 / 8 fixture) | 0 |
 
 code-first 犯错的 3 个场景有一个共同点：**仅靠读代码无法发现约束**——
 被废弃的方案（代码还在但失败原因只在 intent 里）、被取代的决策（新旧
-代码共存但不知道哪个已废弃）、纯文档提交里建立的命名约定。
+代码共存但不知道哪个已废弃，2 个违规）、纯文档提交里建立的命名约定。
+
+intent-first agent 不仅避免了违规，还**主动引用 anti-pattern 并解释为什么拒绝**。
+
+```bash
+mainline eval run                                          # layer 1: retrieval 前置条件 (8/8 pass)
+mainline eval agent --runner ./scripts/eval-runner-copilot.py \
+  --judge ./scripts/eval-judge-copilot.py                  # layer 2: v2 scorer (CF=4, IF=0)
+```
 
 完整方法论和下一步 →
 [docs_for_ai/eval-results.md](./docs_for_ai/eval-results.md)
