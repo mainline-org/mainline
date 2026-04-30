@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 14 -->
+<!-- mainline-agents-md-version: 15 -->
 
 This repository uses **Mainline** for AI-assisted intent tracking and conflict
 detection.
@@ -9,7 +9,13 @@ The full workflow belongs in the installed `mainline` agent skill or the team's
 global agent guidance. The repo-root `AGENTS.md` contains the lightweight
 project marker, bootstrap reminders, and remote-write boundary for this repo.
 
-Quick bootstrap if no skill is available:
+If the `mainline` skill is missing and installation is allowed:
+
+```bash
+npx skills add mainline-org/mainline --skill mainline --global
+```
+
+Quick bootstrap until the skill is available:
 
 ```bash
 mainline status --json

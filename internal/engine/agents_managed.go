@@ -92,22 +92,22 @@ type StatusAgentsGuidance struct {
 // Returned by inspectManagedBlock so callers can branch cleanly on
 // state without re-parsing the file.
 type AgentsManagedBlock struct {
-	Path             string
-	State            AgentsBlockState
-	InstalledVersion int
+	Path              string
+	State             AgentsBlockState
+	InstalledVersion  int
 	InstalledChecksum string
-	BodyBytes        string // empty unless State is one of the installed forms
-	OuterStart       int    // byte index of the start marker, -1 if absent
-	OuterEnd         int    // byte index just after the end marker, -1 if absent
-	FileBytes        string // entire file contents (for splice-replace operations)
+	BodyBytes         string // empty unless State is one of the installed forms
+	OuterStart        int    // byte index of the start marker, -1 if absent
+	OuterEnd          int    // byte index just after the end marker, -1 if absent
+	FileBytes         string // entire file contents (for splice-replace operations)
 }
 
 // AgentsCheckResult is the per-file rollup returned by
 // `mainline agents check`. One file per managed target (AGENTS.md +
-// the four IDE stubs).
+// the Claude pointer and IDE stubs).
 type AgentsCheckResult struct {
-	Files            []AgentsFileState `json:"files"`
-	CurrentVersion   int               `json:"current_version"`
+	Files          []AgentsFileState `json:"files"`
+	CurrentVersion int               `json:"current_version"`
 }
 
 // AgentsFileState is one row of AgentsCheckResult.
@@ -135,16 +135,16 @@ type AgentsDiffResult struct {
 
 // AgentsFileChange records one file's transition in install/update.
 type AgentsFileChange struct {
-	Path     string           `json:"path"`
-	From     AgentsBlockState `json:"from"`
-	To       AgentsBlockState `json:"to"`
-	Action   string           `json:"action"` // "installed" | "updated" | "migrated" | "skipped" | "refused"
-	Reason   string           `json:"reason,omitempty"`
+	Path   string           `json:"path"`
+	From   AgentsBlockState `json:"from"`
+	To     AgentsBlockState `json:"to"`
+	Action string           `json:"action"` // "installed" | "updated" | "migrated" | "skipped" | "refused"
+	Reason string           `json:"reason,omitempty"`
 }
 
 // AgentsFileDiff carries the old/new bodies for a single file.
 type AgentsFileDiff struct {
-	Path  string `json:"path"`
+	Path  string           `json:"path"`
 	State AgentsBlockState `json:"state"`
 	Old   string           `json:"old"`
 	New   string           `json:"new"`
@@ -165,19 +165,21 @@ type AgentsUpdateOptions struct {
 // targets plus AGENTS.md itself.
 //
 // Each gets its own managed block; the block content differs (full
-// guidance for AGENTS.md, short pointer stub for the IDE files) but
-// the install/check/update/diff flow is identical.
+// guidance for AGENTS.md, a native Claude pointer for CLAUDE.md, and
+// short pointer stubs for the other IDE files) but the
+// install/check/update/diff flow is identical.
 type agentsTarget struct {
-	relPath  string
-	body     string // embedded template body (no markers)
+	relPath string
+	body    string // embedded template body (no markers)
 }
 
 func (s *Service) agentsManagedTargets() []agentsTarget {
 	full := strings.TrimRight(agentsMDTemplate, "\n")
+	claude := strings.TrimRight(agentsClaudeTemplate, "\n")
 	stub := strings.TrimRight(agentsStubTemplate, "\n")
 	return []agentsTarget{
 		{"AGENTS.md", full},
-		{"CLAUDE.md", stub},
+		{"CLAUDE.md", claude},
 		{".cursor/rules/mainline.md", stub},
 		{".windsurfrules", stub},
 		{".github/copilot-instructions.md", stub},

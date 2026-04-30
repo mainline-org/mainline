@@ -200,6 +200,13 @@ func TestUpsertAgentInstructionStubs_WritesFourFilesIdempotently(t *testing.T) {
 			t.Errorf("%s missing marker block", rel)
 		}
 	}
+	claude := readFileT(t, filepath.Join(dir, "CLAUDE.md"))
+	if !strings.Contains(claude, `<important if="always">@AGENTS.md</important>`) {
+		t.Errorf("CLAUDE.md should point at AGENTS.md via Claude native syntax, got %s", claude)
+	}
+	if strings.Contains(claude, "Quick bootstrap") {
+		t.Errorf("CLAUDE.md should not duplicate the generic bootstrap stub")
+	}
 
 	// Second run: all idempotent, nothing reported as written.
 	written2, err := upsertAgentInstructionStubs(dir)

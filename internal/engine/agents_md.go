@@ -16,6 +16,9 @@ import (
 //go:embed templates/agents-md.md
 var agentsMDTemplate string
 
+//go:embed templates/agents-claude.md
+var agentsClaudeTemplate string
+
 //go:embed templates/agents-stub.md
 var agentsStubTemplate string
 
@@ -111,9 +114,9 @@ func upsertAgentsMD(repoRoot string) (changed bool, err error) {
 }
 
 // upsertAgentInstructionStubs writes the small "see AGENTS.md"
-// pointer files that non-Claude-Code IDEs read. Each is upserted with
-// the same section markers so manual edits outside the marker block
-// survive. Missing parent directories are created.
+// pointer files that non-AGENTS-aware IDEs read. Each is upserted
+// with the same section markers so manual edits outside the marker
+// block survive. Missing parent directories are created.
 //
 // Files written:
 //   - CLAUDE.md (Claude Code primary; reads AGENTS.md too but a
@@ -123,29 +126,31 @@ func upsertAgentsMD(repoRoot string) (changed bool, err error) {
 //   - .windsurfrules
 //   - .github/copilot-instructions.md
 //
-// All four take the same short stub content. Hand-edited content
-// outside the marker block is preserved on every re-run.
+// CLAUDE.md uses Claude's native @AGENTS.md pointer. The other IDE
+// surfaces use the short bootstrap stub. Hand-edited content outside
+// the marker block is preserved on every re-run.
 func upsertAgentInstructionStubs(repoRoot string) (written []string, err error) {
+	claude := strings.TrimRight(agentsClaudeTemplate, "\n")
 	stub := strings.TrimRight(agentsStubTemplate, "\n")
-	targets := []string{
-		"CLAUDE.md",
-		".cursor/rules/mainline.md",
-		".windsurfrules",
-		".github/copilot-instructions.md",
+	targets := []agentsTarget{
+		{relPath: "CLAUDE.md", body: claude},
+		{relPath: ".cursor/rules/mainline.md", body: stub},
+		{relPath: ".windsurfrules", body: stub},
+		{relPath: ".github/copilot-instructions.md", body: stub},
 	}
-	for _, rel := range targets {
-		full := filepath.Join(repoRoot, rel)
+	for _, t := range targets {
+		full := filepath.Join(repoRoot, t.relPath)
 		if dir := filepath.Dir(full); dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return written, fmt.Errorf("mkdir %s: %w", dir, err)
 			}
 		}
-		changed, err := upsertSectionFile(full, stub)
+		changed, err := upsertSectionFile(full, t.body)
 		if err != nil {
-			return written, fmt.Errorf("upsert %s: %w", rel, err)
+			return written, fmt.Errorf("upsert %s: %w", t.relPath, err)
 		}
 		if changed {
-			written = append(written, rel)
+			written = append(written, t.relPath)
 		}
 	}
 	return written, nil
@@ -189,4 +194,3 @@ func readBodyChecksum(path string) (string, bool) {
 	}
 	return bodyChecksum(blk.BodyBytes), true
 }
-

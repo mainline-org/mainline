@@ -1,7 +1,7 @@
-<!-- mainline:agents:start version=14 checksum=sha256:01f00d660ce977485a66139ea44a5f38fcda36c0334ef21c4f7883d41c564a39 -->
+<!-- mainline:agents:start version=15 checksum=sha256:552dd304ecbfe59566db51c65934d41ac8f2c38003727bf0ace5905cb07c87bb -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 14 -->
+<!-- mainline-agents-md-version: 15 -->
 
 This repository uses **Mainline** for AI-assisted intent tracking and conflict
 detection.
@@ -10,7 +10,13 @@ The full workflow belongs in the installed `mainline` agent skill or the team's
 global agent guidance. The repo-root `AGENTS.md` contains the lightweight
 project marker, bootstrap reminders, and remote-write boundary for this repo.
 
-Quick bootstrap if no skill is available:
+If the `mainline` skill is missing and installation is allowed:
+
+```bash
+npx skills add mainline-org/mainline --skill mainline --global
+```
+
+Quick bootstrap until the skill is available:
 
 ```bash
 mainline status --json

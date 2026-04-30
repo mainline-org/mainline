@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 14 -->
+<!-- mainline-agents-md-version: 15 -->
 
 This repository uses **Mainline** for AI-assisted intent tracking: agents read
 team intent before changing code and record the intent behind their own changes.
@@ -15,7 +15,13 @@ boundary — not as a second copy of the whole Mainline manual.
 1. Follow the current user request and any repository-specific rules first.
 2. If your runtime exposes a `mainline` skill, load it and follow that skill for
    the full `status → context → start/append → commit → seal → review` workflow.
-3. If no skill is available, use the bootstrap loop below and inspect
+3. If the `mainline` skill is missing and installation is allowed:
+
+   ```bash
+   npx skills add mainline-org/mainline --skill mainline --global
+   ```
+
+4. Until the skill is available, use the bootstrap loop below and inspect
    `mainline --help` / `mainline <command> --help` for command details.
 
 ### Load-bearing rules
