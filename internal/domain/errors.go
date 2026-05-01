@@ -67,6 +67,11 @@ type MainlineView struct {
 	MainBranch    string       `json:"main_branch"`
 	MainHead      string       `json:"main_head"`
 	Intents       []IntentView `json:"intents"`
+
+	// RiskResolutions maps risk IDs ("int_xxx#N") to their resolution
+	// records. Populated during view rebuild from IntentSealedEvent.
+	// ResolvesRisks + RiskResolvedEvent. Missing key = open risk.
+	RiskResolutions map[string][]RiskResolution `json:"risk_resolutions,omitempty"`
 }
 
 // ProposedIndex is the fast-lookup index for proposed (not yet merged) intents.

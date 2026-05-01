@@ -9,6 +9,7 @@ const (
 	EventIntentAbandoned         EventType = "intent.abandoned"
 	EventIntentMergeAcknowledged EventType = "intent.merge_acknowledged"
 	EventCheckJudgment           EventType = "check.judgment"
+	EventRiskResolved            EventType = "risk.resolved"
 )
 
 // BaseEvent holds fields common to every actor-log event.
@@ -59,6 +60,11 @@ type IntentSealedEvent struct {
 
 	// References to external materials (sessions, issues, PRs, docs, CI runs).
 	References []Reference `json:"references,omitempty"`
+
+	// v0.4 risk lifecycle: risks resolved atomically with this seal.
+	// Carried on the sealed event (not as separate events) so the
+	// write is one actor-log append — no partial-resolution risk.
+	ResolvesRisks []RiskResolutionInput `json:"resolves_risks,omitempty"`
 }
 
 // IntentSupersededEvent records that an intent was replaced by a new one.
@@ -90,6 +96,16 @@ type CheckJudgmentEvent struct {
 	CandidateIntent string             `json:"candidate_intent"`
 	Judgments       []ConflictJudgment `json:"judgments"`
 	Overall         CheckOverall       `json:"overall"`
+}
+
+// RiskResolvedEvent records a manual risk resolution via
+// `mainline risks resolve`. Seal-time resolutions are carried on
+// IntentSealedEvent.ResolvesRisks instead (atomic with the seal).
+type RiskResolvedEvent struct {
+	BaseEvent
+	RiskID           string `json:"risk_id"`                        // "int_xxx#0"
+	ResolvedByIntent string `json:"resolved_by_intent,omitempty"`   // optional: the intent whose work resolved it
+	Rationale        string `json:"rationale,omitempty"`
 }
 
 // ActorLogEntry wraps a raw event stored in an actor log blob.
