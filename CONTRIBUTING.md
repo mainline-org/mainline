@@ -7,7 +7,7 @@ Thanks for helping improve Mainline.
 - Keep changes focused and reviewable.
 - Add or update tests for behavior changes.
 - Do not commit secrets, local caches, or generated hub exports.
-- Follow the Mainline workflow in `AGENTS.md` for intent-backed changes.
+- Follow the Mainline workflow (see the Mainline skill or `AGENTS.md` if installed) for intent-backed changes.
 
 ## Development
 

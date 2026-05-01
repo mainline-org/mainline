@@ -97,9 +97,9 @@ mainline append "<what changed>"         # after each meaningful turn
 mainline seal --prepare > .ml-cache/seal.json   # → patch → mainline seal --submit < .ml-cache/seal.json
 ```
 
-You don't memorise this — `AGENTS.md` (which Mainline writes into your repo on
-init) tells the agent the protocol. Modern agents read `AGENTS.md` at every
-session.
+You don't memorise this — `mainline init` installs a Mainline skill that gives
+the agent the complete protocol. If hooks are installed (also done by init),
+the agent receives fresh team state at session start automatically.
 
 **You** (the human) review intent, browse history, and quality-check the
 team's record:
@@ -116,28 +116,33 @@ mainline lint <intent_id>                # quality-check a teammate's seal
 You don't have to type these — `mainline hub open` is the one to remember; the
 rest are there when you want them.
 
-## If you use Cursor (or Claude Code / Codex)
+## Getting started with your agent
 
-You probably want hooks. One-time setup per repo:
+One-time setup per repo:
 
 ```bash
 mainline init --actor-name "<your name>"
-mainline hooks install --agent cursor      # or: --agent claudecode  /  --agent codex
 ```
 
-That's it. Now at every Cursor session start, Mainline:
+`mainline init` does three things:
 
-1. Runs `mainline sync` (fetches the latest team intent).
-2. Runs `mainline status` (active intent, sync staleness, suggestions).
-3. Injects the snapshot into Cursor's system context as `additional_context`.
+1. Writes `.mainline/config.toml` and configures git refspecs.
+2. Installs the **Mainline skill** — the complete workflow manual for agents.
+3. Installs **repo-local hooks** for supported agents (Cursor, Claude Code,
+   Codex) — at every session start, hooks run `mainline sync` + `mainline
+   status` and inject the snapshot into the agent's system context.
 
 Your agent now sees fresh team state at every session start without you
 typing anything. The agent itself drives the rest of the workflow (start /
-append / seal / check) per `AGENTS.md` — Mainline is a context provider, not
-a workflow driver.
+append / seal / check) per the Mainline skill — Mainline is a context
+provider, not a workflow driver.
 
-If you don't use a supported hook agent, your AI tool reads `AGENTS.md`
-manually and follows the same protocol — both paths work.
+If your AI tool doesn't support hooks, it can still follow the same
+protocol via the Mainline skill — both paths work.
+
+For teams that want explicit repo-level policy, `mainline agents install`
+writes a lightweight `AGENTS.md` policy pointer — but this is opt-in,
+not required.
 
 ## What problem this solves
 
@@ -246,7 +251,7 @@ Full methodology, per-fixture breakdowns, and caveats →
 ## Five-minute quick start
 
 The lines marked **[you]** are what you type. The rest are what the agent
-runs (driven by `AGENTS.md`, or auto-injected if you installed hooks).
+runs (driven by the Mainline skill, or auto-injected via hooks).
 
 ```bash
 # [you] one-time per repo
@@ -254,8 +259,8 @@ cd your-repo
 mainline init --actor-name "alice"     # or: export MAINLINE_ACTOR_NAME first
 # if you add a git remote later, run: mainline init --rewire
 
-# [you, optional] one-time per repo if you use Cursor/Claude/Codex
-mainline hooks install --agent cursor
+# hooks are installed by init; to repair or add a specific agent:
+# mainline hooks install --agent cursor
 
 # [agent] at session start
 mainline status
@@ -455,8 +460,8 @@ Full daily set:
 | `mainline hub open` | Build + open a static HTML site over the local intent view (humans, not agents) |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |
 | `mainline check --submit` | Submit phase 2 judgment; result surfaces in log column |
-| `mainline doctor --setup` | Verify installation: refspecs, identity, AGENTS.md, PR template, .gitignore |
-| `mainline init --rewire` | Re-apply remote refspec config + AGENTS.md + PR template (use after adding origin post-init) |
+| `mainline doctor --setup` | Verify installation: refspecs, identity, .gitignore; report optional AGENTS.md policy state |
+| `mainline init --rewire` | Re-apply remote refspec config + notes.displayRef + .gitignore (use after adding origin post-init) |
 
 All commands accept `--json`. The persistent `--no-sync` flag opts a command out of the auto-sync wrapper.
 
@@ -503,9 +508,8 @@ What hooks deliberately do NOT do: deciding when to `mainline start`,
 what the goal text should be, when to `mainline append`, what to
 write in the append, building the seal fingerprint, or judging
 phase-2 conflicts. Those are LLM judgments and the agent stays the
-sole source of truth for them — exactly as `AGENTS.md` specifies in
-the no-hooks flow. Hooks installed or not, the contract above never
-changes.
+sole source of truth for them — exactly as the Mainline skill specifies.
+Hooks installed or not, the contract above never changes.
 
 Per-toggle controls live in `.mainline/config.toml` under `[hooks]`
 (`enabled`, `auto_sync_on_session_start`); everything is fail-soft
