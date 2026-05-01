@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mainline-org/mainline/internal/buildinfo"
 	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/engine"
 	"github.com/mainline-org/mainline/internal/webhook"
@@ -29,30 +30,30 @@ var (
 // for the command's primary use case.
 //
 //   - check  — phase1 must compare against the freshest remote
-//              intents, otherwise it under-reports conflicts.
+//     intents, otherwise it under-reports conflicts.
 //   - status — rc7+ daily entry point. The Recent sealed intents
-//              block is "what just landed across the team", and
-//              the Suggestions block reads its own staleness state.
-//              A stale answer means "agent thinks team is idle when
-//              someone just shipped" — exactly the failure mode the
-//              command exists to prevent.
+//     block is "what just landed across the team", and
+//     the Suggestions block reads its own staleness state.
+//     A stale answer means "agent thinks team is idle when
+//     someone just shipped" — exactly the failure mode the
+//     command exists to prevent.
 //   - gaps   — reads main HEAD's last 30 commits against the local
-//              view's intent list. When `git fetch` has pulled in a
-//              new merge commit + its note but the view rebuild has
-//              not run yet, the note's intent is not in liveIntents
-//              and the commit reports as uncovered. Auto-sync (gated
-//              by freshness) keeps that false-uncovered window
-//              within the 300s budget.
+//     view's intent list. When `git fetch` has pulled in a
+//     new merge commit + its note but the view rebuild has
+//     not run yet, the note's intent is not in liveIntents
+//     and the commit reports as uncovered. Auto-sync (gated
+//     by freshness) keeps that false-uncovered window
+//     within the 300s budget.
 //   - hub export, hub open — both rebuild a static snapshot from
-//              the local intent view. Stale data on the index page
-//              ("recent intents") and the per-file history pages is
-//              the same failure mode `status` exists to prevent —
-//              human reader opens the hub and thinks the team is
-//              idle when someone just shipped. Subcommand paths
-//              live in this map keyed as "<parent> <name>" because
-//              cobra's cmd.Name() returns just the leaf
-//              ("export"/"open") which would collide if another
-//              top-level command ever used those names.
+//     the local intent view. Stale data on the index page
+//     ("recent intents") and the per-file history pages is
+//     the same failure mode `status` exists to prevent —
+//     human reader opens the hub and thinks the team is
+//     idle when someone just shipped. Subcommand paths
+//     live in this map keyed as "<parent> <name>" because
+//     cobra's cmd.Name() returns just the leaf
+//     ("export"/"open") which would collide if another
+//     top-level command ever used those names.
 //
 // Notably absent:
 //
@@ -82,9 +83,10 @@ var autoSyncCommands = map[string]bool{
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "mainline",
-	Short: "Distributed intent ledger for coding agents",
-	Long:  "Mainline coordinates multiple AI coding agents by recording, checking, and merging their work intents.",
+	Use:     "mainline",
+	Short:   "Distributed intent ledger for coding agents",
+	Long:    "Mainline coordinates multiple AI coding agents by recording, checking, and merging their work intents.",
+	Version: buildinfo.Current().Version,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if cwdPath != "" {
 			// If chdir fails, subsequent commands run in the original
@@ -248,6 +250,7 @@ func init() {
 	// daily agent loop. Setup group keeps it visible without
 	// crowding the daily commands.
 	evalCmd.GroupID = groupSetup.ID
+	versionCmd.GroupID = groupSetup.ID
 
 	rootCmd.AddCommand(
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
@@ -256,7 +259,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
-		hubCmd, lintCmd, evalCmd, risksCmd,
+		hubCmd, lintCmd, evalCmd, risksCmd, versionCmd,
 	)
 }
 
