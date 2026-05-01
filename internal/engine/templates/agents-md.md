@@ -41,6 +41,12 @@ Two clarifications:
   text becomes the headline in `mainline log` for everyone. If the
   user said *"修复 OAuth 回调的会话丢失"*, start with exactly that
   string, not an English paraphrase.
+- **Do not use context-dependent references as the goal.** If the
+  user's latest instruction is not itself a durable description of
+  the work, expand the actual requested work into a short
+  human-readable goal in the user's language. Keep references in a
+  turn / seal reference, not as the headline future readers see in
+  `mainline log`.
 - **Code identifiers, command names, file paths, and CLI snippets
   stay in their original form.** Match natural-language prose, not
   the technical substrate. `mainline seal --submit` is

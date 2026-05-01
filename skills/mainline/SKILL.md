@@ -32,10 +32,13 @@ A teammate reading `mainline show <id>` later must recognise the
 work as theirs. Translating a Chinese task into an English seal
 makes the corpus harder to read for the people whose memory it is.
 
-Pass the user's goal text through verbatim — `mainline start
-"<goal>"` becomes the headline in `mainline log`. Code identifiers,
-command names, file paths, and CLI snippets stay in their original
-form regardless of conversation language.
+Pass the user's substantive goal text through verbatim — `mainline start
+"<goal>"` becomes the headline in `mainline log`. If the latest instruction is
+only a context-dependent reference rather than a durable description of the
+work, expand it into a short, human-readable goal in the user's language.
+Preserve the reference in a turn or seal reference instead of making it the
+headline. Code identifiers, command names, file paths, and CLI snippets stay in
+their original form regardless of conversation language.
 
 ## Trigger Policy
 
