@@ -114,52 +114,6 @@ func TestRewireIsSafeOnHealthyRepo(t *testing.T) {
 	}
 }
 
-func TestRewireUpdatesLegacyPRTemplateTrailers(t *testing.T) {
-	dir, cleanup := testRepo(t)
-	defer cleanup()
-	svc := NewServiceFromRoot(dir)
-	svc.Init("agent")
-
-	path := filepath.Join(dir, ".github", "PULL_REQUEST_TEMPLATE.md")
-	legacy := `## Summary
-
-<!-- Describe what this PR does -->
-
-## Mainline
-
-<!-- Do NOT remove. Verify trailers remain in the final squash commit message. -->
-
-` + "```" + `
-Mainline-Intent: <intent-id>
-Mainline-Seal: sha256:<hash>
-` + "```" + `
-`
-	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
-		t.Fatalf("write legacy PR template: %v", err)
-	}
-
-	r, err := svc.Rewire()
-	if err != nil {
-		t.Fatalf("Rewire: %v", err)
-	}
-	if !r.PRTplWritten {
-		t.Fatal("Rewire should report PR template rewritten for legacy trailers")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read PR template: %v", err)
-	}
-	text := string(data)
-	for _, deprecated := range []string{"Mainline-Intent:", "Mainline-Seal:"} {
-		if strings.Contains(text, deprecated) {
-			t.Fatalf("rewritten PR template still contains deprecated marker %q:\n%s", deprecated, text)
-		}
-	}
-	if !strings.Contains(text, "git notes") || !strings.Contains(text, "actor refs") {
-		t.Fatalf("rewritten PR template should describe the notes protocol:\n%s", text)
-	}
-}
-
 func TestRewirePreservesCustomPRTemplate(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -168,6 +122,9 @@ func TestRewirePreservesCustomPRTemplate(t *testing.T) {
 
 	path := filepath.Join(dir, ".github", "PULL_REQUEST_TEMPLATE.md")
 	custom := "## Summary\n\n## Review Checklist\n\n- Product owner approved\n"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir PR template dir: %v", err)
+	}
 	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
 		t.Fatalf("write custom PR template: %v", err)
 	}
@@ -177,7 +134,7 @@ func TestRewirePreservesCustomPRTemplate(t *testing.T) {
 		t.Fatalf("Rewire: %v", err)
 	}
 	if r.PRTplWritten {
-		t.Fatal("Rewire should not overwrite a custom PR template")
+		t.Fatal("Rewire should not touch PR templates")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -216,8 +173,6 @@ func TestDoctorSetupReportClean(t *testing.T) {
 		"ActorPushOK":       r.ActorPushOK,
 		"NotesDisplayRefOK": r.NotesDisplayRefOK,
 		"IdentityOK":        r.IdentityOK,
-		"AgentsMDOK":        r.AgentsMDOK,
-		"PRTemplateOK":      r.PRTemplateOK,
 		"GitignoreOK":       r.GitignoreOK,
 	} {
 		if !ok {
@@ -229,7 +184,7 @@ func TestDoctorSetupReportClean(t *testing.T) {
 	}
 }
 
-func TestDoctorSetupFlagsLegacyPRTemplate(t *testing.T) {
+func TestDoctorSetupIgnoresLegacyPRTemplate(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
@@ -240,6 +195,9 @@ func TestDoctorSetupFlagsLegacyPRTemplate(t *testing.T) {
 
 	path := filepath.Join(dir, ".github", "PULL_REQUEST_TEMPLATE.md")
 	legacy := "Mainline-Intent: <intent-id>\nMainline-Seal: sha256:<hash>\n"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir PR template dir: %v", err)
+	}
 	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
 		t.Fatalf("write legacy PR template: %v", err)
 	}
@@ -248,11 +206,8 @@ func TestDoctorSetupFlagsLegacyPRTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Doctor --setup: %v", err)
 	}
-	if res.Setup.PRTemplateOK {
-		t.Fatal("legacy PR template should not pass doctor --setup")
-	}
-	if !strings.Contains(strings.Join(res.Setup.Issues, "\n"), "deprecated Mainline trailers") {
-		t.Fatalf("doctor should report deprecated trailers, got %v", res.Setup.Issues)
+	if strings.Contains(strings.Join(res.Setup.Issues, "\n"), "deprecated Mainline trailers") {
+		t.Fatalf("doctor should not report PR template issues, got %v", res.Setup.Issues)
 	}
 }
 
@@ -433,29 +388,19 @@ func TestSyncHonoursNonOriginRemoteTrackingRefs(t *testing.T) {
 	t.Fatalf("intent %s from upstream actor log missing from view", intentID)
 }
 
-// doctor --setup honestly reports a missing AGENTS.md by deleting the
-// init-written file and re-running.
-func TestDoctorSetupFlagsMissingAgentsMD(t *testing.T) {
+// AGENTS.md is optional repo-level policy; doctor --setup reports its
+// presence but does not raise an issue when it is absent.
+func TestDoctorSetupTreatsAgentsMDAsOptional(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	if err := os.Remove(filepath.Join(dir, "AGENTS.md")); err != nil {
-		t.Fatalf("remove AGENTS.md: %v", err)
-	}
 	res, _ := svc.Doctor(DoctorOptions{Setup: true})
 	if res.Setup.AgentsMDOK {
-		t.Error("AgentsMDOK should be false after deletion")
+		t.Error("AgentsMDOK should be false when repo policy was not installed")
 	}
-	found := false
-	for _, msg := range res.Setup.Issues {
-		if strings.Contains(msg, "AGENTS.md missing") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected AGENTS.md missing issue, got %v", res.Setup.Issues)
+	if strings.Contains(strings.Join(res.Setup.Issues, "\n"), "AGENTS.md missing") {
+		t.Errorf("AGENTS.md absence should not be an issue, got %v", res.Setup.Issues)
 	}
 }

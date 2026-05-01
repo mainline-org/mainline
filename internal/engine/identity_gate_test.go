@@ -25,8 +25,8 @@ func freshCloneRepo(t *testing.T) (*Service, func()) {
 		t.Fatalf("init: %v", err)
 	}
 	// Wipe the local identity to simulate a peer clone that hasn't
-	// run `mainline init` yet. The team config + .gitignore + AGENTS.md
-	// remain — they are committed.
+	// run `mainline init` yet. The team config + .gitignore remain —
+	// they are committed.
 	for _, identityPath := range identityPathsForTest(dir) {
 		if err := os.Remove(identityPath); err != nil && !os.IsNotExist(err) {
 			cleanup()
