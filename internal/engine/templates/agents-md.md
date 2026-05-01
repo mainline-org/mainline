@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 15 -->
+<!-- mainline-agents-md-version: 16 -->
 
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the
@@ -322,6 +322,13 @@ replacement PR description when a sealed intent exists, and do not let a
 generic GitHub publishing helper invent one. The generated body includes
 the `mainline:pr-description` marker; the PR intent-comment workflow
 uses that marker to avoid creating a duplicate sticky comment.
+
+Before calling any GitHub publishing helper, connector, or `gh pr create`
+fallback, inspect the generated file and verify that it still contains
+`<!-- mainline:pr-description:start -->`. Pass that exact file content as
+the PR body. Do not copy only the visible Markdown, regenerate a lookalike
+body, or let the publishing helper overwrite the body with `--fill` /
+default prose.
 
 ### When the user asks you to phase-2 check an intent
 
