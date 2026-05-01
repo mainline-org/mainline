@@ -1,7 +1,8 @@
 # Mainline
 
-**AI 编程团队的 git-native intent memory。**
-它让 coding agent 在读代码之前先理解历史 *why*。
+**AI 辅助工程的 git-native intent memory。**
+
+Mainline 让 coding agent 在理解当前代码之前，先理解历史上的 *why*。
 
 > English version: [README.md](./README.md)
 
@@ -10,18 +11,37 @@ AI coding agent 写代码很快，但代码本身无法告诉它：
 - 哪些方案试过然后放弃了；
 - 哪些旧实现已经被新决策替代；
 - 哪些团队约定不在源码里；
-- 哪些历史约束 reviewer 期望未来变更继续遵守。
+- 哪些约束 reviewer 期望未来变更继续遵守；
+- 哪个队友正在推进相关 intent。
 
 RAG 能找语义相似的代码。
 Grep 能验证当前代码事实。
 Mainline 提供缺失的第三层：**工程意图**。
 
-> Mainline 让 agent 在读代码前先理解历史意图。
+避免 AI agent 悄悄推翻昨天的决策、重复已经失败的方案、漏掉 reviewer
+关心的约束，或踩到队友正在推进的工作。
 
-阻止你的 AI agent 在不知情的情况下推翻你昨天的决策、重复一个已被放弃
-的方案，或踩到队友正在进行的工作。Mainline 把每一次 AI 改动的 *why*
-（decisions / risks / anti-patterns）记录下来，并在下一个 agent（或人）
-需要的那一刻把它呈现出来。
+Mainline 记录每次工程变更为什么发生：decisions、risks、anti-patterns、
+references 和 lifecycle，并在下一个 agent 或人类需要时把这些记录重新呈现出来。
+
+## Mainline 能带来什么
+
+Mainline 不只是 AI 工作日志。它是贯穿工程协作流程的 intent memory layer：
+
+1. **Agent 开工前记忆**
+   Agent 在改代码前读取历史 decisions、risks、anti-patterns、abandoned approaches 和 superseded decisions。
+
+2. **Intent 治理**
+   团队可以看到重要变更是否有 intent coverage，sealed intent 质量是否足够，高风险变更是否缺少约束或理由。
+
+3. **人类 review 意图**
+   Reviewer 在看 diff 前先看 why、decisions、risks 和 constraints——把 review 从"猜作者意图"变成"验证实现是否符合意图"。
+
+4. **长期决策记忆**
+   未来维护者和新人可以理解文件为什么变成这样，哪些方案试过又放弃，哪些决策仍然有效。
+
+5. **意图感知协作**
+   团队可以 sync intent logs，看到 proposed / in-flight work，更早发现 overlap 和 conflict，避免在 PR 阶段才发现互相踩踏。
 
 ## 谁运行什么？
 
