@@ -269,18 +269,36 @@ retry later:
 mainline publish --intent <intent_id> --json
 ```
 
-## Push And PR Workflow
+## Publishing, Pushes, And PRs
 
-Before pushing, ensure the intent is proposed or publishable:
+Mainline does not require a Git push, a pull request, or GitHub. Preserve the
+repository's existing review and release workflow unless the user explicitly
+asks you to change it.
+
+Before any remote branch push or PR creation that the user requested, ensure
+the intent is proposed or publishable:
 
 ```bash
 mainline status --json
 mainline publish --intent <intent_id> --json
 ```
 
-Then push the Git branch through the normal repository workflow. Humans merge
-PRs through the GitHub UI unless the user explicitly asks for a non-PR merge
-path.
+If the user's workflow opens or updates a PR, generate the PR body from the
+sealed Mainline intent:
+
+```bash
+mainline pr-description --intent <intent_id> > .ml-cache/pr-description.md
+```
+
+Use that generated markdown as the PR body. Do not hand-write a replacement PR
+description when a sealed intent exists, and do not rely on a generic GitHub
+publish helper's default body. The generated body includes the
+`mainline:pr-description` marker; the PR intent-comment workflow uses that
+marker to avoid creating a duplicate sticky comment.
+
+If the user did not ask to push or open a PR, stop after sealing/publishing the
+Mainline intent and report the local result. Do not introduce a remote workflow
+just because Mainline metadata is ready.
 
 Do not run these unless the user explicitly asks:
 

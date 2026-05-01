@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 13 -->
+<!-- mainline-agents-md-version: 14 -->
 
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the
@@ -302,6 +302,25 @@ the next state in a new turn.
    bad seal still goes through — but a low-quality seal pollutes
    future `mainline context` results, which is the whole loop this
    workflow exists to keep healthy.
+
+### If your workflow opens or updates a PR
+
+Mainline does not require a Git push, a pull request, or GitHub.
+Preserve the repository's existing review and release workflow unless
+the user explicitly asks you to change it.
+
+When the user does ask you to open or update a PR, generate the PR body
+from the sealed intent:
+
+```
+mainline pr-description --intent <intent_id> > .ml-cache/pr-description.md
+```
+
+Use that generated Markdown as the PR body. Do not hand-write a
+replacement PR description when a sealed intent exists, and do not let a
+generic GitHub publishing helper invent one. The generated body includes
+the `mainline:pr-description` marker; the PR intent-comment workflow
+uses that marker to avoid creating a duplicate sticky comment.
 
 ### When the user asks you to phase-2 check an intent
 
