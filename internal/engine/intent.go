@@ -455,5 +455,13 @@ func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error
 		return nil, fmt.Errorf("update draft: %w", err)
 	}
 
+	if err := s.refreshLocalViewIndexes(cfg); err != nil {
+		refreshWarning := fmt.Sprintf("Abandoned, but failed to refresh local read surfaces. Run `mainline sync` to refresh. (%v)", err)
+		if res.Warning != "" {
+			res.Warning += " "
+		}
+		res.Warning += refreshWarning
+	}
+
 	return res, nil
 }

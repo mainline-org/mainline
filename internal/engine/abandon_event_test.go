@@ -50,6 +50,23 @@ func TestAbandonProposedWritesActorLogEvent(t *testing.T) {
 		t.Fatalf("expected PriorStatus != drafting, got %s", res.PriorStatus)
 	}
 
+	proposals, err := svc.ListProposals()
+	if err != nil {
+		t.Fatalf("list proposals after abandon: %v", err)
+	}
+	for _, proposal := range proposals.Proposals {
+		if proposal.IntentID == start.IntentID {
+			t.Fatalf("abandoned intent still present in proposed index before sync")
+		}
+	}
+	status, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status after abandon: %v", err)
+	}
+	if status.ProposedCount != 0 {
+		t.Fatalf("expected proposed count to refresh before sync, got %d", status.ProposedCount)
+	}
+
 	// Sync rebuilds the view from the actor log — the abandon event
 	// must land the intent in StatusAbandoned. If the event was not
 	// written, view would still show proposed.
