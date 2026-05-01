@@ -95,8 +95,8 @@ var startCmd = &cobra.Command{
 			fmt.Println()
 			fmt.Println("Next:")
 			fmt.Println("  1. Edit code; run `mainline append \"<what changed>\"` after each meaningful turn.")
-			fmt.Println("  2. `git add … && git commit -m \"…\"` — Mainline does not commit for you.")
-			fmt.Println("  3. `mainline seal --prepare > seal.json` → fill the template → `mainline seal --submit < seal.json`.")
+			fmt.Println("  2. Commit using your repository's normal workflow; Mainline does not commit for you.")
+			fmt.Println("  3. `mainline seal --prepare > .ml-cache/seal.json` → fill the template → `mainline seal --submit < .ml-cache/seal.json`.")
 		}
 	},
 }

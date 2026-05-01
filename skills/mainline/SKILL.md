@@ -201,16 +201,13 @@ own changes.
 
 ## Commit Workflow
 
-Before committing, inspect the staged and unstaged diff and make sure only the
-intended files are staged. Commit with the repository's commit convention.
+Mainline does not prescribe how a repository stages changes, writes commits, or
+groups commits. Use the repository's existing Git workflow and commit
+conventions. If you are the one creating the commit, inspect the unstaged and
+staged diff first and include only the intended files.
 
-```bash
-git status --short
-git diff
-git diff --cached
-git add <files>
-git commit -m "<message>"
-```
+Before sealing, there must be a commit for Mainline to reference. Mainline does
+not create that commit for you.
 
 If the user asks for a commit or PR and the branch has no active intent, create
 or backfill one before committing unless the change is truly mechanical and the
@@ -218,7 +215,7 @@ repository policy marks it skipped.
 
 ## Seal Workflow
 
-After committing the code changes, prepare the seal:
+After the repository has a commit for this work, prepare the seal:
 
 ```bash
 mainline seal --prepare --json > .ml-cache/seal.json
@@ -333,10 +330,12 @@ If status or gaps reports uncovered commits:
 mainline gaps --json
 ```
 
-Choose the least destructive rescue path:
+Choose the least destructive rescue path. These are recovery options, not a
+replacement for the repository's normal Git workflow:
 
-- If the commit is local and unpushed, undo the commit with `git reset --soft
-  HEAD^`, start the proper intent, recommit, and seal.
+- If the commit is local and unpushed, you may undo the commit with `git reset
+  --soft HEAD^`, start the proper intent, recommit using the repository's
+  normal workflow, and seal.
 - If the commit is already pushed, backfill an intent with `mainline start
   "<why>" --commits <sha>`, append the post-hoc explanation, then seal.
 - If it is routine and deliberately outside Mainline, add a
