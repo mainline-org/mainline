@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 13 -->
+<!-- mainline-agents-md-version: 15 -->
 
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the
@@ -227,11 +227,12 @@ the next state in a new turn.
 
 ### When the task is complete
 
-1. Commit your code changes the normal way:
-
-   ```
-   git add <files> && git commit -m "<message>"
-   ```
+1. Commit your code changes using the repository's normal workflow.
+   Mainline needs a commit to reference before sealing, but it does
+   not prescribe staging commands, commit grouping, or commit message
+   style beyond the repository's own conventions. If you are the one
+   creating the commit, inspect the unstaged and staged diff first and
+   include only the intended files.
 
 2. Ask Mainline to prepare a seal package:
 
@@ -302,6 +303,25 @@ the next state in a new turn.
    bad seal still goes through — but a low-quality seal pollutes
    future `mainline context` results, which is the whole loop this
    workflow exists to keep healthy.
+
+### If your workflow opens or updates a PR
+
+Mainline does not require a Git push, a pull request, or GitHub.
+Preserve the repository's existing review and release workflow unless
+the user explicitly asks you to change it.
+
+When the user does ask you to open or update a PR, generate the PR body
+from the sealed intent:
+
+```
+mainline pr-description --intent <intent_id> > .ml-cache/pr-description.md
+```
+
+Use that generated Markdown as the PR body. Do not hand-write a
+replacement PR description when a sealed intent exists, and do not let a
+generic GitHub publishing helper invent one. The generated body includes
+the `mainline:pr-description` marker; the PR intent-comment workflow
+uses that marker to avoid creating a duplicate sticky comment.
 
 ### When the user asks you to phase-2 check an intent
 
@@ -410,7 +430,7 @@ If `mainline status` or `mainline gaps` flags an uncovered commit (one
 that landed on main with no intent), pick the **best** path you still
 can — ordered by reversibility, cheapest first:
 
-1. **Unpushed** — undo and redo via the proper flow:
+1. **Unpushed** — optionally undo and redo via the proper flow:
 
    ```
    git reset --soft HEAD^         # un-commit, keep changes
@@ -431,8 +451,8 @@ can — ordered by reversibility, cheapest first:
    The seal flow auto-pins the new intent to the listed commit on next
    `mainline sync`.
 
-3. **Routine** (chore / format / version bump) — mark as deliberately
-   skipped:
+3. **Routine** (chore / format / version bump) — optionally mark as
+   deliberately skipped:
 
    ```
    git commit --amend             # add `Mainline-Skip: <reason>` trailer
@@ -459,5 +479,6 @@ escape hatch is the explicit CLI flag `--allow-dirty`; even then, the
 sealed event permanently records `worktree_status` so reviewers see
 the audit trail.
 
-Always commit your code BEFORE `mainline seal --prepare`. Untracked
-files (planning docs, scratch notes) do **not** enter sealed evidence.
+Before `mainline seal --prepare`, make sure the intended code state is
+committed using the repository's normal workflow. Untracked files
+(planning docs, scratch notes) do **not** enter sealed evidence.

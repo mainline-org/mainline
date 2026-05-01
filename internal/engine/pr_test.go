@@ -8,7 +8,7 @@ import (
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
-func TestPRDescriptionIncludesMarkersAndAntiPatterns(t *testing.T) {
+func TestPRDescriptionIncludesMarkersAndOwnAntiPatterns(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 
@@ -21,6 +21,22 @@ func TestPRDescriptionIncludesMarkersAndAntiPatterns(t *testing.T) {
 		SchemaVersion: 1,
 		Intents: []domain.IntentView{
 			{
+				IntentID: "int_prior",
+				Status:   domain.StatusMerged,
+				Summary: &domain.IntentSummary{
+					Title: "Prior constraint",
+					What:  "Recorded historical context.",
+					Why:   "Future agents need the constraint in context retrieval.",
+					AntiPatterns: []domain.AntiPattern{
+						{What: "Do not render inherited constraints in PR output", Why: "Reviewer-facing PR output should not be flooded by historical context", Severity: "high"},
+					},
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"internal/engine/pr.go"},
+					Subsystems:   []string{"engine"},
+				},
+			},
+			{
 				IntentID: "int_prdesc",
 				Status:   domain.StatusProposed,
 				Summary: &domain.IntentSummary{
@@ -30,6 +46,10 @@ func TestPRDescriptionIncludesMarkersAndAntiPatterns(t *testing.T) {
 					AntiPatterns: []domain.AntiPattern{
 						{What: "Do not require PR trailers", Why: "Metadata lives in actor refs and git notes", Severity: "high"},
 					},
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"internal/engine/pr.go"},
+					Subsystems:   []string{"engine"},
 				},
 			},
 		},
@@ -50,6 +70,15 @@ func TestPRDescriptionIncludesMarkersAndAntiPatterns(t *testing.T) {
 	} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("description missing %q:\n%s", want, desc)
+		}
+	}
+	for _, unwanted := range []string{
+		"Inherited constraints considered",
+		"Do not render inherited constraints in PR output",
+		"Reviewer-facing PR output should not be flooded by historical context",
+	} {
+		if strings.Contains(desc, unwanted) {
+			t.Fatalf("description unexpectedly included inherited constraint %q:\n%s", unwanted, desc)
 		}
 	}
 }

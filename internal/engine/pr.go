@@ -197,35 +197,6 @@ func formatPRIntent(iv domain.IntentView, view *domain.MainlineView, level int) 
 		sb.WriteString("\n")
 	}
 
-	if iv.Fingerprint != nil {
-		inherited := domain.BuildInheritedConstraints(view,
-			iv.Fingerprint.FilesTouched, iv.Fingerprint.Subsystems, iv.IntentID)
-		if len(inherited) > 0 {
-			sb.WriteString(subheading + " Inherited constraints considered\n\n")
-			for _, ic := range inherited {
-				ack := domain.AcknowledgementOf(ic, summary)
-				sev := ic.Severity
-				if sev == "" {
-					sev = "unspecified"
-				}
-				line := fmt.Sprintf("- **[%s]** %s - _from %s_", sev, ic.What, ic.SourceIntent)
-				if ack != domain.AckNone {
-					line += fmt.Sprintf(" - acknowledged via %s", ack)
-				} else {
-					line += " - NOT yet acknowledged"
-				}
-				sb.WriteString(line + "\n")
-				if ic.Why != "" {
-					sb.WriteString(fmt.Sprintf("  - Why: %s\n", ic.Why))
-				}
-				if len(ic.MatchedBy) > 0 {
-					sb.WriteString(fmt.Sprintf("  - Matched by: %s\n", strings.Join(ic.MatchedBy, ", ")))
-				}
-			}
-			sb.WriteString("\n")
-		}
-	}
-
 	if len(iv.References) > 0 {
 		sb.WriteString(subheading + " References\n\n")
 		for _, ref := range iv.References {
