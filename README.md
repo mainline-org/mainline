@@ -135,6 +135,7 @@ manually and follows the same protocol — both paths work.
 - [Webhook subscriptions](#webhook-subscriptions)
 - [Configuration](#configuration)
 - [FAQ](#faq)
+- [Specs](#specs)
 - [Related tools and boundaries](#related-tools-and-boundaries)
 - [Storage layout](#storage-layout)
 - [Development](#development)
@@ -600,6 +601,18 @@ Use `mainline pin <intent> <commit>` to overwrite the pin manually. The note is 
 **Q: Can two intents land on the same main commit?**
 
 Yes. `CommitNote.intents` is a list. Mainline's `upsertCommitNote` merges new intent references into the existing note on a commit instead of overwriting.
+
+## Specs
+
+Mainline is working toward an open format for engineering intent records.
+These specs are **v0.1-draft** — experimental, subject to change, and
+seeking feedback from design partners.
+
+| Spec | What it defines |
+|---|---|
+| [Intent Record Spec v0.1](docs/specs/intent-record-v0.md) | The record format: fields, lifecycle, schema, constraints taxonomy, git storage model. |
+| [Agent Context Protocol v0.1](docs/specs/agent-context-protocol-v0.md) | How agents should consume intent records: retrieval modes, behavior requirements, pre-edit checklist. |
+| [Eval Fixture Spec v0.1](docs/specs/eval-fixtures-v0.md) | How to test whether intent-first agents actually avoid mistakes: fixture format, scoring methodology, catalog. |
 
 ## Related tools and boundaries
 
