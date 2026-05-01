@@ -1,10 +1,15 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
@@ -264,18 +269,37 @@ type PinResult struct {
 // and it is what GitHub's web UI does by default — the case Pin must
 // handle to be useful in practice.
 //
-// `subject` sits between commit_hash and goal_text to handle the
-// "rebase before merge" case: a feature branch with multiple commits
-// gets rebased on origin/main right before merge, every commit's tree
-// AND hash change, but the subject line stays — `git rebase` does not
-// edit messages by default. Without a subject strategy these intents
-// stay stuck in `proposed` forever (their original code_commit is
-// orphaned, no main commit has matching tree/hash, and the LLM-written
-// goal is not a verbatim substring of the conventional-commit subject
-// the human wrote). Subject is more specific than goal_text (exact
-// match on the first line of code_commit's message vs substring search
-// on the entire intent goal text), so it gets priority.
-var pinStrategies = []string{"tree_hash", "commit_hash", "subject", "goal_text"}
+// `merge_parent` checks whether the intent's code_commit is the
+// second parent of a merge commit on main. This catches --no-ff
+// merges where GitHub creates a merge commit and the branch tip
+// becomes the second parent.
+//
+// `subject` sits between merge_parent and branch_in_message to handle
+// the "rebase before merge" case: a feature branch with multiple
+// commits gets rebased on origin/main right before merge, every
+// commit's tree AND hash change, but the subject line stays —
+// `git rebase` does not edit messages by default.
+//
+// `branch_in_message` parses the canonical GitHub merge commit header
+// "Merge pull request #N from owner/branch" and compares the branch
+// name against the intent's GitBranch. This catches merge commits
+// even when tree_hash fails due to conflict resolution.
+//
+// `goal_text` is the broadest match: intent goal as substring of
+// any main commit message. Least precise, tried last among git-based
+// strategies.
+//
+// After the git-native cascade, ghPRPostPass runs as a separate step
+// for any remaining unmatched proposed intents, using `gh pr list` to
+// resolve branch→mergeCommit via the GitHub API.
+var pinStrategies = []string{
+	"tree_hash",
+	"commit_hash",
+	"merge_parent",
+	"subject",
+	"branch_in_message",
+	"goal_text",
+}
 
 // Pin scans every proposed intent in the materialised view and tries
 // to associate it with a main-branch commit using a cascade of rules
@@ -317,7 +341,7 @@ func (s *Service) Pin() (*PinResult, error) {
 		}
 	}
 
-	// Run all 5 batch git calls concurrently — each is an independent
+	// Run all 6 batch git calls concurrently — each is an independent
 	// subprocess with no shared state.
 	var (
 		treeOf         map[string]string
@@ -325,14 +349,16 @@ func (s *Service) Pin() (*PinResult, error) {
 		intentSubjects map[string]string
 		entryMessages  map[string]string
 		noteCache      map[string]string
+		commitParents  map[string][]string
 		wg             sync.WaitGroup
 	)
-	wg.Add(5)
+	wg.Add(6)
 	go func() { defer wg.Done(); treeOf, _ = s.Git.CommitTreeHashes(hashes) }()
 	go func() { defer wg.Done(); intentTreeOf, _ = s.Git.CommitTreeHashes(codeCommits) }()
 	go func() { defer wg.Done(); intentSubjects, _ = s.Git.CommitSubjects(codeCommits) }()
 	go func() { defer wg.Done(); entryMessages, _ = s.Git.FullCommitMessages(hashes) }()
 	go func() { defer wg.Done(); noteCache, _ = s.Git.NotesForCommits(hashes) }()
+	go func() { defer wg.Done(); commitParents, _ = s.Git.CommitParents(hashes) }()
 	wg.Wait()
 
 	if treeOf == nil {
@@ -350,6 +376,9 @@ func (s *Service) Pin() (*PinResult, error) {
 	if noteCache == nil {
 		noteCache = map[string]string{}
 	}
+	if commitParents == nil {
+		commitParents = map[string][]string{}
+	}
 
 	pinCtx := &pinContext{
 		treeOf:         treeOf,
@@ -357,6 +386,7 @@ func (s *Service) Pin() (*PinResult, error) {
 		intentSubjects: intentSubjects,
 		entryMessages:  entryMessages,
 		noteCache:      noteCache,
+		commitParents:  commitParents,
 	}
 
 	result := &PinResult{}
@@ -464,6 +494,70 @@ func (s *Service) Pin() (*PinResult, error) {
 			result.IntentIDs = append(result.IntentIDs, iv.IntentID)
 		}
 	}
+
+	// ── GitHub API post-pass ──
+	// For proposed intents that no git-native strategy could pin,
+	// try the GitHub API via `gh` to resolve branch→mergeCommit.
+	pinnedSet := make(map[string]bool, len(result.IntentIDs))
+	for _, id := range result.IntentIDs {
+		pinnedSet[id] = true
+	}
+	var unpinned []domain.IntentView
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusProposed {
+			continue
+		}
+		if pinnedSet[iv.IntentID] || len(iv.BackfillCommits) > 0 {
+			continue
+		}
+		if iv.GitBranch == "" {
+			continue
+		}
+		unpinned = append(unpinned, iv)
+	}
+	if len(unpinned) > 0 {
+		entrySet := make(map[string]bool, len(entries))
+		for _, e := range entries {
+			entrySet[e.Hash] = true
+		}
+		branchToMerge := ghMergedPRBranches(s.Git.RepoRoot)
+		for _, iv := range unpinned {
+			mergeCommit, ok := branchToMerge[iv.GitBranch]
+			if !ok {
+				continue
+			}
+			if !entrySet[mergeCommit] {
+				continue
+			}
+			if alreadyHasIntentCached(pinCtx.noteCache, mergeCommit, iv.IntentID) {
+				continue
+			}
+			hash, _ := core.CanonicalHash(iv)
+			note := domain.CommitNote{
+				SchemaVersion: 1,
+				Kind:          "mainline.commit_note",
+				Intents: []domain.IntentReference{
+					{IntentID: iv.IntentID, SealResultHash: "sha256:" + hash},
+				},
+				AddedAt:       core.Now(),
+				AddedBy:       identity.ActorID,
+				Via:           "pin_auto",
+				MatchStrategy: "gh_pr_merge",
+				ReconciledAt:  core.Now(),
+				ReconciledBy:  identity.ActorID,
+			}
+			if err := upsertCommitNote(s.Git, mergeCommit, note); err != nil {
+				continue
+			}
+			result.Links = append(result.Links, PinnedCommit{
+				IntentID:      iv.IntentID,
+				Commit:        mergeCommit,
+				MatchStrategy: "gh_pr_merge",
+			})
+			result.IntentIDs = append(result.IntentIDs, iv.IntentID)
+		}
+	}
+
 	result.Pinned = len(result.IntentIDs)
 
 	if result.Pinned > 0 && s.Git.HasRemote(s.remoteName()) {
@@ -476,11 +570,12 @@ func (s *Service) Pin() (*PinResult, error) {
 // pinContext holds pre-batched data for the pin sweep so findPinMatch
 // and alreadyHasIntent don't fork per-intent subprocess calls.
 type pinContext struct {
-	treeOf         map[string]string // main commit → tree hash
-	intentTreeOf   map[string]string // code_commit → tree hash
-	intentSubjects map[string]string // code_commit → subject line
-	entryMessages  map[string]string // main commit → full message
-	noteCache      map[string]string // main commit → note JSON (empty if no note)
+	treeOf         map[string]string   // main commit → tree hash
+	intentTreeOf   map[string]string   // code_commit → tree hash
+	intentSubjects map[string]string   // code_commit → subject line
+	entryMessages  map[string]string   // main commit → full message
+	noteCache      map[string]string   // main commit → note JSON (empty if no note)
+	commitParents  map[string][]string // main commit → parent hashes (merge commits have 2+)
 }
 
 // findPinMatchBatched is the batched version of findPinMatch that uses
@@ -510,6 +605,21 @@ func findPinMatchBatched(iv domain.IntentView, entries []gitops.LogEntry, ctx *p
 					return entry.Hash, strategy
 				}
 			}
+		case "merge_parent":
+			if iv.CodeCommit == "" {
+				continue
+			}
+			for _, entry := range entries {
+				parents := ctx.commitParents[entry.Hash]
+				if len(parents) < 2 {
+					continue
+				}
+				for _, p := range parents[1:] {
+					if p == iv.CodeCommit {
+						return entry.Hash, strategy
+					}
+				}
+			}
 		case "subject":
 			if iv.CodeCommit == "" {
 				continue
@@ -520,6 +630,17 @@ func findPinMatchBatched(iv domain.IntentView, entries []gitops.LogEntry, ctx *p
 			}
 			for _, entry := range entries {
 				if entry.Subject == intentSubject {
+					return entry.Hash, strategy
+				}
+			}
+		case "branch_in_message":
+			branch := iv.GitBranch
+			if branch == "" {
+				continue
+			}
+			for _, entry := range entries {
+				msg := ctx.entryMessages[entry.Hash]
+				if msg != "" && matchesMergeHeader(msg, branch) {
 					return entry.Hash, strategy
 				}
 			}
@@ -554,6 +675,66 @@ func alreadyHasIntentCached(noteCache map[string]string, commit, intentID string
 		}
 	}
 	return false
+}
+
+// mergeHeaderRE matches the canonical GitHub merge commit first line:
+// "Merge pull request #NNN from <owner>/<branch>"
+var mergeHeaderRE = regexp.MustCompile(`^Merge pull request #\d+ from [^/]+/(.+)$`)
+
+// matchesMergeHeader returns true if the commit message's first line
+// is a GitHub merge header whose branch name matches exactly.
+func matchesMergeHeader(fullMessage, branch string) bool {
+	firstLine := fullMessage
+	if idx := strings.IndexByte(fullMessage, '\n'); idx >= 0 {
+		firstLine = fullMessage[:idx]
+	}
+	m := mergeHeaderRE.FindStringSubmatch(strings.TrimSpace(firstLine))
+	return len(m) >= 2 && m[1] == branch
+}
+
+// ghMergedPRBranches returns a map of headRefName→mergeCommitOID for
+// recently merged PRs, using the `gh` CLI. Returns nil (not an error)
+// when `gh` is unavailable, unauthenticated, or times out — the caller
+// treats this as a graceful skip.
+func ghMergedPRBranches(repoRoot string) map[string]string {
+	ghPath, err := exec.LookPath("gh")
+	if err != nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, ghPath, "pr", "list",
+		"--state", "merged",
+		"--limit", "100",
+		"--json", "headRefName,mergeCommit",
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1")
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	var prs []struct {
+		HeadRefName string `json:"headRefName"`
+		MergeCommit struct {
+			OID string `json:"oid"`
+		} `json:"mergeCommit"`
+	}
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return nil
+	}
+
+	result := make(map[string]string, len(prs))
+	for _, pr := range prs {
+		if pr.HeadRefName != "" && pr.MergeCommit.OID != "" {
+			result[pr.HeadRefName] = pr.MergeCommit.OID
+		}
+	}
+	return result
 }
 
 // PinExplicit writes a pin_explicit note pinning intentID to

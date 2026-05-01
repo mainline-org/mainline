@@ -887,6 +887,39 @@ func (g *Git) NotesListEntries() ([]NoteEntry, error) {
 	return entries, nil
 }
 
+// CommitParents returns parent hashes keyed by commit hash. One
+// `log --no-walk` invocation regardless of N. Merge commits have 2+
+// parents; the second parent is the branch tip that was merged.
+func (g *Git) CommitParents(commits []string) (map[string][]string, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	// %H = commit, %P = space-separated parent hashes.
+	// Use tab to separate commit from parents so we can split reliably.
+	args := append([]string{"log", "--no-walk", "--format=%H\t%P"}, commits...)
+	out, err := g.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	parents := make(map[string][]string)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) < 1 {
+			continue
+		}
+		hash := parts[0]
+		if len(parts) == 2 && parts[1] != "" {
+			parents[hash] = strings.Fields(parts[1])
+		} else {
+			parents[hash] = nil // root commit
+		}
+	}
+	return parents, nil
+}
+
 // CommitTreeHashes returns tree hashes keyed by commit hash. One
 // `log --no-walk` invocation regardless of N; replaces per-commit
 // CommitTreeHash when callers know the full set up-front (e.g. the
