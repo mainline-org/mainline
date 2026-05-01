@@ -255,7 +255,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 			continue
 		}
 		retrStatus := classifyRetrievalStatus(iv, churn, now)
-		scored = append(scored, packRelevant(iv, score, reasons, retrStatus))
+		scored = append(scored, packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions))
 	}
 
 	// Explicit supersession links are lineage, not independent
@@ -547,7 +547,7 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 				}
 				reasons = append(reasons, "superseded by returned intent "+supersederID)
 				retrStatus := classifyRetrievalStatus(iv, churn, now)
-				added := packRelevant(iv, score, reasons, retrStatus)
+				added := packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions)
 				scored = append(scored, added)
 				byID[iv.IntentID] = added
 				changed = true
@@ -738,7 +738,7 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 	return score, reasons
 }
 
-func packRelevant(iv domain.IntentView, score float64, reasons []string, retrStatus string) ContextRelevant {
+func packRelevant(iv domain.IntentView, score float64, reasons []string, retrStatus string, riskResolutions map[string][]domain.RiskResolution) ContextRelevant {
 	r := ContextRelevant{
 		IntentID: iv.IntentID,
 		Title:    "",
@@ -756,7 +756,14 @@ func packRelevant(iv domain.IntentView, score float64, reasons []string, retrSta
 		r.Title = iv.Summary.Title
 		r.Summary = truncateForReason(iv.Summary.What, 240)
 		r.Decisions = topDecisions(iv.Summary.Decisions, contextDecisionLimit)
-		r.Risks = topItems(iv.Summary.Risks, contextRiskLimit)
+
+		// v0.4 risk lifecycle: filter out resolved/expired risks so
+		// retrieval only surfaces open risks. Expired is already
+		// handled by the retrieval status (superseded/abandoned), but
+		// explicit resolution should suppress the risk text too.
+		openRisks := filterOpenRisks(iv.IntentID, iv.Summary.Risks, riskResolutions, iv.Status)
+		r.Risks = topItems(openRisks, contextRiskLimit)
+
 		// AntiPatterns are NEVER truncated — Property 5. Copy them
 		// through verbatim so the agent always sees every hard
 		// constraint the seal recorded.
@@ -769,6 +776,27 @@ func packRelevant(iv domain.IntentView, score float64, reasons []string, retrSta
 	}
 	r.Guidance = guidanceFor(retrStatus, r.SupersededBy)
 	return r
+}
+
+// filterOpenRisks returns only risks that are still open (not resolved
+// and not from an expired source intent).
+func filterOpenRisks(intentID string, risks []string, resolutions map[string][]domain.RiskResolution, sourceStatus domain.IntentStatus) []string {
+	// If source intent is expired, all risks are moot — return none.
+	if riskExpiredStatuses[sourceStatus] {
+		return nil
+	}
+	if len(resolutions) == 0 {
+		return risks
+	}
+	var open []string
+	for i, text := range risks {
+		rid := RiskID(intentID, i)
+		if rr, ok := resolutions[rid]; ok && len(rr) > 0 {
+			continue // resolved
+		}
+		open = append(open, text)
+	}
+	return open
 }
 
 // guidanceFor returns the single-line advisory for a retrieval

@@ -240,6 +240,10 @@ func init() {
 	// not at the top of the help.
 	lintCmd.GroupID = groupSetup.ID
 
+	// Risks is a daily tool: agents and humans inspect open risks
+	// before editing, resolve them during seal, or triage manually.
+	risksCmd.GroupID = groupDaily.ID
+
 	// Eval is the agent-eval harness — meta-tooling, not part of the
 	// daily agent loop. Setup group keeps it visible without
 	// crowding the daily commands.
@@ -252,7 +256,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
-		hubCmd, lintCmd, evalCmd,
+		hubCmd, lintCmd, evalCmd, risksCmd,
 	)
 }
 

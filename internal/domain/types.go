@@ -216,6 +216,13 @@ type IntentSummary struct {
 	Risks        []string              `json:"risks"`
 	AntiPatterns []AntiPattern         `json:"anti_patterns,omitempty"`
 	Followups    []string              `json:"followups"`
+
+	// ReviewNotes are ephemeral observations for this PR's reviewer —
+	// scope explanations, test-run context, "reviewer should focus on X".
+	// They do NOT propagate to inherited constraints, hub heatmap, or
+	// context retrieval. After the PR merges they are effectively dead
+	// (still stored in the ledger, but no query surface touches them).
+	ReviewNotes []string `json:"review_notes,omitempty"`
 }
 
 // AntiPattern is a hard constraint future agents MUST avoid when
@@ -331,6 +338,39 @@ type SealResult struct {
 	Confidence        SealConfidence      `json:"confidence"`
 	UnsupportedClaims []string            `json:"unsupported_claims,omitempty"`
 	References        []Reference         `json:"references,omitempty"`
+
+	// ResolvesRisks declares that this intent's work resolves one or
+	// more previously-open risks. Each entry carries the risk ID
+	// (format: "int_<hex>#<index>") and an optional rationale.
+	// Processed atomically with the sealed event — no separate event.
+	ResolvesRisks []RiskResolutionInput `json:"resolves_risks,omitempty"`
+}
+
+// RiskResolutionInput is what agents submit in SealResult.ResolvesRisks
+// to declare that their work resolves a previously-open risk.
+type RiskResolutionInput struct {
+	RiskID    string `json:"risk_id"`              // "int_xxx#0"
+	Rationale string `json:"rationale,omitempty"`
+}
+
+// RiskResolution records that a risk was resolved — either as part
+// of a seal (IntentID set) or manually via CLI (ActorID from event).
+type RiskResolution struct {
+	IntentID  string `json:"intent_id,omitempty"`
+	Rationale string `json:"rationale,omitempty"`
+	At        string `json:"at,omitempty"`
+}
+
+// Risk is the materialised view of a risk entry. NOT stored directly —
+// derived at query time from IntentSummary.Risks + resolution events.
+// Risk IDs are deterministic: "{intent_id}#{array_index}".
+type Risk struct {
+	ID           string           `json:"id"`             // "int_xxx#0"
+	Text         string           `json:"text"`
+	Status       string           `json:"status"`         // "open" | "resolved" | "expired"
+	SourceIntent string           `json:"source_intent"`
+	OpenedAt     string           `json:"opened_at,omitempty"`
+	ResolvedBy   []RiskResolution `json:"resolved_by,omitempty"`
 }
 
 type SealConfidence struct {
@@ -391,6 +431,14 @@ type SealPreparePackage struct {
 	// editing target is clear. Optional in the schema so older
 	// readers still parse the package.
 	Starter *SealResult `json:"seal_result_starter,omitempty"`
+
+	// ApplicableOpenRisks lists open risks on files this intent touches.
+	// Populated at prepare time so the agent can decide whether to
+	// resolve any of them via SealResult.ResolvesRisks. May be stale
+	// if the view hasn't synced recently — ViewRebuiltAt carries the
+	// timestamp for the agent to gauge freshness.
+	ApplicableOpenRisks []Risk  `json:"applicable_open_risks,omitempty"`
+	ViewRebuiltAt       string  `json:"view_rebuilt_at,omitempty"`
 }
 
 // SealSnapshot captures the worktree state at prepare time. SealSubmit

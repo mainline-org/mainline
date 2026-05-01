@@ -134,9 +134,9 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 
 	if len(summary.Risks) == 0 && len(summary.AntiPatterns) == 0 {
 		out.Issues = append(out.Issues, LintIssue{
-			Code: "no_constraints", Severity: "warning",
+			Code: "no_constraints", Severity: "info",
 			Field:   "summary.risks",
-			Message: "no risks or anti_patterns recorded; if the change truly carries no future-agent constraints, this is fine — but most non-trivial work has at least one",
+			Message: "empty risks and anti_patterns — this is the normal default when there is no concrete hazard or hard constraint",
 		})
 	}
 
@@ -149,6 +149,34 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 				Code: "generic_risk", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
 				Message: fmt.Sprintf("risk is too generic (%q); a good risk names the affected subsystem, the specific failure mode, and ideally a mitigation", truncate(risk, 60)),
+			})
+		}
+		if isAcceptableTradeoff(risk) {
+			out.Issues = append(out.Issues, LintIssue{
+				Code: "risk_self_acceptable", Severity: "warning",
+				Field:   fmt.Sprintf("summary.risks[%d]", i),
+				Message: fmt.Sprintf("risk text says the trade-off is acceptable (%s); consider moving to decisions[].chose with rationale instead", truncate(risk, 60)),
+			})
+		}
+		if isFollowup(risk) {
+			out.Issues = append(out.Issues, LintIssue{
+				Code: "risk_is_followup", Severity: "warning",
+				Field:   fmt.Sprintf("summary.risks[%d]", i),
+				Message: fmt.Sprintf("risk text looks like a follow-up item (%s); consider moving to followups", truncate(risk, 60)),
+			})
+		}
+		if isReviewGuidance(risk) {
+			out.Issues = append(out.Issues, LintIssue{
+				Code: "risk_review_guidance", Severity: "warning",
+				Field:   fmt.Sprintf("summary.risks[%d]", i),
+				Message: fmt.Sprintf("risk text looks like review guidance (%s); consider moving to review_notes (ephemeral, not inherited)", truncate(risk, 60)),
+			})
+		}
+		if looksLikeAntiPattern(risk) {
+			out.Issues = append(out.Issues, LintIssue{
+				Code: "risk_looks_like_antipattern", Severity: "warning",
+				Field:   fmt.Sprintf("summary.risks[%d]", i),
+				Message: fmt.Sprintf("risk text contains rule-like language (%s); if this is a hard constraint, it belongs in anti_patterns", truncate(risk, 60)),
 			})
 		}
 	}
@@ -418,4 +446,86 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// --- v0.4 risk noise detection patterns ---
+
+// acceptableTradeoffPatterns match risk text that describes an accepted
+// trade-off rather than a live hazard. These belong in decisions.
+var acceptableTradeoffPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)可接受`),
+	regexp.MustCompile(`(?i)\bacceptable\b`),
+	regexp.MustCompile(`(?i)intended\s+trade-?off`),
+	regexp.MustCompile(`(?i)有意取舍`),
+	regexp.MustCompile(`(?i)\bno\s+concern\b`),
+	regexp.MustCompile(`(?i)trade-?off\s+accepted`),
+}
+
+func isAcceptableTradeoff(risk string) bool {
+	for _, re := range acceptableTradeoffPatterns {
+		if re.MatchString(risk) {
+			return true
+		}
+	}
+	return false
+}
+
+// followupPatterns match risk text that is actually a follow-up item.
+var followupPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)后续[可要如果]`),
+	regexp.MustCompile(`(?i)后续可加`),
+	regexp.MustCompile(`(?i)可能需要`),
+	regexp.MustCompile(`(?i)再[加做调]`),
+	regexp.MustCompile(`(?i)\bfollow-?up\b`),
+	regexp.MustCompile(`(?i)\blater\b.*\b(add|do|adjust|implement)\b`),
+	regexp.MustCompile(`(?i)\bfuture\s+enhancement\b`),
+	regexp.MustCompile(`(?i)需要后续`),
+}
+
+func isFollowup(risk string) bool {
+	for _, re := range followupPatterns {
+		if re.MatchString(risk) {
+			return true
+		}
+	}
+	return false
+}
+
+// reviewGuidancePatterns match risk text that is reviewer guidance.
+var reviewGuidancePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)^reviewers?\b`),
+	regexp.MustCompile(`(?i)^评审`),
+	regexp.MustCompile(`(?i)^本(分支|次)\s*(fingerprint|修改|改动)`),
+	regexp.MustCompile(`(?i)^review\s+focus\b`),
+}
+
+func isReviewGuidance(risk string) bool {
+	risk = strings.TrimSpace(risk)
+	for _, re := range reviewGuidancePatterns {
+		if re.MatchString(risk) {
+			return true
+		}
+	}
+	return false
+}
+
+// antiPatternPatterns match risk text with rule-like language that
+// suggests the item should be an anti_pattern, not a risk.
+var antiPatternPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\bmust\s+not\b`),
+	regexp.MustCompile(`(?i)\bdo\s+not\b`),
+	regexp.MustCompile(`(?i)\bnever\b`),
+	regexp.MustCompile(`(?i)\bdiscipline\b`),
+	regexp.MustCompile(`(?i)\banti-?pattern\b`),
+	regexp.MustCompile(`(?i)不[可能]以`),
+	regexp.MustCompile(`(?i)禁止`),
+}
+
+func looksLikeAntiPattern(risk string) bool {
+	for _, re := range antiPatternPatterns {
+		if re.MatchString(risk) {
+			return true
+		}
+	}
+	return false
 }
