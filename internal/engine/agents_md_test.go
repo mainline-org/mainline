@@ -171,6 +171,18 @@ func TestUpsertAgentsMD_IsIdempotent(t *testing.T) {
 	}
 }
 
+func TestAgentsMDTemplate_RequiresPRDescriptionMarkerPreflight(t *testing.T) {
+	if !strings.Contains(agentsMDTemplate, "`<!-- mainline:pr-description:start -->`") {
+		t.Fatal("agent guidance must tell PR publishers to verify the pr-description marker")
+	}
+	if !strings.Contains(agentsMDTemplate, "Pass that exact file content as") {
+		t.Fatal("agent guidance must require passing the generated pr-description body unchanged")
+	}
+	if !strings.Contains(agentsMDTemplate, "overwrite the body with `--fill`") {
+		t.Fatal("agent guidance must guard against generic PR helpers replacing the body")
+	}
+}
+
 // upsertAgentInstructionStubs writes the four IDE pointer files and
 // each respects the same upsert algorithm. After one run, all four
 // exist; after a second run, none changed.

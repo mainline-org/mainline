@@ -293,6 +293,12 @@ publish helper's default body. The generated body includes the
 `mainline:pr-description` marker; the PR intent-comment workflow uses that
 marker to avoid creating a duplicate sticky comment.
 
+Before calling any GitHub publishing helper, connector, or `gh pr create`
+fallback, inspect the generated file and verify that it still contains
+`<!-- mainline:pr-description:start -->`. Pass that exact file content as the
+PR body. Do not copy only the visible Markdown, regenerate a lookalike body, or
+let the publishing helper overwrite the body with `--fill` / default prose.
+
 If the user did not ask to push or open a PR, stop after sealing/publishing the
 Mainline intent and report the local result. Do not introduce a remote workflow
 just because Mainline metadata is ready.
