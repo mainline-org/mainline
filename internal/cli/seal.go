@@ -142,21 +142,16 @@ func renderSealLintHint(svc *engine.Service, intentID string) {
 }
 
 // renderSealNextSteps drops the "what do I do now?" breadcrumb a
-// first-time user needs after a successful submit. Concrete next
-// commands, no prose. We print these *after* conflicts/lint so the
-// last thing on screen is actionable. SealSubmitResult does not
-// carry the branch name, so we read it from git directly — at this
-// point the working tree is the same one the user just sealed
-// from, so CurrentBranch is the right answer.
+// first-time user needs after a successful submit. It must not
+// prescribe a Git hosting workflow: Mainline records intent, but it
+// does not require users to push, open PRs, or merge through GitHub.
 func renderSealNextSteps(svc *engine.Service, result *engine.SealSubmitResult) {
-	branch, _ := svc.Git.CurrentBranch()
-	if branch == "" {
-		branch = "<your branch>"
-	}
 	fmt.Println()
 	fmt.Println("Next:")
-	fmt.Printf("  · `git push -u origin %s` (if not already), then open a PR.\n", branch)
-	fmt.Println("  · The next `mainline sync` auto-pins the merge commit.")
+	fmt.Printf("  · If your workflow opens or updates a PR: `mainline pr-description --intent %s > .ml-cache/pr-description.md`\n", result.IntentID)
+	fmt.Println("    Use that file as the PR body so GitHub does not need a duplicate Mainline comment.")
+	fmt.Println("  · Otherwise continue with your normal review, release, or local workflow.")
+	fmt.Println("  · After the change lands, the next `mainline sync` auto-pins the merge commit.")
 	if !result.Published {
 		fmt.Println("  · Status: sealed_local — the actor log was not pushed (no remote, or sync skipped).")
 		fmt.Println("    Run `mainline sync` once a remote is configured to publish.")
@@ -211,10 +206,10 @@ func parseRefFlag(s string) domain.Reference {
 func discoverSessionRefs() []domain.Reference {
 	var refs []domain.Reference
 	envMap := map[string]string{
-		"CLAUDE_SESSION_ID":  "claude-code",
-		"CODEX_SESSION_ID":   "codex",
-		"CURSOR_SESSION_ID":  "cursor",
-		"COPILOT_SESSION_ID": "copilot",
+		"CLAUDE_SESSION_ID":    "claude-code",
+		"CODEX_SESSION_ID":     "codex",
+		"CURSOR_SESSION_ID":    "cursor",
+		"COPILOT_SESSION_ID":   "copilot",
 		"MAINLINE_SESSION_REF": "",
 	}
 	for envVar, client := range envMap {
