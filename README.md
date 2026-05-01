@@ -1,7 +1,8 @@
 # Mainline
 
 **Git-native intent memory for AI-assisted engineering.**
-It gives coding agents the historical *why* before they inspect the current *what*.
+
+Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
 > 中文版本: [README.zh.md](./README.zh.md)
 
@@ -10,19 +11,39 @@ AI coding agents are fast, but code alone cannot tell them:
 - which approaches were tried and abandoned,
 - which decisions superseded older implementations,
 - which conventions live outside source code,
-- which constraints reviewers expect future changes to preserve.
+- which constraints reviewers expect future changes to preserve,
+- which teammate is already working on a related intent.
 
 RAG can retrieve similar code.
 Grep can verify what code exists right now.
 Mainline gives agents the missing layer: **engineering intent**.
 
-> Mainline gives agents the why before the code.
-
 Stop your AI agent from silently undoing yesterday's decision, repeating an
-abandoned approach, or stepping on a teammate's in-flight work. Mainline
-records *why* each AI-driven change was made — decisions, risks, anti-patterns
-— and surfaces that record to the next agent (or human) at the moment they
-need it.
+abandoned approach, missing a reviewer constraint, or stepping on a teammate's
+in-flight work.
+
+Mainline records *why* each engineering change was made — decisions, risks,
+anti-patterns, references, and lifecycle — then surfaces that record to the
+next agent or human at the moment they need it.
+
+## What Mainline enables
+
+Mainline is not just a log of AI work. It is an intent memory layer for the whole engineering loop:
+
+1. **Agent pre-edit memory**
+   Agents read prior decisions, risks, anti-patterns, abandoned approaches, and superseded decisions before editing code.
+
+2. **Intent governance**
+   Teams can see whether important changes have intent coverage, whether sealed intents are high-quality, and whether risky changes are missing constraints or rationale.
+
+3. **Human review intent**
+   Reviewers read the why, decisions, risks, and constraints before reviewing the diff — turning review from "guess the author's intent" into "verify the implementation against the intent."
+
+4. **Long-term decision memory**
+   Future maintainers and new teammates can understand why files are the way they are, which approaches were tried and abandoned, and which decisions are still effective.
+
+5. **Intent-aware collaboration**
+   Teams can sync intent logs, see proposed or in-flight work, detect overlap and conflicts earlier, and avoid stepping on a teammate's work before PR review.
 
 ## Who runs what?
 
@@ -100,6 +121,7 @@ manually and follows the same protocol — both paths work.
 ## Table of contents
 
 - [Install](#install)
+- [What Mainline enables](#what-mainline-enables)
 - [Eval: does intent-first actually help?](#eval-does-intent-first-actually-help)
 - [Five-minute quick start](#five-minute-quick-start)
 - [How it fits your workflow](#how-it-fits-your-workflow)
