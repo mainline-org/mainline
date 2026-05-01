@@ -21,6 +21,22 @@ func TestPRDescriptionIncludesMarkersAndAntiPatterns(t *testing.T) {
 		SchemaVersion: 1,
 		Intents: []domain.IntentView{
 			{
+				IntentID: "int_source",
+				Status:   domain.StatusMerged,
+				Summary: &domain.IntentSummary{
+					Title: "Prior constraint",
+					What:  "Established a historical constraint.",
+					Why:   "Future context should still see it.",
+					AntiPatterns: []domain.AntiPattern{
+						{What: "Do not render inherited constraints in PR surfaces", Why: "Reviewer-facing output should stay focused", Severity: "high"},
+					},
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"internal/engine/pr.go"},
+					Subsystems:   []string{"engine"},
+				},
+			},
+			{
 				IntentID: "int_prdesc",
 				Status:   domain.StatusProposed,
 				Summary: &domain.IntentSummary{
@@ -30,6 +46,10 @@ func TestPRDescriptionIncludesMarkersAndAntiPatterns(t *testing.T) {
 					AntiPatterns: []domain.AntiPattern{
 						{What: "Do not require PR trailers", Why: "Metadata lives in actor refs and git notes", Severity: "high"},
 					},
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"internal/engine/pr.go"},
+					Subsystems:   []string{"engine"},
 				},
 			},
 		},
@@ -50,6 +70,85 @@ func TestPRDescriptionIncludesMarkersAndAntiPatterns(t *testing.T) {
 	} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("description missing %q:\n%s", want, desc)
+		}
+	}
+	for _, notWant := range []string{
+		"Inherited constraints considered",
+		"Do not render inherited constraints in PR surfaces",
+	} {
+		if strings.Contains(desc, notWant) {
+			t.Fatalf("description unexpectedly included %q:\n%s", notWant, desc)
+		}
+	}
+}
+
+func TestPRCommentOmitsInheritedConstraints(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		Intents: []domain.IntentView{
+			{
+				IntentID: "int_source",
+				Status:   domain.StatusMerged,
+				Summary: &domain.IntentSummary{
+					Title: "Prior constraint",
+					What:  "Established a historical constraint.",
+					Why:   "Future context should still see it.",
+					AntiPatterns: []domain.AntiPattern{
+						{What: "Do not render inherited constraints in PR comments", Why: "Reviewer-facing output should stay focused", Severity: "high"},
+					},
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"internal/engine/pr.go"},
+					Subsystems:   []string{"engine"},
+				},
+			},
+			{
+				IntentID:  "int_target",
+				Status:    domain.StatusProposed,
+				GitBranch: "feature/pr-comment",
+				Summary: &domain.IntentSummary{
+					Title: "Render PR intent",
+					What:  "Added deterministic PR comment rendering.",
+					Why:   "Reviewers need sealed intent context.",
+				},
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"internal/engine/pr.go"},
+					Subsystems:   []string{"engine"},
+				},
+			},
+		},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	comment, err := svc.PRComment("", "", "feature/pr-comment")
+	if err != nil {
+		t.Fatalf("PRComment: %v", err)
+	}
+	for _, want := range []string{
+		prCommentMarker,
+		"int_target",
+		"Render PR intent",
+	} {
+		if !strings.Contains(comment, want) {
+			t.Fatalf("comment missing %q:\n%s", want, comment)
+		}
+	}
+	for _, notWant := range []string{
+		"Inherited constraints considered",
+		"Do not render inherited constraints in PR comments",
+	} {
+		if strings.Contains(comment, notWant) {
+			t.Fatalf("comment unexpectedly included %q:\n%s", notWant, comment)
 		}
 	}
 }
