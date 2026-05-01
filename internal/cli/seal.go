@@ -155,7 +155,9 @@ func renderSealNextSteps(svc *engine.Service, result *engine.SealSubmitResult) {
 	}
 	fmt.Println()
 	fmt.Println("Next:")
-	fmt.Printf("  · `git push -u origin %s` (if not already), then open a PR.\n", branch)
+	fmt.Printf("  · `mainline pr-description --intent %s > .ml-cache/pr-description.md`\n", result.IntentID)
+	fmt.Printf("  · `git push -u origin %s` (if not already).\n", branch)
+	fmt.Println("  · Open or update the PR with `.ml-cache/pr-description.md` as the body.")
 	fmt.Println("  · The next `mainline sync` auto-pins the merge commit.")
 	if !result.Published {
 		fmt.Println("  · Status: sealed_local — the actor log was not pushed (no remote, or sync skipped).")
@@ -211,10 +213,10 @@ func parseRefFlag(s string) domain.Reference {
 func discoverSessionRefs() []domain.Reference {
 	var refs []domain.Reference
 	envMap := map[string]string{
-		"CLAUDE_SESSION_ID":  "claude-code",
-		"CODEX_SESSION_ID":   "codex",
-		"CURSOR_SESSION_ID":  "cursor",
-		"COPILOT_SESSION_ID": "copilot",
+		"CLAUDE_SESSION_ID":    "claude-code",
+		"CODEX_SESSION_ID":     "codex",
+		"CURSOR_SESSION_ID":    "cursor",
+		"COPILOT_SESSION_ID":   "copilot",
 		"MAINLINE_SESSION_REF": "",
 	}
 	for envVar, client := range envMap {

@@ -278,9 +278,31 @@ mainline status --json
 mainline publish --intent <intent_id> --json
 ```
 
-Then push the Git branch through the normal repository workflow. Humans merge
-PRs through the GitHub UI unless the user explicitly asks for a non-PR merge
-path.
+Before opening or updating a PR, generate the PR body from the sealed Mainline
+intent:
+
+```bash
+mainline pr-description --intent <intent_id> > .ml-cache/pr-description.md
+```
+
+Use that generated markdown as the PR body. Do not hand-write a replacement PR
+description when a sealed intent exists, and do not rely on a generic GitHub
+publish helper's default body. The generated body includes the
+`mainline:pr-description` marker; the PR intent-comment workflow uses that
+marker to avoid creating a duplicate sticky comment.
+
+Then push the Git branch through the normal repository workflow and create the
+PR using `.ml-cache/pr-description.md` as the body, or update the existing PR
+body from that file:
+
+```bash
+git push -u origin <branch>
+gh pr create --body-file .ml-cache/pr-description.md
+gh pr edit <number> --body-file .ml-cache/pr-description.md
+```
+
+Humans merge PRs through the GitHub UI unless the user explicitly asks for a
+non-PR merge path.
 
 Do not run these unless the user explicitly asks:
 
