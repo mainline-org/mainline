@@ -4,6 +4,9 @@
 
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
+Use it alone to give your future agents memory.
+Use it with a team to make intent visible before review and collaboration.
+
 > 中文版本: [README.zh.md](./README.zh.md)
 
 AI coding agents are fast, but code alone cannot tell them:
@@ -25,6 +28,40 @@ in-flight work.
 Mainline records *why* each engineering change was made — decisions, risks,
 anti-patterns, references, and lifecycle — then surfaces that record to the
 next agent or human at the moment they need it.
+
+## Who is Mainline for?
+
+### Solo builders
+
+When you work alone with AI agents, the problem is continuity.
+One agent may abandon an approach, accept a risk, or supersede a decision.
+The next agent will not know unless that intent is recorded.
+
+Mainline gives your future self and future agents a durable memory of *why the code is this way*.
+
+Mainline helps solo developers:
+
+- avoid repeating abandoned approaches,
+- preserve why a change was made,
+- remember which decisions replaced older implementations,
+- hand off context between agents, branches, and future sessions,
+- return to a codebase weeks later and understand why it looks this way.
+
+### Teams
+
+When a team works with AI agents, the problem is shared intent.
+Reviewers need to understand *why* before diff.
+Teammates need to know what is in flight.
+Future agents need to avoid old mistakes.
+
+Mainline turns individual AI-assisted changes into shared engineering memory:
+
+- review intent before reviewing diffs,
+- keep decisions, risks, and anti-patterns attached to the work,
+- see proposed or in-flight intent before PR conflicts appear,
+- preserve abandoned and superseded decisions for future agents,
+- track whether important changes have intent coverage,
+- onboard new teammates into the *why* behind the code.
 
 ## What Mainline enables
 
