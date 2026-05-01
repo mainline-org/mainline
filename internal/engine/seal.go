@@ -104,6 +104,17 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	// validator's fingerprint checks pass on the first patch.
 	pkg.Starter = buildSealStarter(draft.IntentID, changedFiles)
 
+	// v0.4 risk lifecycle: surface open risks on files this intent
+	// touches so the agent can resolve them via resolves_risks.
+	// Best-effort from the local view — may be stale if no recent sync.
+	if view, _ := s.Store.ReadMainlineView(); view != nil {
+		openRisks := materializeOpenRisks(view, changedFiles)
+		if len(openRisks) > 0 {
+			pkg.ApplicableOpenRisks = openRisks
+			pkg.ViewRebuiltAt = view.RebuiltAt
+		}
+	}
+
 	// Persist the snapshot so SealSubmit can validate the live repo
 	// against what prepare claimed. Overwrite-safe: re-running --prepare
 	// updates the snapshot (intentional — agent may iterate).
@@ -195,14 +206,15 @@ func buildSealStarter(intentID string, files []string) *domain.SealResult {
 	return &domain.SealResult{
 		IntentID: intentID,
 		Summary: domain.IntentSummary{
-			Title:     "",
-			What:      "",
-			Why:       "",
-			UserGoal:  "",
-			Decisions: []domain.Decision{},
-			Rejected:  []domain.RejectedAlternative{},
-			Risks:     []string{},
-			Followups: []string{},
+			Title:       "",
+			What:        "",
+			Why:         "",
+			UserGoal:    "",
+			Decisions:   []domain.Decision{},
+			Rejected:    []domain.RejectedAlternative{},
+			Risks:       []string{},
+			Followups:   []string{},
+			ReviewNotes: []string{},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:           subs,
@@ -227,10 +239,21 @@ diff. Patch in the agent-judgment fields (title, what, why,
 decisions, risks, anti_patterns, confidence) and submit.
 
 Required structure:
-1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups
+1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups, review_notes
 2. fingerprint: subsystems, files_touched, architectural_claims, behavioral_changes,
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)
+
+Field decision tree — for each future-facing observation, pick the right field:
+
+  "It will fail when X" / "Y subsystem will break"    → risks
+  "We chose to ship with limitation X (acceptable)"   → decisions[].chose with rationale
+  "Should be done later (telemetry / config / ...)"   → followups
+  "Reviewer should focus on Z" / scope explanation     → review_notes (ephemeral, not inherited)
+  "Future work in this area MUST NOT do X"            → anti_patterns
+  "We considered B but ruled it out"                  → rejected
+
+  If you can't pick: it's probably a decision (you made a judgment call).
 
 Risk discipline:
 - Put an item in summary.risks only when it names a concrete failure mode,
@@ -239,10 +262,16 @@ Risk discipline:
   that a future reviewer should audit.
 - Do not put verification notes, "tests not run", review guidance, cosmetic
   concerns, generic unknown-risk disclaimers, implementation summaries, scope
-  limitations, or ordinary follow-up work in risks.
-- If there is no concrete risk, use an empty risks array.
-- Put deferred work in followups, and put evidence of testing or review context
-  outside risks unless it directly describes one of the concrete hazards above.
+  limitations, accepted trade-offs, or ordinary follow-up work in risks.
+- If there is no concrete risk, use an empty risks array — that is the
+  normal default, not a suspicious omission.
+- Put deferred work in followups, accepted limitations in decisions, and
+  review context in review_notes.
+
+Risk resolution:
+- If applicable_open_risks lists risks on files you touched, and your
+  work resolves any of them, add a resolves_risks entry:
+    "resolves_risks": [{"risk_id": "int_xxx#0", "rationale": "shipped X"}]
 
 Return ONLY valid JSON matching the SealResult schema.`
 }
@@ -381,6 +410,10 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 
 		// References attached by the agent via SealResult.
 		References: sr.References,
+
+		// v0.4 risk lifecycle: risk resolutions are atomic with the
+		// seal event — no separate events, no partial-resolution risk.
+		ResolvesRisks: sr.ResolvesRisks,
 	}
 
 	if err := s.Store.AppendActorLogEvent(identity.ActorID, cfg.Mainline.ActorLogPrefix, event); err != nil {

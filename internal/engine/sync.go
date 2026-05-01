@@ -223,6 +223,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 
 	// Build intent views from events
 	intentMap := make(map[string]*domain.IntentView)
+	riskResolutions := make(map[string][]domain.RiskResolution)
 
 	for _, raw := range events {
 		var base domain.BaseEvent
@@ -277,6 +278,16 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				Publication: "published",
 			}
 			intentMap[evt.IntentID] = iv
+
+			// v0.4 risk lifecycle: collect risk resolutions embedded
+			// in sealed events (atomic with the seal, no separate event).
+			for _, rr := range evt.ResolvesRisks {
+				riskResolutions[rr.RiskID] = append(riskResolutions[rr.RiskID], domain.RiskResolution{
+					IntentID:  evt.IntentID,
+					Rationale: rr.Rationale,
+					At:        evt.SealedAt,
+				})
+			}
 
 		case domain.EventIntentAbandoned:
 			var evt domain.IntentAbandonedEvent
@@ -333,6 +344,18 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				NeedsHumanReview: evt.Overall.NeedsHumanReview,
 				AgainstIntents:   extractAgainstIntents(evt.Judgments, evt.CandidateIntent),
 			}
+
+		case domain.EventRiskResolved:
+			// v0.4 manual risk resolution via `mainline risks resolve`.
+			var evt domain.RiskResolvedEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			riskResolutions[evt.RiskID] = append(riskResolutions[evt.RiskID], domain.RiskResolution{
+				IntentID:  evt.ResolvedByIntent,
+				Rationale: evt.Rationale,
+				At:        evt.Timestamp,
+			})
 		}
 	}
 
@@ -341,6 +364,11 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 
 	for _, iv := range intentMap {
 		view.Intents = append(view.Intents, *iv)
+	}
+
+	// v0.4 risk lifecycle: persist risk resolutions on the view.
+	if len(riskResolutions) > 0 {
+		view.RiskResolutions = riskResolutions
 	}
 
 	if err := s.Store.WriteMainlineView(view); err != nil {

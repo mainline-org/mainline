@@ -97,7 +97,7 @@ func TestLintIntent_ShortChoseDoesNotRequireRationale(t *testing.T) {
 	}
 }
 
-func TestLintIntent_NoConstraintsIsWarning(t *testing.T) {
+func TestLintIntent_NoConstraintsIsInfo(t *testing.T) {
 	r := LintIntent("int_x", &domain.IntentSummary{
 		What:      "did real work",
 		Why:       "y",
@@ -105,13 +105,13 @@ func TestLintIntent_NoConstraintsIsWarning(t *testing.T) {
 		Risks:     nil, AntiPatterns: nil,
 	}, nonEmptyFP(), "", nil)
 	if !r.Pass {
-		t.Errorf("warning-only should pass: %+v", r)
+		t.Errorf("info-only should pass: %+v", r)
 	}
 	if !hasCode(r.Issues, "no_constraints") {
-		t.Errorf("missing no_constraints warning: %+v", r.Issues)
+		t.Errorf("missing no_constraints info: %+v", r.Issues)
 	}
-	if sevFor(r.Issues, "no_constraints") != "warning" {
-		t.Errorf("no_constraints should be warning, got %s", sevFor(r.Issues, "no_constraints"))
+	if sevFor(r.Issues, "no_constraints") != "info" {
+		t.Errorf("no_constraints should be info, got %s", sevFor(r.Issues, "no_constraints"))
 	}
 }
 
@@ -226,6 +226,120 @@ func TestLintIntent_AntiPatternEmptyWhatOrWhyErrors(t *testing.T) {
 	}
 	if !hasCode(r.Issues, "anti_pattern_no_why") {
 		t.Errorf("missing anti_pattern_no_why")
+	}
+}
+
+// --- v0.4 risk noise lint tests ---
+
+func TestLintIntent_RiskSelfAcceptable(t *testing.T) {
+	cases := []struct {
+		risk string
+		warn bool
+	}{
+		{"this is an acceptable trade-off for performance", true},
+		{"可接受的技术债务", true},
+		{"intended trade-off: less caching", true},
+		{"trade-off accepted for now", true},
+		{"有意取舍：简化实现", true},
+		{"no concern about this approach", true},
+		{"the batch endpoint may timeout under heavy load", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.risk, func(t *testing.T) {
+			r := LintIntent("int_x", &domain.IntentSummary{
+				What: "real work", Why: "y",
+				Decisions: nonEmptyDecisions(),
+				Risks:     []string{tc.risk},
+			}, nonEmptyFP(), "", nil)
+			got := hasCode(r.Issues, "risk_self_acceptable")
+			if got != tc.warn {
+				t.Errorf("risk=%q: expected risk_self_acceptable=%v, got %v", tc.risk, tc.warn, got)
+			}
+		})
+	}
+}
+
+func TestLintIntent_RiskIsFollowup(t *testing.T) {
+	cases := []struct {
+		risk string
+		warn bool
+	}{
+		{"后续可加 retry 逻辑", true},
+		{"可能需要加日志", true},
+		{"再加一层缓存", true},
+		{"follow-up: add rate limiting", true},
+		{"later add pagination to the list endpoint", true},
+		{"future enhancement for batch processing", true},
+		{"需要后续补充测试", true},
+		{"the endpoint returns 500 on malformed input", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.risk, func(t *testing.T) {
+			r := LintIntent("int_x", &domain.IntentSummary{
+				What: "real work", Why: "y",
+				Decisions: nonEmptyDecisions(),
+				Risks:     []string{tc.risk},
+			}, nonEmptyFP(), "", nil)
+			got := hasCode(r.Issues, "risk_is_followup")
+			if got != tc.warn {
+				t.Errorf("risk=%q: expected risk_is_followup=%v, got %v", tc.risk, tc.warn, got)
+			}
+		})
+	}
+}
+
+func TestLintIntent_RiskReviewGuidance(t *testing.T) {
+	cases := []struct {
+		risk string
+		warn bool
+	}{
+		{"Reviewer should check the migration SQL", true},
+		{"review focus: the auth middleware changes", true},
+		{"评审重点：数据库迁移", true},
+		{"本次修改的 fingerprint 需要确认", true},
+		{"本分支 fingerprint 覆盖了 OAuth 模块", true},
+		{"the session cookie path changed from / to /api", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.risk, func(t *testing.T) {
+			r := LintIntent("int_x", &domain.IntentSummary{
+				What: "real work", Why: "y",
+				Decisions: nonEmptyDecisions(),
+				Risks:     []string{tc.risk},
+			}, nonEmptyFP(), "", nil)
+			got := hasCode(r.Issues, "risk_review_guidance")
+			if got != tc.warn {
+				t.Errorf("risk=%q: expected risk_review_guidance=%v, got %v", tc.risk, tc.warn, got)
+			}
+		})
+	}
+}
+
+func TestLintIntent_RiskLooksLikeAntipattern(t *testing.T) {
+	cases := []struct {
+		risk string
+		warn bool
+	}{
+		{"callers must not remove the legacy middleware", true},
+		{"do not delete the session table", true},
+		{"never call sync during seal", true},
+		{"requires discipline to maintain ordering", true},
+		{"this is an anti-pattern if used without guards", true},
+		{"禁止删除旧的会话中间件", true},
+		{"the new batch endpoint bypasses auth", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.risk, func(t *testing.T) {
+			r := LintIntent("int_x", &domain.IntentSummary{
+				What: "real work", Why: "y",
+				Decisions: nonEmptyDecisions(),
+				Risks:     []string{tc.risk},
+			}, nonEmptyFP(), "", nil)
+			got := hasCode(r.Issues, "risk_looks_like_antipattern")
+			if got != tc.warn {
+				t.Errorf("risk=%q: expected risk_looks_like_antipattern=%v, got %v", tc.risk, tc.warn, got)
+			}
+		})
 	}
 }
 
