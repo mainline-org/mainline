@@ -112,9 +112,18 @@ type InitResult struct {
 	// Init created one. Empty when there was nothing new to commit
 	// (re-runs after the initial install).
 	CommitHash string `json:"commit_hash,omitempty"`
+
+	// AgentIntegrations reports the best-effort default skill + hook
+	// installation that CLI init requests. Engine callers that need
+	// the historical "state only" behavior call Init without options.
+	AgentIntegrations *AgentIntegrationInstallResult `json:"agent_integrations,omitempty"`
 }
 
 func (s *Service) Init(actorName string) (*InitResult, error) {
+	return s.InitWithOptions(actorName, InitOptions{})
+}
+
+func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResult, error) {
 	if s.Store.IsInitialized() {
 		if err := s.Store.EnsureDirs(); err != nil {
 			return nil, fmt.Errorf("create dirs: %w", err)
@@ -156,13 +165,17 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 
 		s.ensureLocalViews(cfg)
 
-		return &InitResult{
+		result := &InitResult{
 			RepoRoot:   s.Git.RepoRoot,
 			ActorID:    identity.ActorID,
 			ActorName:  identity.ActorName,
 			MainBranch: cfg.Mainline.MainBranch,
 			Created:    true,
-		}, nil
+		}
+		if opts.InstallAgentIntegrations {
+			result.AgentIntegrations = s.InstallDefaultAgentIntegrations()
+		}
+		return result, nil
 	}
 
 	// Create default team config
@@ -211,36 +224,31 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 		return nil, fmt.Errorf("update .gitignore: %w", err)
 	}
 
-	// Write AGENTS.md if it doesn't exist
-	s.writeAgentsMD()
-
-	// Write PR template.
-	s.writePRTemplate()
-
 	// Configure git notes + actor-log fetch/push so the dedicated
 	// mainline refs travel with normal `git push` / `git fetch`.
 	s.configureRemoteRefspecs(cfg.Mainline.ActorLogPrefix)
 	// Configure git log to show mainline notes by default
 	_ = s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
 
-	// Commit .mainline/config.toml plus everything else Init created
-	// (.gitignore, AGENTS.md, PR template) in one commit so a fresh-init
-	// repo lands with a clean worktree. Without this, the v0.3
-	// snapshot contract would refuse the very first seal because Init's
-	// own files would show as untracked.
+	var integrations *AgentIntegrationInstallResult
+	if opts.InstallAgentIntegrations {
+		cfg.Hooks = domain.DefaultHooksSection()
+		integrations = s.InstallDefaultAgentIntegrations()
+	}
+
+	// Commit .mainline/config.toml plus repo-local hook config that
+	// Init created in one commit so a fresh-init repo lands with a
+	// clean worktree. Skill installation is outside the repo and is
+	// reported separately.
 	if err := s.Store.WriteTeamConfig(&cfg); err != nil {
 		return nil, fmt.Errorf("write team config: %w", err)
 	}
 	addPaths := []string{
 		".mainline/config.toml",
 		".gitignore",
-		"AGENTS.md",
-		"CLAUDE.md",
-		".cursor/rules/mainline.md",
-		".windsurfrules",
-		".github/PULL_REQUEST_TEMPLATE.md",
-		".github/copilot-instructions.md",
 	}
+	addPaths = append(addPaths, integrationRepoPaths(s.Git.RepoRoot, integrations)...)
+	addPaths = dedupeStrings(addPaths)
 	staged := []string{}
 	for _, p := range addPaths {
 		// Errors here are non-fatal: file may not exist or path may
@@ -264,13 +272,14 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 	s.ensureLocalViews(&cfg)
 
 	return &InitResult{
-		RepoRoot:    s.Git.RepoRoot,
-		ActorID:     actorID,
-		ActorName:   actorName,
-		MainBranch:  cfg.Mainline.MainBranch,
-		Created:     true,
-		FilesStaged: staged,
-		CommitHash:  commitSHA,
+		RepoRoot:          s.Git.RepoRoot,
+		ActorID:           actorID,
+		ActorName:         actorName,
+		MainBranch:        cfg.Mainline.MainBranch,
+		Created:           true,
+		FilesStaged:       staged,
+		CommitHash:        commitSHA,
+		AgentIntegrations: integrations,
 	}, nil
 }
 
@@ -339,16 +348,15 @@ type RewireResult struct {
 
 // Rewire re-applies the parts of `mainline init` that depend on the
 // remote being present and that init normally only does once: refspec
-// configuration, AGENTS.md, PR template, .gitignore. Identity, team
-// config, and committed .mainline/ files are NOT touched — Rewire is
-// safe to run repeatedly on an already-initialised repo.
+// configuration and .gitignore. Identity, team config, agent guidance,
+// and committed .mainline/ files are NOT touched — Rewire is safe to
+// run repeatedly on an already-initialised repo.
 //
 // Use cases:
 //   - User ran `mainline init` then later `git remote add origin ...`
 //     — refspecs were never written; Rewire fixes that.
-//   - Older AGENTS.md / PR template that init's stat-check skipped on
-//     the second call — Rewire force-rewrites them to the current
-//     template version.
+//   - .gitignore drift after older init runs — Rewire restores the
+//     Mainline cache ignore entry without touching repo guidance.
 func (s *Service) Rewire() (*RewireResult, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
@@ -370,23 +378,6 @@ func (s *Service) Rewire() (*RewireResult, error) {
 	if err := s.Git.EnsureGitignore([]string{".ml-cache/"}); err == nil {
 		r.GitignoreFixed = true
 	}
-
-	// AGENTS.md + IDE stubs use the section-aware upsert: only the
-	// `<!-- mainline:begin -->`..`<!-- mainline:end -->` block is
-	// touched, surrounding user content is preserved. Pre-v0.3
-	// AGENTS.md files (no markers, just `## Mainline` heading) get
-	// migrated in place to the marker-wrapped form.
-	if changed, err := upsertAgentsMD(s.Git.RepoRoot); err == nil {
-		r.AGENTSWritten = changed
-	}
-	if stubs, err := upsertAgentInstructionStubs(s.Git.RepoRoot); err == nil {
-		r.IDEStubsWritten = stubs
-	}
-
-	// PR template: create when missing, or migrate the old
-	// Mainline-managed trailer template to the git-notes protocol.
-	// Custom templates without legacy Mainline markers are preserved.
-	r.PRTplWritten = s.writePRTemplate()
 
 	return r, nil
 }
@@ -421,7 +412,6 @@ func (s *Service) writeAgentsMD() {
 	// Failures are surfaced via doctor — Init does not abort just
 	// because the AGENTS.md template could not be written.
 	_, _ = upsertAgentsMD(s.Git.RepoRoot)
-	_, _ = upsertAgentInstructionStubs(s.Git.RepoRoot)
 }
 
 const currentPRTemplate = `## Summary
@@ -843,8 +833,6 @@ func buildStatusSuggestions(r *StatusResult) []string {
 	}
 	if g := r.AgentsGuidance; g != nil {
 		switch g.State {
-		case AgentsBlockStateNotInstalled:
-			out = append(out, "mainline agents install   # install agent guidance into AGENTS.md")
 		case AgentsBlockStateUpdateAvailable:
 			out = append(out, "mainline agents diff   # see what changed; then `mainline agents update`")
 		case AgentsBlockStateLocallyModified:

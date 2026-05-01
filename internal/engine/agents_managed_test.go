@@ -132,9 +132,6 @@ func TestAgentsCheck_TopLevelStateForFreshRepo(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 
-	// Init writes AGENTS.md via the legacy upsert (old markers); the
-	// new check command must classify it as Legacy and propose
-	// migration via update.
 	res, err := svc.AgentsCheck()
 	if err != nil {
 		t.Fatalf("check: %v", err)
@@ -148,8 +145,8 @@ func TestAgentsCheck_TopLevelStateForFreshRepo(t *testing.T) {
 			agentsState = f.State
 		}
 	}
-	if agentsState != AgentsBlockStateLegacy && agentsState != AgentsBlockStateInSync {
-		t.Fatalf("post-init AGENTS.md should be legacy or in_sync, got %s", agentsState)
+	if agentsState != AgentsBlockStateNotInstalled {
+		t.Fatalf("post-init AGENTS.md should be optional and not installed, got %s", agentsState)
 	}
 }
 
@@ -159,25 +156,10 @@ func TestAgentsUpdate_MigratesLegacyToModernMarkers(t *testing.T) {
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	// Fresh init produces legacy markers (begin/end without
-	// version=N). Update must migrate to the modern marker form
-	// while keeping any user content above/below intact.
-	preCheck, _ := svc.AgentsCheck()
-	hadLegacy := false
-	for _, f := range preCheck.Files {
-		if f.Path == "AGENTS.md" && f.State == AgentsBlockStateLegacy {
-			hadLegacy = true
-		}
-	}
-	if !hadLegacy {
-		t.Skipf("init did not produce legacy state; nothing to migrate")
-	}
-
-	// Add user content above the block to guard preservation.
+	// Seed a legacy Mainline block to guard the explicit update path.
 	agentsPath := filepath.Join(dir, "AGENTS.md")
-	raw, _ := os.ReadFile(agentsPath)
-	withHeader := "# My team\n\nWe ship things.\n\n" + string(raw)
-	os.WriteFile(agentsPath, []byte(withHeader), 0o644)
+	legacy := "# My team\n\nWe ship things.\n\n<!-- mainline:begin -->\n## Mainline (old)\n<!-- mainline:end -->\n"
+	os.WriteFile(agentsPath, []byte(legacy), 0o644)
 
 	res, err := svc.AgentsUpdate(AgentsUpdateOptions{})
 	if err != nil {
@@ -208,8 +190,7 @@ func TestAgentsUpdate_RefusesToOverwriteLocalEdits(t *testing.T) {
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	// Migrate legacy → modern, then tamper with the body.
-	svc.AgentsUpdate(AgentsUpdateOptions{})
+	svc.AgentsInstall()
 	agentsPath := filepath.Join(dir, "AGENTS.md")
 	raw, _ := os.ReadFile(agentsPath)
 	tampered := strings.Replace(string(raw), "Mainline", "MainlineHACKED", 1)
@@ -245,7 +226,7 @@ func TestAgentsUpdate_TheirsOverwritesLocalEdits(t *testing.T) {
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	svc.AgentsUpdate(AgentsUpdateOptions{})
+	svc.AgentsInstall()
 	agentsPath := filepath.Join(dir, "AGENTS.md")
 	raw, _ := os.ReadFile(agentsPath)
 	tampered := strings.Replace(string(raw), "Mainline", "MainlineHACKED", 1)
@@ -278,7 +259,7 @@ func TestAgentsDiff_EmptyWhenInSync(t *testing.T) {
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
-	svc.AgentsUpdate(AgentsUpdateOptions{}) // migrate to modern + in_sync
+	svc.AgentsInstall()
 
 	res, err := svc.AgentsDiff()
 	if err != nil {
@@ -305,9 +286,10 @@ func TestAgentsGuidanceState_FlowsToStatus(t *testing.T) {
 	if res.AgentsGuidance.CurrentVersion <= 0 {
 		t.Fatalf("CurrentVersion should be set, got %d", res.AgentsGuidance.CurrentVersion)
 	}
-	// Pre-update state is Legacy (init writes old markers); after
-	// agents update, status should report in_sync.
-	svc.AgentsUpdate(AgentsUpdateOptions{})
+	if res.AgentsGuidance.State != AgentsBlockStateNotInstalled {
+		t.Fatalf("fresh init should leave optional guidance not installed, got %s", res.AgentsGuidance.State)
+	}
+	svc.AgentsInstall()
 	res2, _ := svc.Status()
 	if res2.AgentsGuidance.State != AgentsBlockStateInSync {
 		t.Fatalf("after agents update, status guidance should be in_sync, got %s",

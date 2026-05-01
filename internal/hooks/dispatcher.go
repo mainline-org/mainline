@@ -19,7 +19,7 @@ import (
 // can do is execute mechanical, deterministic operations and surface
 // state for the agent to read. Everything else (start, append, seal
 // prepare/submit, check) is an agent decision and stays a manual CLI
-// call described in AGENTS.md.
+// call described in the Mainline skill workflow.
 type EngineFacade interface {
 	// Sync runs the team-state refresh. Used by SessionStart.
 	Sync() (any, error)
@@ -27,8 +27,8 @@ type EngineFacade interface {
 	// Status returns a marshallable status report. Used at SessionStart
 	// to give the agent a snapshot of in-flight work (active draft,
 	// proposed intents, synced head) so it can decide on its own
-	// whether to start / append / seal — exactly as AGENTS.md
-	// instructs it to in the no-hook flow.
+	// whether to start / append / seal — exactly as the Mainline
+	// skill instructs it to in the no-hook flow.
 	Status() (any, error)
 
 	// ListProposals returns a marshallable, read-only snapshot of
@@ -188,13 +188,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev *Event) error {
 	case TurnStart:
 		// Webhook-only signal. Hooks cannot judge whether the
 		// prompt is a goal or a procedural ask — that's the
-		// agent's job per AGENTS.md.
+		// agent's job per the Mainline skill workflow.
 		d.Bus.Emit(d.envelope("turn_started", ev, nil))
 		return nil
 	case TurnEnd, SubagentEnd:
 		// Webhook-only signal. Hooks cannot judge whether the
 		// turn warrants a mainline append — that's the agent's
-		// job per AGENTS.md ("after each meaningful logical
+		// job per the Mainline skill ("after each meaningful logical
 		// change … record one turn").
 		d.Bus.Emit(d.envelope("turn_ended", ev, nil))
 		return nil
@@ -299,19 +299,19 @@ type stalenessHinter interface {
 //   - the deterministic state snapshot the agent would otherwise have
 //     to fetch by running `mainline status --json`;
 //   - the deterministic sync summary (or sync error);
-//   - a scenario hint that points the agent at AGENTS.md and the
-//     two CLI commands it should run before deciding (`mainline log`
-//     and `mainline show`).
+//   - a scenario hint that points the agent at the Mainline skill and
+//     the task-specific CLI commands it may still need.
 //
 // It does NOT make decisions for the agent: no goal text, no append
 // description, no fingerprint. Those are LLM jobs and the markdown
 // stays neutral so the agent's reasoning is the source of truth.
 func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) string {
 	var b strings.Builder
+	b.WriteString("<!-- mainline:context source=hook protocol_version=13 context_id=session-start -->\n")
 	b.WriteString("# Mainline session-start context\n\n")
 	b.WriteString("Hooks ran `mainline sync` and `mainline status` for you. ")
-	b.WriteString("Use this snapshot to orient yourself. The full agent contract is in AGENTS.md ")
-	b.WriteString("— hooks do not replace any step there; they only save you the two CLI calls below.\n\n")
+	b.WriteString("Use this dynamic snapshot to orient yourself. The full agent workflow lives in the Mainline skill. ")
+	b.WriteString("If that skill is active, treat this `mainline:context` block as already loaded; do not duplicate generic bootstrap context just because the skill also triggered.\n\n")
 
 	// Stale-binary warning sits at the top because if the running
 	// hook process is on stale code, every other section in this
@@ -357,12 +357,13 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 	}
 
 	b.WriteString("## what to do next\n\n")
-	b.WriteString("Follow AGENTS.md exactly — hooks change nothing about the workflow:\n\n")
-	b.WriteString("- Before non-trivial work, run `mainline log --json --limit 30` and `mainline show <intent_id> --json` for any prior intents that touch your area. Do this even when the prompt looks small; the cost is two CLI calls and the payoff is not duplicating someone else's just-finished work.\n")
+	b.WriteString("Follow the Mainline skill workflow — hooks only provide state and do not make semantic decisions:\n\n")
+	b.WriteString("- Before non-trivial work, run task-specific context commands such as `mainline context --current --json`, `mainline context --files <path>... --json`, or `mainline context --query \"<task summary>\" --json` when this snapshot is not enough.\n")
 	b.WriteString("- If `active_intent` above is empty and your turn is real work (not a one-off question or procedural ask), run `mainline start \"<goal>\"`. If it is non-empty, append against it instead.\n")
 	b.WriteString("- After each meaningful logical change, run `mainline append \"<what changed>\"`. The hooks DO NOT do this for you — only your judgment can decide what counts as a meaningful change.\n")
 	b.WriteString("- When the task is complete, commit code, then `mainline seal --prepare --json`, fill the SealResult (fingerprint generously), then `mainline seal --submit --json < seal.json`. If the response carries a `conflicts` array, surface it to the user verbatim.\n")
 	b.WriteString("- Re-run `mainline status` whenever you are about to make an architectural decision; sessionStart context is a one-shot snapshot, not a live view.\n")
+	b.WriteString("<!-- /mainline:context -->\n")
 	return b.String()
 }
 
@@ -374,9 +375,11 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 // work.
 func (d *Dispatcher) RenderTurnStartContext(status any, proposals any, statusErr error, proposalsErr error) string {
 	var b strings.Builder
+	b.WriteString("<!-- mainline:context source=hook protocol_version=13 context_id=turn-start -->\n")
 	b.WriteString("# Mainline per-prompt context\n\n")
 	b.WriteString("Hooks refreshed lightweight Mainline state before this prompt. ")
-	b.WriteString("Use it as a reminder; AGENTS.md remains the workflow authority.\n\n")
+	b.WriteString("Use it as a reminder; the Mainline skill remains the workflow authority. ")
+	b.WriteString("If a valid `mainline:context` block is already present, do not duplicate generic bootstrap context.\n\n")
 
 	b.WriteString("## status summary\n\n")
 	if statusErr != nil {
@@ -407,7 +410,8 @@ func (d *Dispatcher) RenderTurnStartContext(status any, proposals any, statusErr
 	b.WriteString("## reminder\n\n")
 	b.WriteString("- If this prompt is real work and there is no `active_intent`, decide whether to run `mainline start \"<goal>\"` before editing.\n")
 	b.WriteString("- If there is an `active_intent`, append only after a meaningful logical change; hooks still do not decide that for you.\n")
-	b.WriteString("- Before non-trivial changes, still run `mainline log --json --limit 30` and `mainline show <intent_id> --json` for relevant prior intents.\n")
+	b.WriteString("- Before non-trivial changes, still run task-specific Mainline context commands when this snapshot is not enough.\n")
+	b.WriteString("<!-- /mainline:context -->\n")
 	return b.String()
 }
 
