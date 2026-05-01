@@ -78,6 +78,7 @@ var autoSyncCommands = map[string]bool{
 	"digest":     true,
 	"hub export": true,
 	"hub open":   true,
+	"pr-comment": true,
 }
 
 var rootCmd = &cobra.Command{
@@ -218,6 +219,7 @@ func init() {
 	mergeCmd.GroupID = groupAdvanced.ID
 	publishCmd.GroupID = groupAdvanced.ID
 	prDescriptionCmd.GroupID = groupAdvanced.ID
+	prCommentCmd.GroupID = groupAdvanced.ID
 	threadCmd.GroupID = groupAdvanced.ID
 
 	// Hidden — debug utility, not in the user mental model.
@@ -246,7 +248,7 @@ func init() {
 	rootCmd.AddCommand(
 		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
-		threadCmd, prDescriptionCmd, pinCmd, contextCmd,
+		threadCmd, prDescriptionCmd, prCommentCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
