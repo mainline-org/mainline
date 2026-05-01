@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mainline-org/mainline/internal/engine"
 )
 
 // envActorName is the env-var fallback for --actor-name. Wired here
@@ -24,8 +26,8 @@ var initCmd = &cobra.Command{
 	Short: "Initialize mainline in current repository",
 	Long: `Initialise mainline in the current git repository: writes .mainline/
 config, generates an actor identity, configures notes / actor-log
-fetch+push refspecs on origin (if origin is configured), and writes
-AGENTS.md plus a PR template.
+fetch+push refspecs on origin (if origin is configured), then installs
+the default Mainline skill and repo-local hook integrations.
 
 If you ran 'mainline init' before adding your git remote, the refspec
 configuration step was skipped silently. Re-run with --rewire to fix
@@ -57,18 +59,6 @@ that without re-creating identity or team config.`,
 						fmt.Printf("  + %s\n", s)
 					}
 				}
-				if r.AGENTSWritten {
-					fmt.Println("AGENTS.md mainline section refreshed.")
-				}
-				if len(r.IDEStubsWritten) > 0 {
-					fmt.Printf("IDE pointer stubs refreshed: %d file(s)\n", len(r.IDEStubsWritten))
-					for _, p := range r.IDEStubsWritten {
-						fmt.Printf("  + %s\n", p)
-					}
-				}
-				if r.PRTplWritten {
-					fmt.Println("PR template re-written.")
-				}
 			}
 			return
 		}
@@ -86,7 +76,9 @@ that without re-creating identity or team config.`,
 			}
 		}
 
-		result, err := svc.Init(resolvedName)
+		result, err := svc.InitWithOptions(resolvedName, engine.InitOptions{
+			InstallAgentIntegrations: true,
+		})
 		if err != nil {
 			outputError(err)
 			return
@@ -125,6 +117,10 @@ that without re-creating identity or team config.`,
 				fmt.Println()
 				fmt.Println("(All Mainline-managed files were already tracked; no new commit.)")
 			}
+			if result.AgentIntegrations != nil {
+				fmt.Println()
+				renderInitAgentIntegrations(result.AgentIntegrations)
+			}
 			// Surface the default-actor-name fallback. Pre-this-fix
 			// the alpha walkthrough caught: a fresh user runs bare
 			// `mainline init` and silently becomes "default-agent"
@@ -152,5 +148,33 @@ that without re-creating identity or team config.`,
 
 func init() {
 	initCmd.Flags().StringVar(&initActorName, "actor-name", "", "name for this actor identity (or export "+envActorName+")")
-	initCmd.Flags().BoolVar(&initRewire, "rewire", false, "(re-)apply remote refspec config + AGENTS.md + PR template on an already-initialised repo")
+	initCmd.Flags().BoolVar(&initRewire, "rewire", false, "(re-)apply remote refspec config on an already-initialised repo")
+}
+
+func renderInitAgentIntegrations(r *engine.AgentIntegrationInstallResult) {
+	if r == nil {
+		return
+	}
+	fmt.Println("Agent integrations:")
+	if r.Skill.Installed {
+		fmt.Println("  ✓ skill: installed via `npx skills add mainline`")
+	} else if r.Skill.Skipped {
+		fmt.Printf("  · skill: skipped (%s)\n", r.Skill.Error)
+	} else if r.Skill.Error != "" {
+		fmt.Printf("  ✗ skill: %s\n", r.Skill.Error)
+	} else {
+		fmt.Println("  · skill: no change")
+	}
+	for _, h := range r.Hooks {
+		if h.Error != "" {
+			fmt.Printf("  ✗ hook %-12s %s\n", h.Agent+":", h.Error)
+			continue
+		}
+		state := "installed"
+		if h.Report.AlreadyInstalled {
+			state = "already up to date"
+		}
+		fmt.Printf("  ✓ hook %-12s %s (%d entries)\n", h.Agent+":", state, h.Report.HookCount)
+	}
+	fmt.Println("  `mainline agents install` remains an explicit repo-policy opt-in for AGENTS.md.")
 }

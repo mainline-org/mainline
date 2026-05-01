@@ -49,7 +49,8 @@ var hooksCmd = &cobra.Command{
 serve as the dispatch entry point invoked by those agents.
 
 Common flows:
-  mainline hooks install --agent cursor   # write .cursor/hooks.json
+  mainline hooks install                  # write repo-local hooks for supported agents
+  mainline hooks install --agent cursor   # write only .cursor/hooks.json
   mainline hooks status                   # which agents are wired
   mainline hooks disable                  # soft kill-switch
   mainline hooks uninstall --all          # remove every integration
@@ -144,7 +145,7 @@ var hooksInstallCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("Hooks are enabled. At sessionStart the dispatcher will run `mainline sync`")
 		fmt.Println("and inject a status snapshot as agent context. All other workflow steps")
-		fmt.Println("(start, append, seal --prepare/--submit, check) remain agent-driven per AGENTS.md.")
+		fmt.Println("(start, append, seal --prepare/--submit, check) remain agent-driven per the Mainline skill.")
 		fmt.Println("Run `mainline hooks disable` to pause without uninstalling.")
 		return nil
 	},
@@ -534,10 +535,11 @@ func selectAgents(name string, all bool) ([]hooks.Agent, error) {
 		return agents, nil
 	}
 	if name == "" {
-		// Default remains cursor for compatibility with the first
-		// shipped hook flow; new agents are selected explicitly or
-		// via --all.
-		name = "cursor"
+		agents := hooks.List()
+		if len(agents) == 0 {
+			return nil, fmt.Errorf("no agents registered")
+		}
+		return agents, nil
 	}
 	a, ok := hooks.Get(name)
 	if !ok {
@@ -596,7 +598,7 @@ func errString(err error) string {
 }
 
 func init() {
-	hooksInstallCmd.Flags().StringVar(&hooksInstallAgent, "agent", "", "agent to install (defaults to cursor)")
+	hooksInstallCmd.Flags().StringVar(&hooksInstallAgent, "agent", "", "agent to install (defaults to every supported agent)")
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallAll, "all", false, "install for every supported agent")
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallForce, "force", false, "rewrite mainline-managed entries even if unchanged")
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallLocalDev, "local-dev", false, "wrap with `go run .` instead of installed mainline")

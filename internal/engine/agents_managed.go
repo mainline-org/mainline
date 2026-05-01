@@ -92,22 +92,22 @@ type StatusAgentsGuidance struct {
 // Returned by inspectManagedBlock so callers can branch cleanly on
 // state without re-parsing the file.
 type AgentsManagedBlock struct {
-	Path             string
-	State            AgentsBlockState
-	InstalledVersion int
+	Path              string
+	State             AgentsBlockState
+	InstalledVersion  int
 	InstalledChecksum string
-	BodyBytes        string // empty unless State is one of the installed forms
-	OuterStart       int    // byte index of the start marker, -1 if absent
-	OuterEnd         int    // byte index just after the end marker, -1 if absent
-	FileBytes        string // entire file contents (for splice-replace operations)
+	BodyBytes         string // empty unless State is one of the installed forms
+	OuterStart        int    // byte index of the start marker, -1 if absent
+	OuterEnd          int    // byte index just after the end marker, -1 if absent
+	FileBytes         string // entire file contents (for splice-replace operations)
 }
 
 // AgentsCheckResult is the per-file rollup returned by
-// `mainline agents check`. One file per managed target (AGENTS.md +
-// the four IDE stubs).
+// `mainline agents check`. Mainline now manages only the lightweight
+// AGENTS.md repo-policy pointer; the full workflow lives in the skill.
 type AgentsCheckResult struct {
-	Files            []AgentsFileState `json:"files"`
-	CurrentVersion   int               `json:"current_version"`
+	Files          []AgentsFileState `json:"files"`
+	CurrentVersion int               `json:"current_version"`
 }
 
 // AgentsFileState is one row of AgentsCheckResult.
@@ -135,16 +135,16 @@ type AgentsDiffResult struct {
 
 // AgentsFileChange records one file's transition in install/update.
 type AgentsFileChange struct {
-	Path     string           `json:"path"`
-	From     AgentsBlockState `json:"from"`
-	To       AgentsBlockState `json:"to"`
-	Action   string           `json:"action"` // "installed" | "updated" | "migrated" | "skipped" | "refused"
-	Reason   string           `json:"reason,omitempty"`
+	Path   string           `json:"path"`
+	From   AgentsBlockState `json:"from"`
+	To     AgentsBlockState `json:"to"`
+	Action string           `json:"action"` // "installed" | "updated" | "migrated" | "skipped" | "refused"
+	Reason string           `json:"reason,omitempty"`
 }
 
 // AgentsFileDiff carries the old/new bodies for a single file.
 type AgentsFileDiff struct {
-	Path  string `json:"path"`
+	Path  string           `json:"path"`
 	State AgentsBlockState `json:"state"`
 	Old   string           `json:"old"`
 	New   string           `json:"new"`
@@ -161,26 +161,16 @@ type AgentsUpdateOptions struct {
 }
 
 // agentsManagedTargets is the canonical list of files this command
-// family manages. Same as the legacy upsertAgentInstructionStubs
-// targets plus AGENTS.md itself.
-//
-// Each gets its own managed block; the block content differs (full
-// guidance for AGENTS.md, short pointer stub for the IDE files) but
-// the install/check/update/diff flow is identical.
+// family manages. It is intentionally limited to AGENTS.md so explicit
+// repo policy does not spray client-specific prompt files.
 type agentsTarget struct {
-	relPath  string
-	body     string // embedded template body (no markers)
+	relPath string
+	body    string // embedded template body (no markers)
 }
 
 func (s *Service) agentsManagedTargets() []agentsTarget {
-	full := strings.TrimRight(agentsMDTemplate, "\n")
-	stub := strings.TrimRight(agentsStubTemplate, "\n")
 	return []agentsTarget{
-		{"AGENTS.md", full},
-		{"CLAUDE.md", stub},
-		{".cursor/rules/mainline.md", stub},
-		{".windsurfrules", stub},
-		{".github/copilot-instructions.md", stub},
+		{"AGENTS.md", strings.TrimRight(agentsLightTemplate(), "\n")},
 	}
 }
 
@@ -305,9 +295,7 @@ func (s *Service) AgentsDiff() (*AgentsDiffResult, error) {
 }
 
 // AgentsGuidanceState is the status-time rollup helper. Reports the
-// AGENTS.md state only — the four IDE stubs derive from the same
-// template and would just duplicate the signal in the daily-entry
-// view.
+// lightweight AGENTS.md repo-policy pointer state.
 func (s *Service) AgentsGuidanceState() *StatusAgentsGuidance {
 	current := EmbeddedAgentsMDVersion()
 	target := s.agentsManagedTargets()[0]
