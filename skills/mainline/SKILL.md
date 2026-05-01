@@ -13,6 +13,11 @@ Mainline records why AI-driven changes happen, connects those intents to code
 commits, and surfaces semantic conflicts before PR review. Treat it as part of
 the coding workflow, not as optional documentation.
 
+If the current session already contains a `mainline:context` block injected by
+Mainline hooks, treat that hook context as already loaded. Do not re-run generic
+bootstrap context commands just to duplicate it. Run task-specific context
+commands only when needed.
+
 ## Language Rule (load-bearing)
 
 Match the user's language in everything you write into Mainline:
@@ -86,11 +91,12 @@ After install, ensure the Go binary directory, commonly `~/go/bin`, is on
 PATH. Re-run `mainline status --json`.
 
 If the CLI exists but the repository is not initialized and the user asked to
-set up Mainline, initialize it:
+set up Mainline, initialize it. `mainline init` installs the default Mainline
+skill and repo-local hook integrations; it does not write AGENTS.md unless the
+user explicitly asks for repo-level policy:
 
 ```bash
 mainline init --actor-name "<name>"
-mainline doctor --setup
 ```
 
 Choose `<name>` from explicit user input, existing git identity, or a stable
@@ -98,18 +104,18 @@ local actor name. If initialization would modify shared repository guidance or
 Git refspecs and the user only asked for a narrow code change, ask before
 initializing.
 
-## Hooks Are Optional
+## Hooks
 
-Hooks are an enhancement, not the source of truth. They may provide session
-context automatically, but the agent must still run the semantic Mainline
-workflow itself.
+Hooks provide dynamic context and improve trigger rate, but they are not the
+source of truth. The skill remains the full workflow authority, and the agent
+must still make the semantic decisions itself.
 
-Use hooks only when the user asks for automation, setup, or better per-session
-context, or when repository policy already says hooks should be installed:
+`mainline init` installs hooks by default. Use these commands when the user asks
+to inspect, repair, or manually install hook integrations:
 
 ```bash
 mainline hooks status
-mainline hooks install <agent>
+mainline hooks install
 ```
 
 If hooks are not installed, continue with the command workflow below. Do not

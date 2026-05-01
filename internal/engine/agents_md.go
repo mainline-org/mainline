@@ -19,6 +19,15 @@ var agentsMDTemplate string
 //go:embed templates/agents-stub.md
 var agentsStubTemplate string
 
+func agentsLightTemplate() string {
+	return fmt.Sprintf(`## Mainline
+
+<!-- mainline-agents-md-version: %d -->
+
+This repository uses Mainline. Agents must use the Mainline skill workflow for non-trivial engineering work.
+`, EmbeddedAgentsMDVersion())
+}
+
 // Pre-v0.4 markers (`<!-- mainline:begin -->` / `<!-- mainline:end -->`)
 // and the very-old rc1..v0.2 `## Mainline` heading form are both
 // recognised by inspectManagedBlock for migration purposes. The new
@@ -35,8 +44,9 @@ var (
 )
 
 // EmbeddedAgentsMDVersion returns the version integer baked into the
-// binary's template. This is the "current" version — what `mainline
-// init --rewire` would write today.
+// binary's full workflow template. The lightweight AGENTS.md policy
+// pointer uses the same version so stale installed policy can be
+// detected after upgrades.
 //
 // Discipline: any meaningful body change to templates/agents-md.md
 // must bump the version marker. The embedded version is the contract
@@ -66,8 +76,8 @@ func LocalAgentsMDVersion(repoRoot string) (int, bool) {
 
 // AgentsMDOutdated reports whether the local AGENTS.md is older than
 // the embedded template. A missing file or a present-but-versionless
-// file both count as outdated — both should run through `mainline
-// init --rewire` to land on the current shape.
+// file both count as outdated for callers that are inspecting the
+// optional repo-policy surface.
 func AgentsMDOutdated(repoRoot string) bool {
 	local, present := LocalAgentsMDVersion(repoRoot)
 	if !present {
@@ -106,7 +116,7 @@ func parseAgentsMDVersion(text string) int {
 func upsertAgentsMD(repoRoot string) (changed bool, err error) {
 	return upsertSectionFile(
 		filepath.Join(repoRoot, "AGENTS.md"),
-		strings.TrimRight(agentsMDTemplate, "\n"),
+		strings.TrimRight(agentsLightTemplate(), "\n"),
 	)
 }
 
@@ -151,10 +161,11 @@ func upsertAgentInstructionStubs(repoRoot string) (written []string, err error) 
 	return written, nil
 }
 
-// upsertSectionFile is the file-IO layer shared by AGENTS.md and the
-// IDE stubs. Now delegates to writeManagedBlock so init / rewire
-// produce the modern versioned-marker form (with sha256 checksum)
-// from day one. The legacy-section migration paths handled here in
+// upsertSectionFile is the file-IO layer shared by the managed
+// AGENTS.md policy block and legacy stub helpers. It delegates to
+// writeManagedBlock so installs produce the modern versioned-marker
+// form (with sha256 checksum) from day one. The legacy-section
+// migration paths handled here in
 // rc1..rc7 — `<!-- mainline:begin -->` markers and the very-old
 // `## Mainline` heading — are preserved by writeManagedBlock's
 // inspect-and-splice logic.
@@ -189,4 +200,3 @@ func readBodyChecksum(path string) (string, bool) {
 	}
 	return bodyChecksum(blk.BodyBytes), true
 }
-

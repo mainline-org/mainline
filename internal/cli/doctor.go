@@ -20,8 +20,8 @@ var doctorCmd = &cobra.Command{
 git branches) and stale ones; --fix deletes orphans.
 
 --setup mode: runs install / wiring sanity checks — verifies the git
-remote refspec configuration, identity file, AGENTS.md, PR template,
-and .gitignore. Combined with --fix, missing remote refspec entries
+remote refspec configuration, identity file, and .gitignore.
+Combined with --fix, missing remote refspec entries
 are rewired in place. Use this as the first step when 'mainline sync'
 is not picking up team activity.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -93,8 +93,11 @@ func renderSetupReport(r *engine.DoctorSetupReport, fixed bool) {
 	}
 	fmt.Println("Setup check:")
 	check(r.IdentityOK, fmt.Sprintf("identity present (%s)", r.IdentityActorID))
-	check(r.AgentsMDOK, "AGENTS.md present at repo root")
-	check(r.PRTemplateOK, ".github/PULL_REQUEST_TEMPLATE.md present")
+	if r.AgentsMDOK {
+		fmt.Println("  ✓ optional AGENTS.md repo policy present")
+	} else {
+		fmt.Println("  · optional AGENTS.md repo policy not installed")
+	}
 	check(r.GitignoreOK, ".gitignore contains .ml-cache/")
 	check(r.NotesDisplayRefOK, "git config notes.displayRef points at mainline")
 	check(r.SSHMultiplexOK, "SSH ControlMaster configured (sync perf)")
@@ -137,5 +140,5 @@ func renderSetupReport(r *engine.DoctorSetupReport, fixed bool) {
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "delete orphan local draft files (default mode), or rewire refspecs (with --setup)")
 	doctorCmd.Flags().DurationVar(&doctorStaleAfter, "stale-after", 24*time.Hour, "mark drafting intents stale after this duration")
-	doctorCmd.Flags().BoolVar(&doctorSetup, "setup", false, "run install / wiring sanity checks (refspec, identity, AGENTS.md, PR template, .gitignore)")
+	doctorCmd.Flags().BoolVar(&doctorSetup, "setup", false, "run install / wiring sanity checks (refspec, identity, .gitignore)")
 }

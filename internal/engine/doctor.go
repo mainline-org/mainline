@@ -15,8 +15,7 @@ type DoctorOptions struct {
 	StaleAfter time.Duration
 	// Setup, when true, runs install / wiring sanity checks
 	// (remote refspec configuration, identity file present and
-	// readable, AGENTS.md present in repo root) instead of the
-	// drafts orphan scan. Combined with Fix=true, missing refspec
+	// readable) instead of the drafts orphan scan. Combined with Fix=true, missing refspec
 	// configuration is rewired in place — Setup never touches the
 	// identity file because that's a per-actor decision.
 	Setup bool
@@ -53,16 +52,14 @@ type DoctorSetupReport struct {
 	// AgentsBlockState reports the state of the Mainline-managed
 	// block inside AGENTS.md (independent of file presence).
 	// Values: not_installed | legacy | in_sync | update_available |
-	// locally_modified. Use `mainline agents check` for the full
-	// per-file report including the IDE stubs.
+	// locally_modified.
 	AgentsBlockState      string   `json:"agents_block_state,omitempty"`
 	AgentsBlockVersion    int      `json:"agents_block_version,omitempty"`
 	AgentsTemplateVersion int      `json:"agents_template_version,omitempty"`
-	PRTemplateOK          bool     `json:"pr_template_ok"`
 	GitignoreOK           bool     `json:"gitignore_ok"`
 	SSHMultiplexOK        bool     `json:"ssh_multiplex_ok"`
-	Fixed                 []string `json:"fixed,omitempty"`      // refspecs added by --fix
-	Issues                []string `json:"issues,omitempty"`     // blocking problems
+	Fixed                 []string `json:"fixed,omitempty"`       // refspecs added by --fix
+	Issues                []string `json:"issues,omitempty"`      // blocking problems
 	Suggestions           []string `json:"suggestions,omitempty"` // non-blocking perf tips
 }
 
@@ -182,18 +179,14 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 			"identity file missing — run 'mainline init --actor-name <name>'")
 	}
 
-	// AGENTS.md / PR template / .gitignore presence + managed-block
-	// state. The managed block is the Mainline-owned section; user
-	// content above/below the markers is preserved across updates.
+	// AGENTS.md is optional repo policy. Report its state for visibility,
+	// but do not fail setup when it is absent.
 	rep.AgentsMDOK = fileExists(filepath.Join(s.Git.RepoRoot, "AGENTS.md"))
 	if g := s.AgentsGuidanceState(); g != nil {
 		rep.AgentsBlockState = string(g.State)
 		rep.AgentsBlockVersion = g.InstalledVersion
 		rep.AgentsTemplateVersion = g.CurrentVersion
 		switch g.State {
-		case AgentsBlockStateNotInstalled:
-			rep.Issues = append(rep.Issues,
-				"AGENTS.md missing or has no Mainline agent guidance — run 'mainline agents install'")
 		case AgentsBlockStateLegacy:
 			rep.Issues = append(rep.Issues,
 				"AGENTS.md has legacy agent guidance (pre-v0.4 format) — run 'mainline agents update' to migrate")
@@ -205,13 +198,6 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 			rep.Issues = append(rep.Issues,
 				"AGENTS.md agent guidance has local edits — run 'mainline agents check' to review")
 		}
-	}
-	prTemplateExists, prTemplateLegacy := prTemplateState(s.Git.RepoRoot)
-	rep.PRTemplateOK = prTemplateExists && !prTemplateLegacy
-	if !prTemplateExists {
-		rep.Issues = append(rep.Issues, ".github/PULL_REQUEST_TEMPLATE.md missing — run 'mainline init --rewire'")
-	} else if prTemplateLegacy {
-		rep.Issues = append(rep.Issues, ".github/PULL_REQUEST_TEMPLATE.md uses deprecated Mainline trailers — run 'mainline init --rewire'")
 	}
 	rep.GitignoreOK = gitignoreContains(s.Git.RepoRoot, ".ml-cache/")
 	if !rep.GitignoreOK {
