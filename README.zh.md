@@ -4,6 +4,9 @@
 
 Mainline 让 coding agent 在理解当前代码之前，先理解历史上的 *why*。
 
+一个人用，它是未来自己和下一个 agent 的记忆。
+团队用，它让 review 和协作发生在共享 intent 之上。
+
 > English version: [README.md](./README.md)
 
 AI coding agent 写代码很快，但代码本身无法告诉它：
@@ -23,6 +26,40 @@ Mainline 提供缺失的第三层：**工程意图**。
 
 Mainline 记录每次工程变更为什么发生：decisions、risks、anti-patterns、
 references 和 lifecycle，并在下一个 agent 或人类需要时把这些记录重新呈现出来。
+
+## 谁适合使用 Mainline？
+
+### 个人开发者 / OPC
+
+一个人用 AI agent 开发时，最大问题是连续性。
+一个 agent 可能放弃过某个方案、接受过某个风险、替代过某个旧决策。
+下一个 agent 不会自动知道这些，除非 intent 被记录下来。
+
+Mainline 给未来的自己和未来的 agent 留下一份"为什么代码是这样"的长期记忆。
+
+Mainline 帮个人开发者：
+
+- 避免重复已经失败的方案；
+- 记录一次变更为什么发生；
+- 记住哪些旧实现已经被新决策替代；
+- 在多个 agent、分支、worktree、未来 session 之间交接上下文；
+- 隔几周回来时，仍然知道代码为什么变成这样。
+
+### 团队
+
+团队使用 AI agent 时，最大问题是共享意图。
+Reviewer 需要在看 diff 前理解 *why*。
+队友需要知道彼此正在推进什么。
+未来 agent 需要避免重复旧错误。
+
+Mainline 把单次 AI-assisted change 变成团队共享的工程记忆：
+
+- 在看 diff 前先 review intent；
+- 把 decisions、risks、anti-patterns 绑定到工程变更；
+- 在 PR 冲突出现前看到 proposed / in-flight intent；
+- 保留 abandoned / superseded decisions，避免未来 agent 重复旧错误；
+- 检查重要变更是否有 intent coverage；
+- 帮新人理解代码背后的历史 *why*。
 
 ## Mainline 能带来什么
 
@@ -221,6 +258,17 @@ Commit message 通常很短，只描述最终改动。PR description 是 review 
 **Q: Agent 什么时候应该用 Mainline？**
 
 在非平凡变更前使用：架构调整、重构、迁移、删除、auth/billing/permissions/data-model、跨文件行为变更、"能不能删这个？"、"以前试过这个方案吗？"。如果只是 typo 或格式调整，通常不需要 Mainline。
+
+## Specs
+
+Mainline 正在探索 engineering intent record 的开放格式。
+以下 spec 均为 **v0.1-draft** — 实验性、可能变动、欢迎 design partner 反馈。
+
+| Spec | 定义什么 |
+|---|---|
+| [Intent Record Spec v0.1](docs/specs/intent-record-v0.md) | 记录格式：字段、生命周期、schema、约束分类、git 存储模型。 |
+| [Agent Context Protocol v0.1](docs/specs/agent-context-protocol-v0.md) | Agent 如何消费 intent record：检索模式、行为要求、pre-edit checklist。 |
+| [Eval Fixture Spec v0.1](docs/specs/eval-fixtures-v0.md) | 如何测试 intent-first agent 是否真的少犯错：fixture 格式、评分方法论、catalog。 |
 
 ## Related tools and boundaries
 
