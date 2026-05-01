@@ -688,3 +688,12 @@ func (s *Service) rebuildProposedIndex(view *domain.MainlineView) *domain.Propos
 	}
 	return idx
 }
+
+func (s *Service) refreshLocalViewIndexes(cfg *domain.TeamConfig) error {
+	view, err := s.rebuildView(cfg)
+	if err != nil {
+		return err
+	}
+	idx := s.rebuildProposedIndex(view)
+	return s.Store.WriteProposedIndex(idx)
+}
