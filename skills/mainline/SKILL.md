@@ -201,16 +201,13 @@ own changes.
 
 ## Commit Workflow
 
-Before committing, inspect the staged and unstaged diff and make sure only the
-intended files are staged. Commit with the repository's commit convention.
+Mainline does not prescribe how a repository stages changes, writes commits, or
+groups commits. Use the repository's existing Git workflow and commit
+conventions. If you are the one creating the commit, inspect the unstaged and
+staged diff first and include only the intended files.
 
-```bash
-git status --short
-git diff
-git diff --cached
-git add <files>
-git commit -m "<message>"
-```
+Before sealing, there must be a commit for Mainline to reference. Mainline does
+not create that commit for you.
 
 If the user asks for a commit or PR and the branch has no active intent, create
 or backfill one before committing unless the change is truly mechanical and the
@@ -218,7 +215,7 @@ repository policy marks it skipped.
 
 ## Seal Workflow
 
-After committing the code changes, prepare the seal:
+After the repository has a commit for this work, prepare the seal:
 
 ```bash
 mainline seal --prepare --json > .ml-cache/seal.json
@@ -269,18 +266,36 @@ retry later:
 mainline publish --intent <intent_id> --json
 ```
 
-## Push And PR Workflow
+## Publishing, Pushes, And PRs
 
-Before pushing, ensure the intent is proposed or publishable:
+Mainline does not require a Git push, a pull request, or GitHub. Preserve the
+repository's existing review and release workflow unless the user explicitly
+asks you to change it.
+
+Before any remote branch push or PR creation that the user requested, ensure
+the intent is proposed or publishable:
 
 ```bash
 mainline status --json
 mainline publish --intent <intent_id> --json
 ```
 
-Then push the Git branch through the normal repository workflow. Humans merge
-PRs through the GitHub UI unless the user explicitly asks for a non-PR merge
-path.
+If the user's workflow opens or updates a PR, generate the PR body from the
+sealed Mainline intent:
+
+```bash
+mainline pr-description --intent <intent_id> > .ml-cache/pr-description.md
+```
+
+Use that generated markdown as the PR body. Do not hand-write a replacement PR
+description when a sealed intent exists, and do not rely on a generic GitHub
+publish helper's default body. The generated body includes the
+`mainline:pr-description` marker; the PR intent-comment workflow uses that
+marker to avoid creating a duplicate sticky comment.
+
+If the user did not ask to push or open a PR, stop after sealing/publishing the
+Mainline intent and report the local result. Do not introduce a remote workflow
+just because Mainline metadata is ready.
 
 Do not run these unless the user explicitly asks:
 
@@ -315,10 +330,12 @@ If status or gaps reports uncovered commits:
 mainline gaps --json
 ```
 
-Choose the least destructive rescue path:
+Choose the least destructive rescue path. These are recovery options, not a
+replacement for the repository's normal Git workflow:
 
-- If the commit is local and unpushed, undo the commit with `git reset --soft
-  HEAD^`, start the proper intent, recommit, and seal.
+- If the commit is local and unpushed, you may undo the commit with `git reset
+  --soft HEAD^`, start the proper intent, recommit using the repository's
+  normal workflow, and seal.
 - If the commit is already pushed, backfill an intent with `mainline start
   "<why>" --commits <sha>`, append the post-hoc explanation, then seal.
 - If it is routine and deliberately outside Mainline, add a
