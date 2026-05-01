@@ -18,5 +18,6 @@
 internal/engine/testdata/rapid/
 .cursor/
 .tmp-bin/
+dist/
 # eval run outputs (generated per-run, not committed):
 docs/eval-runs/
