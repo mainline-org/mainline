@@ -1,0 +1,54 @@
+name: Design partner feedback
+description: Share hands-on experience using Mainline in a real project.
+title: "feedback: "
+labels:
+  - design-partner
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Mainline! Your real-world experience is the most
+        valuable input we can get right now. Be as honest as you like — rough
+        edges and confusion are exactly what we need to hear about.
+  - type: textarea
+    id: context
+    attributes:
+      label: Your setup
+      description: |
+        What kind of project are you using Mainline on? Solo / small team / large team?
+        Which agent runtime (Claude Code, Cursor, Codex, etc.)?
+      placeholder: |
+        - Project type: ...
+        - Team size: ...
+        - Agent: ...
+    validations:
+      required: true
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked well
+      description: Anything that felt useful, natural, or saved you time.
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: What felt wrong or hard
+      description: |
+        Moments where you got stuck, gave up, worked around Mainline,
+        or wished it did something differently.
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: What's missing
+      description: Capabilities or integrations you expected but didn't find.
+  - type: textarea
+    id: verdict
+    attributes:
+      label: Would you keep using it?
+      description: |
+        Honest answer. "No, because ..." is more useful than a polite "maybe".
+    validations:
+      required: true
