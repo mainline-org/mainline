@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -459,6 +460,8 @@ func (s *Store) ActorLogRef(actorID, prefix string) string {
 	return fmt.Sprintf("refs/heads/%s/%s", prefix, actorID)
 }
 
+const actorLogAppendMaxAttempts = 128
+
 // AppendActorLogEvent appends an event to the actor's log via git plumbing.
 func (s *Store) AppendActorLogEvent(actorID, prefix string, event interface{}) error {
 	data, err := json.Marshal(event)
@@ -473,26 +476,32 @@ func (s *Store) AppendActorLogEvent(actorID, prefix string, event interface{}) e
 	}
 
 	ref := s.ActorLogRef(actorID, prefix)
-	parentCommit := s.Git.ReadRef(ref)
-
-	// Create tree with the single blob
 	treeHash, err := s.Git.MakeTree("event.json", blobHash)
 	if err != nil {
 		return fmt.Errorf("make tree: %w", err)
 	}
 
-	// Create commit
-	commitHash, err := s.Git.CommitTree(treeHash, parentCommit, "actor-log-event")
-	if err != nil {
-		return fmt.Errorf("commit tree: %w", err)
+	var lastUpdateErr error
+	for attempt := 0; attempt < actorLogAppendMaxAttempts; attempt++ {
+		parentCommit := s.Git.ReadRef(ref)
+
+		// Create a new commit on the latest observed parent. If another
+		// process advances the actor log first, the CAS update fails and
+		// we retry with the new parent instead of overwriting its event.
+		commitHash, err := s.Git.CommitTree(treeHash, parentCommit, "actor-log-event")
+		if err != nil {
+			return fmt.Errorf("commit tree: %w", err)
+		}
+
+		if err := s.Git.UpdateRefIfEquals(ref, commitHash, parentCommit); err == nil {
+			return nil
+		} else {
+			lastUpdateErr = err
+			time.Sleep(time.Duration(min(attempt+1, 10)) * time.Millisecond)
+		}
 	}
 
-	// Update ref
-	if err := s.Git.UpdateRef(ref, commitHash); err != nil {
-		return fmt.Errorf("update ref: %w", err)
-	}
-
-	return nil
+	return fmt.Errorf("update ref after %d attempts: %w", actorLogAppendMaxAttempts, lastUpdateErr)
 }
 
 // ReadActorLogEvents reads all events from an actor's log.

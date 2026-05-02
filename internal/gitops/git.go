@@ -291,6 +291,17 @@ func (g *Git) UpdateRef(ref, commit string) error {
 	return err
 }
 
+// UpdateRefIfEquals updates a ref only if it still points at oldCommit.
+// An empty oldCommit means the ref must not exist. Callers use this as
+// a compare-and-swap primitive when appending to git-backed logs.
+func (g *Git) UpdateRefIfEquals(ref, commit, oldCommit string) error {
+	if oldCommit == "" {
+		oldCommit = "0000000000000000000000000000000000000000"
+	}
+	_, err := g.run("update-ref", ref, commit, oldCommit)
+	return err
+}
+
 // ReadRef resolves a ref to a commit hash. Returns empty string if not found.
 func (g *Git) ReadRef(ref string) string {
 	out, err := g.run("rev-parse", "--verify", ref)
