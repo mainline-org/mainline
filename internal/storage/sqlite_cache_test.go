@@ -33,7 +33,8 @@ func TestRebuildMainlineIndexLogRowsAndLookupTables(t *testing.T) {
 						Chose:     "JSON",
 						Rationale: "Existing path",
 					}},
-					Risks: []string{"old risk"},
+					Risks:     []string{"old risk"},
+					Followups: []string{"old follow-up"},
 					AntiPatterns: []domain.AntiPattern{{
 						What:     "Bypassing the JSON fallback",
 						Why:      "SQLite is only a derived cache",
@@ -99,6 +100,7 @@ func TestRebuildMainlineIndexLogRowsAndLookupTables(t *testing.T) {
 	assertCount(t, db, "intent_subsystems", 1)
 	assertCount(t, db, "intent_decisions", 1)
 	assertCount(t, db, "intent_risks", 1)
+	assertCount(t, db, "intent_followups", 1)
 	assertCount(t, db, "intent_anti_patterns", 1)
 }
 
@@ -211,7 +213,7 @@ func TestReadIntentViewsByFiles_ReverseIndexHits(t *testing.T) {
 }
 
 // Query reverse-index: ReadIntentViewsByQuery hits title / goal /
-// summary / decision / risk / anti_pattern text via case-insensitive
+// summary / decision / risk / follow-up / anti_pattern text via case-insensitive
 // LIKE. Empty keyword returns (nil, nil).
 func TestReadIntentViewsByQuery_TextSearchHits(t *testing.T) {
 	store := New(t.TempDir(), nil)
@@ -222,7 +224,11 @@ func TestReadIntentViewsByQuery_TextSearchHits(t *testing.T) {
 				Summary:     &domain.IntentSummary{Title: "JWT migration", Decisions: []domain.Decision{{Chose: "use JWT"}}},
 				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"auth"}, FilesTouched: []string{"a.go"}}},
 			{IntentID: "int_billing", Status: domain.StatusMerged, ActorID: "x", Goal: "Add billing",
-				Summary:     &domain.IntentSummary{Title: "Billing rewrite", Risks: []string{"may break old jwt sessions"}},
+				Summary: &domain.IntentSummary{
+					Title:     "Billing rewrite",
+					Risks:     []string{"may break old jwt sessions"},
+					Followups: []string{"add homebrew install path"},
+				},
 				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"billing"}, FilesTouched: []string{"b.go"}}},
 			{IntentID: "int_docs", Status: domain.StatusMerged, ActorID: "x", Goal: "Clean up docs copy",
 				Summary: &domain.IntentSummary{
@@ -276,6 +282,14 @@ func TestReadIntentViewsByQuery_TextSearchHits(t *testing.T) {
 	}
 	if len(summary) != 1 || summary[0].IntentID != "int_docs" {
 		t.Fatalf("expected summary text to hit int_docs, got %+v", summary)
+	}
+
+	followups, err := store.ReadIntentViewsByQuery("homebrew")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(followups) != 1 || followups[0].IntentID != "int_billing" {
+		t.Fatalf("expected follow-up text to hit int_billing, got %+v", followups)
 	}
 
 	// Empty keyword returns nil without hitting the DB.

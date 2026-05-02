@@ -224,6 +224,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 	// Build intent views from events
 	intentMap := make(map[string]*domain.IntentView)
 	riskResolutions := make(map[string][]domain.RiskResolution)
+	followupResolutions := make(map[string][]domain.FollowupResolution)
 
 	for _, raw := range events {
 		var base domain.BaseEvent
@@ -285,6 +286,13 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				riskResolutions[rr.RiskID] = append(riskResolutions[rr.RiskID], domain.RiskResolution{
 					IntentID:  evt.IntentID,
 					Rationale: rr.Rationale,
+					At:        evt.SealedAt,
+				})
+			}
+			for _, fr := range evt.ResolvesFollowups {
+				followupResolutions[fr.FollowupID] = append(followupResolutions[fr.FollowupID], domain.FollowupResolution{
+					IntentID:  evt.IntentID,
+					Rationale: fr.Rationale,
 					At:        evt.SealedAt,
 				})
 			}
@@ -356,6 +364,17 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				Rationale: evt.Rationale,
 				At:        evt.Timestamp,
 			})
+
+		case domain.EventFollowupResolved:
+			var evt domain.FollowupResolvedEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			followupResolutions[evt.FollowupID] = append(followupResolutions[evt.FollowupID], domain.FollowupResolution{
+				IntentID:  evt.ResolvedByIntent,
+				Rationale: evt.Rationale,
+				At:        evt.Timestamp,
+			})
 		}
 	}
 
@@ -369,6 +388,9 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 	// v0.4 risk lifecycle: persist risk resolutions on the view.
 	if len(riskResolutions) > 0 {
 		view.RiskResolutions = riskResolutions
+	}
+	if len(followupResolutions) > 0 {
+		view.FollowupResolutions = followupResolutions
 	}
 
 	if err := s.Store.WriteMainlineView(view); err != nil {

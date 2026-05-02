@@ -222,6 +222,7 @@ agent 用上面那些 JSON 命令。
 - **Why** — 这次工程工作为什么存在。
 - **Decisions** — 团队最终做了哪些决策，带 rationale 和 rejected alternatives。
 - **Risks** — reviewer 需要知道的软风险。
+- **Follow-ups** — 明确留到后续处理的工作项，可被后续 intent 标记完成。
 - **Anti-patterns** — 未来 agent 必须避免的硬约束。
 - **Inherited constraints** — 来自历史 intent 的文件级约束。
 - **Lifecycle** — merged、abandoned、superseded、reverted。
@@ -235,7 +236,7 @@ Mainline 不试图保存 AI session 的每一个 token。
 
 Mainline 有两个一等入口：
 
-- **CLI 用来执行动作**：start、append、seal、lint、sync、context、show、trace。
+- **CLI 用来执行动作**：start、append、seal、lint、sync、context、show、trace、risks、followups。
 - **Hub 用来阅读和 review**：查看待审 intent、文件历史约束、重要决策和项目 intent 地形。
 
 知道要做什么时用 CLI。

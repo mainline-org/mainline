@@ -236,8 +236,8 @@ type IntentSummary struct {
 // where N is the anti_pattern array index in the source intent) so
 // matching is exact rather than text-guessing.
 type AcknowledgedConstraint struct {
-	ConstraintID string `json:"constraint_id"`          // "int_xxx#N"
-	Disposition  string `json:"disposition"`            // preserved | mitigated | not_applicable | intentionally_changed
+	ConstraintID string `json:"constraint_id"` // "int_xxx#N"
+	Disposition  string `json:"disposition"`   // preserved | mitigated | not_applicable | intentionally_changed
 	Note         string `json:"note,omitempty"`
 }
 
@@ -267,12 +267,12 @@ type AntiPattern struct {
 // file AND failed to acknowledge at least one applicable
 // high-severity inherited constraint.
 type InheritedConstraintHotspot struct {
-	FilePath                     string             `json:"file_path"`
-	ConstraintCount              int                `json:"constraint_count"`
-	HighSeverityCount            int                `json:"high_severity_count"`
-	UnacknowledgedRecentTouches  int                `json:"unacknowledged_recent_touches"`
-	RecentTouches                int                `json:"recent_touches"`
-	Constraints                  []InheritedConstraint `json:"constraints,omitempty"`
+	FilePath                    string                `json:"file_path"`
+	ConstraintCount             int                   `json:"constraint_count"`
+	HighSeverityCount           int                   `json:"high_severity_count"`
+	UnacknowledgedRecentTouches int                   `json:"unacknowledged_recent_touches"`
+	RecentTouches               int                   `json:"recent_touches"`
+	Constraints                 []InheritedConstraint `json:"constraints,omitempty"`
 }
 
 // InheritedConstraint is an anti_pattern from a *prior* sealed intent
@@ -291,7 +291,7 @@ type InheritedConstraintHotspot struct {
 // What/Why/Severity mirror AntiPattern verbatim — same shape, just
 // annotated with provenance and match reasons.
 type InheritedConstraint struct {
-	ConstraintID string   `json:"constraint_id"`          // "int_xxx#N" — stable ID for acknowledgement
+	ConstraintID string   `json:"constraint_id"` // "int_xxx#N" — stable ID for acknowledgement
 	SourceIntent string   `json:"source_intent"`
 	What         string   `json:"what"`
 	Why          string   `json:"why"`
@@ -361,12 +361,17 @@ type SealResult struct {
 	// (format: "int_<hex>#<index>") and an optional rationale.
 	// Processed atomically with the sealed event — no separate event.
 	ResolvesRisks []RiskResolutionInput `json:"resolves_risks,omitempty"`
+
+	// ResolvesFollowups declares that this intent's work completes one
+	// or more previously-open follow-ups. Processed atomically with the
+	// sealed event, parallel to ResolvesRisks.
+	ResolvesFollowups []FollowupResolutionInput `json:"resolves_followups,omitempty"`
 }
 
 // RiskResolutionInput is what agents submit in SealResult.ResolvesRisks
 // to declare that their work resolves a previously-open risk.
 type RiskResolutionInput struct {
-	RiskID    string `json:"risk_id"`              // "int_xxx#0"
+	RiskID    string `json:"risk_id"` // "int_xxx#0"
 	Rationale string `json:"rationale,omitempty"`
 }
 
@@ -382,12 +387,41 @@ type RiskResolution struct {
 // derived at query time from IntentSummary.Risks + resolution events.
 // Risk IDs are deterministic: "{intent_id}#{array_index}".
 type Risk struct {
-	ID           string           `json:"id"`             // "int_xxx#0"
+	ID           string           `json:"id"` // "int_xxx#0"
 	Text         string           `json:"text"`
-	Status       string           `json:"status"`         // "open" | "resolved" | "expired"
+	Status       string           `json:"status"` // "open" | "resolved" | "expired"
 	SourceIntent string           `json:"source_intent"`
 	OpenedAt     string           `json:"opened_at,omitempty"`
 	ResolvedBy   []RiskResolution `json:"resolved_by,omitempty"`
+}
+
+// FollowupResolutionInput is what agents submit in
+// SealResult.ResolvesFollowups to declare that their work completes a
+// previously-open follow-up.
+type FollowupResolutionInput struct {
+	FollowupID string `json:"followup_id"` // "int_xxx#0"
+	Rationale  string `json:"rationale,omitempty"`
+}
+
+// FollowupResolution records that a follow-up was completed — either as
+// part of a seal (IntentID set) or manually via CLI.
+type FollowupResolution struct {
+	IntentID  string `json:"intent_id,omitempty"`
+	Rationale string `json:"rationale,omitempty"`
+	At        string `json:"at,omitempty"`
+}
+
+// Followup is the materialised view of a follow-up entry. NOT stored
+// directly — derived at query time from IntentSummary.Followups +
+// resolution events. Follow-up IDs are deterministic:
+// "{intent_id}#{array_index}".
+type Followup struct {
+	ID           string               `json:"id"` // "int_xxx#0"
+	Text         string               `json:"text"`
+	Status       string               `json:"status"` // "open" | "resolved" | "expired"
+	SourceIntent string               `json:"source_intent"`
+	OpenedAt     string               `json:"opened_at,omitempty"`
+	ResolvedBy   []FollowupResolution `json:"resolved_by,omitempty"`
 }
 
 type SealConfidence struct {
@@ -454,8 +488,13 @@ type SealPreparePackage struct {
 	// resolve any of them via SealResult.ResolvesRisks. May be stale
 	// if the view hasn't synced recently — ViewRebuiltAt carries the
 	// timestamp for the agent to gauge freshness.
-	ApplicableOpenRisks []Risk  `json:"applicable_open_risks,omitempty"`
-	ViewRebuiltAt       string  `json:"view_rebuilt_at,omitempty"`
+	ApplicableOpenRisks []Risk `json:"applicable_open_risks,omitempty"`
+	ViewRebuiltAt       string `json:"view_rebuilt_at,omitempty"`
+
+	// ApplicableOpenFollowups lists open follow-ups on files this intent
+	// touches. Agents can complete any of them via
+	// SealResult.ResolvesFollowups.
+	ApplicableOpenFollowups []Followup `json:"applicable_open_followups,omitempty"`
 }
 
 // SealSnapshot captures the worktree state at prepare time. SealSubmit

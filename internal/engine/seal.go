@@ -108,9 +108,18 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	// touches so the agent can resolve them via resolves_risks.
 	// Best-effort from the local view — may be stale if no recent sync.
 	if view, _ := s.Store.ReadMainlineView(); view != nil {
+		viewUsed := false
 		openRisks := materializeOpenRisks(view, changedFiles)
 		if len(openRisks) > 0 {
 			pkg.ApplicableOpenRisks = openRisks
+			viewUsed = true
+		}
+		openFollowups := materializeOpenFollowups(view, changedFiles)
+		if len(openFollowups) > 0 {
+			pkg.ApplicableOpenFollowups = openFollowups
+			viewUsed = true
+		}
+		if viewUsed {
 			pkg.ViewRebuiltAt = view.RebuiltAt
 		}
 	}
@@ -294,6 +303,11 @@ Risk resolution:
   work resolves any of them, add a resolves_risks entry:
     "resolves_risks": [{"risk_id": "int_xxx#0", "rationale": "shipped X"}]
 
+Follow-up resolution:
+- If applicable_open_followups lists follow-ups on files you touched, and
+  your work completes any of them, add a resolves_followups entry:
+    "resolves_followups": [{"followup_id": "int_xxx#0", "rationale": "shipped X"}]
+
 Return ONLY valid JSON matching the SealResult schema.`
 }
 
@@ -435,6 +449,10 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		// v0.4 risk lifecycle: risk resolutions are atomic with the
 		// seal event — no separate events, no partial-resolution risk.
 		ResolvesRisks: sr.ResolvesRisks,
+
+		// Follow-up lifecycle: completion is also atomic with the
+		// seal event so the work and queue update land together.
+		ResolvesFollowups: sr.ResolvesFollowups,
 	}
 
 	if err := s.Store.AppendActorLogEvent(identity.ActorID, cfg.Mainline.ActorLogPrefix, event); err != nil {

@@ -95,22 +95,23 @@ type ContextQueryEcho struct {
 //     churning or it is old enough that its decisions
 //     may no longer hold; verify before acting.
 //
-// Decisions / Risks are top-N truncated; AntiPatterns are NEVER
-// truncated — they are the load-bearing safety surface. Followups
-// are command suggestions the agent can copy-paste to drill into
-// the full record. Guidance is the single-line advisory derived
+// Decisions / Risks / OpenFollowups are top-N truncated; AntiPatterns
+// are NEVER truncated — they are the load-bearing safety surface.
+// Followups are command suggestions the agent can copy-paste to drill
+// into the full record. Guidance is the single-line advisory derived
 // from Status.
 type ContextRelevant struct {
-	IntentID     string               `json:"intent_id"`
-	Title        string               `json:"title"`
-	Status       string               `json:"status"`
-	Relevance    ContextRelevance     `json:"relevance"`
-	Summary      string               `json:"summary"`
-	Decisions    []string             `json:"decisions,omitempty"`
-	Risks        []string             `json:"risks,omitempty"`
-	AntiPatterns []domain.AntiPattern `json:"anti_patterns,omitempty"`
-	Guidance     string               `json:"guidance,omitempty"`
-	Followups    map[string]string    `json:"followups,omitempty"`
+	IntentID      string               `json:"intent_id"`
+	Title         string               `json:"title"`
+	Status        string               `json:"status"`
+	Relevance     ContextRelevance     `json:"relevance"`
+	Summary       string               `json:"summary"`
+	Decisions     []string             `json:"decisions,omitempty"`
+	Risks         []string             `json:"risks,omitempty"`
+	OpenFollowups []string             `json:"open_followups,omitempty"`
+	AntiPatterns  []domain.AntiPattern `json:"anti_patterns,omitempty"`
+	Guidance      string               `json:"guidance,omitempty"`
+	Followups     map[string]string    `json:"followups,omitempty"`
 
 	// Status-conditional surface:
 	AbandonedReason string `json:"abandoned_reason,omitempty"`
@@ -143,11 +144,12 @@ const (
 	// that drowns out the actual coding task.
 	ContextRetrievalDefaultLimit = 5
 
-	// contextDecisionLimit / contextRiskLimit cap per-intent
+	// contextDecisionLimit / contextRiskLimit / contextFollowupLimit cap per-intent
 	// surface so a 20-decision intent doesn't fill the agent's
 	// window. The agent can `mainline show <id>` for the rest.
 	contextDecisionLimit = 3
 	contextRiskLimit     = 3
+	contextFollowupLimit = 3
 
 	// contextRelevanceThreshold filters out intents below this
 	// score. Tuned against the dogfood repo: 0.05 keeps anything
@@ -252,7 +254,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 			continue
 		}
 		retrStatus := classifyRetrievalStatus(iv, churn, now)
-		scored = append(scored, packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions))
+		scored = append(scored, packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions))
 	}
 
 	// Explicit supersession links are lineage, not independent
@@ -534,7 +536,7 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 				}
 				reasons = append(reasons, "superseded by returned intent "+supersederID)
 				retrStatus := classifyRetrievalStatus(iv, churn, now)
-				added := packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions)
+				added := packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions)
 				scored = append(scored, added)
 				byID[iv.IntentID] = added
 				changed = true
@@ -675,6 +677,13 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 					break
 				}
 			}
+			for _, f := range iv.Summary.Followups {
+				if countKeywordHits(keywords, f) > 0 {
+					score += 0.08
+					reasons = append(reasons, "follow-up mentions "+truncateForReason(f, 40))
+					break
+				}
+			}
 			for _, ap := range iv.Summary.AntiPatterns {
 				apText := ap.What + " " + ap.Why + " " + ap.Severity
 				if countKeywordHits(keywords, apText) > 0 {
@@ -725,7 +734,14 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 	return score, reasons
 }
 
-func packRelevant(iv domain.IntentView, score float64, reasons []string, retrStatus string, riskResolutions map[string][]domain.RiskResolution) ContextRelevant {
+func packRelevant(
+	iv domain.IntentView,
+	score float64,
+	reasons []string,
+	retrStatus string,
+	riskResolutions map[string][]domain.RiskResolution,
+	followupResolutions map[string][]domain.FollowupResolution,
+) ContextRelevant {
 	r := ContextRelevant{
 		IntentID: iv.IntentID,
 		Title:    "",
@@ -750,6 +766,9 @@ func packRelevant(iv domain.IntentView, score float64, reasons []string, retrSta
 		// explicit resolution should suppress the risk text too.
 		openRisks := filterOpenRisks(iv.IntentID, iv.Summary.Risks, riskResolutions, iv.Status)
 		r.Risks = topItems(openRisks, contextRiskLimit)
+
+		openFollowups := filterOpenFollowups(iv.IntentID, iv.Summary.Followups, followupResolutions, iv.Status)
+		r.OpenFollowups = topItems(openFollowups, contextFollowupLimit)
 
 		// AntiPatterns are NEVER truncated — Property 5. Copy them
 		// through verbatim so the agent always sees every hard
