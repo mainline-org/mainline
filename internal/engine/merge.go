@@ -398,7 +398,17 @@ func (s *Service) Pin() (*PinResult, error) {
 		if len(iv.BackfillCommits) > 0 {
 			pinnedAny := false
 			for _, target := range iv.BackfillCommits {
-				if alreadyHasIntentCached(pinCtx.noteCache, target, iv.IntentID) {
+				// Resolve short hashes to full SHA for noteCache lookup.
+				// BackfillCommits persisted before the normalization fix
+				// may contain abbreviated hashes that miss the full-hash
+				// keyed cache.
+				resolved := target
+				if len(target) < 40 {
+					if full, err := s.Git.Run("rev-parse", "--verify", target+"^{commit}"); err == nil {
+						resolved = strings.TrimSpace(full)
+					}
+				}
+				if alreadyHasIntentCached(pinCtx.noteCache, resolved, iv.IntentID) {
 					continue
 				}
 				hash, _ := core.CanonicalHash(iv)
@@ -415,13 +425,16 @@ func (s *Service) Pin() (*PinResult, error) {
 					ReconciledAt:  core.Now(),
 					ReconciledBy:  identity.ActorID,
 				}
-				if err := upsertCommitNote(s.Git, target, note); err != nil {
+				if err := upsertCommitNote(s.Git, resolved, note); err != nil {
 					continue
+				}
+				if b, err := json.Marshal(note); err == nil {
+					pinCtx.noteCache[resolved] = string(b)
 				}
 				pinnedAny = true
 				result.Links = append(result.Links, PinnedCommit{
 					IntentID:      iv.IntentID,
-					Commit:        target,
+					Commit:        resolved,
 					MatchStrategy: "backfill_explicit",
 				})
 			}
