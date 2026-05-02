@@ -60,11 +60,7 @@ Risk IDs are deterministic: "{intent_id}#{array_index}".`,
 				marker = "○"
 			}
 			fmt.Printf("  %s [%s] %s\n", marker, r.Status, r.ID)
-			// Truncate risk text for display
-			text := r.Text
-			if len(text) > 100 {
-				text = text[:99] + "…"
-			}
+			text := truncate(r.Text, 100)
 			fmt.Printf("    %s\n", text)
 			fmt.Printf("    source: %s", r.SourceIntent)
 			if r.OpenedAt != "" {
