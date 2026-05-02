@@ -163,8 +163,10 @@ top-N.
 
 ### Step 5 — Add score breakdown
 
-Extend `relevance` with a per-signal breakdown while preserving the existing
-`score` and `reasons` fields.
+Extend query-mode `relevance` with a per-signal breakdown while preserving the
+existing `score` and `reasons` fields. Keep `context --current` and
+`context --files` compact by omitting breakdown unless the user entered through
+the query/explainability path.
 
 Example:
 
@@ -206,7 +208,7 @@ retrieval behavior using that surface.
 
 - add golden query regression tests;
 - add `query_debug`;
-- add score breakdown;
+- add query-mode score breakdown;
 - align comments with existing behavior.
 
 This should be low risk because ranking behavior can remain unchanged.
@@ -262,8 +264,10 @@ Expected for PR 1:
 - `ack` / `JWT`-style short tokens are visible as dropped, not silently hidden;
 - Chinese text remains unsupported by retrieval, but unsupported non-ASCII terms
   are visible in `dropped_terms`;
-- returned intents keep `score` and `reasons`, with additive
+- query-mode returned intents keep `score` and `reasons`, with additive
   `relevance.breakdown` explaining the rounded score;
+- `context --current` / `context --files` JSON remains compact and omits
+  `relevance.breakdown`;
 - ranking/tokenisation/recency behavior is unchanged.
 
 ### Full-plan acceptance after PR 2

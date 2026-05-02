@@ -48,6 +48,9 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 			check: func(t *testing.T, res *ContextRetrievalResult) {
 				ri := mustFindRelevant(t, res, "int_context_scoring")
 				b := ri.Relevance.Breakdown
+				if b == nil {
+					t.Fatalf("expected query-mode breakdown")
+				}
 				if b.Title == 0 || b.Summary == 0 || b.Decision == 0 || b.Risk == 0 || b.AntiPattern == 0 {
 					t.Fatalf("expected multi-signal breakdown, got %+v", b)
 				}
@@ -205,6 +208,54 @@ func TestContextRetrieval_QueryDebugJSONShape(t *testing.T) {
 	}
 }
 
+func TestContextRetrieval_BreakdownOmittedOutsideQueryMode(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := svc.Store.WriteMainlineView(queryGoldenRegressionView(time.Now().Add(-45 * 24 * time.Hour).UTC().Format(time.RFC3339))); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "files",
+		Files: []string{"internal/engine/context_retrieval.go"},
+		Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if res.QueryDebug != nil {
+		t.Fatalf("query_debug should only be present for query mode")
+	}
+	if len(res.RelevantIntents) == 0 {
+		t.Fatalf("expected file-mode results")
+	}
+	if res.RelevantIntents[0].Relevance.Breakdown != nil {
+		t.Fatalf("breakdown should be omitted outside query mode, got %+v", res.RelevantIntents[0].Relevance.Breakdown)
+	}
+
+	data, err := json.Marshal(res)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := raw["query_debug"]; ok {
+		t.Fatalf("query_debug should be omitted from files-mode JSON: %s", data)
+	}
+	intents := raw["relevant_intents"].([]any)
+	first := intents[0].(map[string]any)
+	relevance := first["relevance"].(map[string]any)
+	if _, ok := relevance["breakdown"]; ok {
+		t.Fatalf("breakdown should be omitted from files-mode JSON: %s", data)
+	}
+}
+
 func TestContextRetrieval_RelevanceBreakdownAddsUpForAdditiveSignals(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -280,6 +331,9 @@ func TestContextRetrieval_RelevanceBreakdownExplainsLineageBoost(t *testing.T) {
 		t.Fatalf("retrieve: %v", err)
 	}
 	old := mustFindRelevant(t, res, "int_lineage_old")
+	if old.Relevance.Breakdown == nil {
+		t.Fatalf("expected query-mode breakdown")
+	}
 	if old.Relevance.Breakdown.Lineage == 0 {
 		t.Fatalf("expected lineage boost for superseded intent included by returned superseder, got %+v", old.Relevance.Breakdown)
 	}
@@ -307,10 +361,10 @@ func TestContextRetrieval_RelevanceBreakdownExplainsStatusPenalty(t *testing.T) 
 	}
 	relevance := ContextRelevance{
 		Score:     round2(score),
-		Breakdown: roundRelevanceBreakdown(breakdown),
+		Breakdown: optionalRelevanceBreakdown(true, breakdown),
 		Reasons:   reasons,
 	}
-	if relevance.Breakdown.StatusPenalty == 0 {
+	if relevance.Breakdown == nil || relevance.Breakdown.StatusPenalty == 0 {
 		t.Fatalf("expected status penalty for superseded intent, got %+v", relevance.Breakdown)
 	}
 	assertBreakdownExplainsScore(t, relevance)
@@ -488,6 +542,9 @@ func indexOfRelevant(res *ContextRetrievalResult, intentID string) int {
 
 func assertBreakdownExplainsScore(t *testing.T, rel ContextRelevance) {
 	t.Helper()
+	if rel.Breakdown == nil {
+		t.Fatalf("expected relevance breakdown")
+	}
 	b := rel.Breakdown
 	sum := b.File + b.Subsystem + b.Title + b.Summary + b.Decision +
 		b.Risk + b.Followup + b.AntiPattern + b.Recency + b.SameThread + b.Lineage -
