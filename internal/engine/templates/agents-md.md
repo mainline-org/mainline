@@ -112,6 +112,30 @@ Each intent also carries:
   never truncates `anti_patterns`, so if you see one, it is in scope.
 - `guidance` — a single-line reminder derived from `status`.
 
+**Inherited constraints** — `mainline context` may surface an
+`inherited_constraints` array listing high-severity anti_patterns
+from prior intents that touched the same files you are editing.
+Each carries a stable `constraint_id` (format: `int_xxx#N`). When
+sealing, you must explicitly acknowledge each in `acknowledged_constraints`:
+
+```json
+"acknowledged_constraints": [
+  {
+    "constraint_id": "int_abc123#0",
+    "disposition": "preserved",
+    "note": "kept the session middleware in place"
+  }
+]
+```
+
+Dispositions:
+- `preserved` — constraint still applies, you respected it
+- `mitigated` — you addressed the underlying concern differently
+- `not_applicable` — you touched the file but this constraint is
+  irrelevant to your change
+- `intentionally_changed` — you knowingly relaxed/violated the
+  constraint (reviewer attention needed)
+
 ### Pre-edit checklist for agents
 
 Before editing code, answer:
@@ -275,8 +299,21 @@ the next state in a new turn.
 
    Use `risks` for soft warnings the reviewer should weigh; use
    `anti_patterns` for hard constraints the next agent must not
-   violate. Anti-patterns are surfaced uncapped in `mainline context`,
-   so future agents will always see them.
+   violate. Only `high` severity anti-patterns propagate as
+   inherited constraints to future agents editing the same files.
+
+   If `mainline context` surfaced `inherited_constraints`, acknowledge
+   each in the seal's `summary.acknowledged_constraints`:
+
+   ```json
+   "acknowledged_constraints": [
+     {
+       "constraint_id": "int_abc123#0",
+       "disposition": "preserved",
+       "note": "kept the session middleware in place"
+     }
+   ]
+   ```
 
 4. Submit it:
 

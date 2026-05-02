@@ -334,54 +334,63 @@ func LintSealResult(sr *domain.SealResult, viewIntents map[string]bool) LintResu
 }
 
 // LintInheritedAcknowledgement walks the supplied inherited
-// constraints and emits a warning per *high-severity* constraint
-// that is not acknowledged by any of: a decision text, a rejected
-// alternative, the seal's own anti_patterns, or a risk text.
+// constraints and checks whether each is explicitly acknowledged
+// in the seal's AcknowledgedConstraints field (by ConstraintID).
 //
-// Pure, no I/O. Severity is "warning" by default — the user wanted
-// awareness rather than violation conviction in v1. A future flag
-// (`--strict`) can promote to "error" without changing this code:
-// the caller filters or remaps issues post-hoc.
+// v2 design: only high-severity constraints are inherited (enforced
+// by BuildInheritedConstraints), and acknowledgement is explicit
+// rather than guessed via token overlap.
 //
-// Medium / low / unknown severity inherited constraints are reported
-// as severity "info" (still in the lint output for visibility, but
-// don't flip Pass even under --strict). v1 makes only high-severity
-// constraints required to acknowledge — that keeps the warning bar
-// tight enough that real signal isn't drowned out.
+// Legacy fallback: if the seal has NO AcknowledgedConstraints at all,
+// fall back to the v1 token-overlap heuristic so old sealed intents
+// don't regress in lint output.
+//
+// Pure, no I/O.
 func LintInheritedAcknowledgement(summary *domain.IntentSummary, inherited []domain.InheritedConstraint) []LintIssue {
 	if summary == nil || len(inherited) == 0 {
 		return nil
 	}
+	useLegacy := len(summary.AcknowledgedConstraints) == 0
 	var issues []LintIssue
 	for i, ic := range inherited {
-		ack := domain.AcknowledgementOf(ic, summary)
-		isHigh := strings.EqualFold(strings.TrimSpace(ic.Severity), "high")
-		if ack != domain.AckNone {
-			// Acknowledgement found — emit an info-level note for
-			// reviewer visibility ("the agent did acknowledge X
-			// via decision"); skip when not high-severity to keep
-			// the lint output focused.
-			if isHigh {
+		// Explicit acknowledgement check (v2)
+		if !useLegacy {
+			ack := findExplicitAck(summary.AcknowledgedConstraints, ic.ConstraintID)
+			if ack != nil {
+				sev := "info"
+				msg := fmt.Sprintf("inherited constraint %s acknowledged (%s): %s",
+					ic.ConstraintID, ack.Disposition, briefWhat(ic.What))
+				if ack.Disposition == "intentionally_changed" {
+					msg = fmt.Sprintf("⚠️ inherited constraint %s intentionally changed — reviewer attention needed: %s",
+						ic.ConstraintID, briefWhat(ic.What))
+				}
 				issues = append(issues, LintIssue{
 					Code:     "inherited_anti_pattern_acknowledged",
-					Severity: "info",
-					Field:    fmt.Sprintf("summary.inherited[%d]", i),
-					Message: fmt.Sprintf("inherited high-severity anti_pattern from %s acknowledged via %s: %s",
-						ic.SourceIntent, ack, briefWhat(ic.What)),
+					Severity: sev,
+					Field:    fmt.Sprintf("summary.acknowledged_constraints[%d]", i),
+					Message:  msg,
 				})
+				continue
 			}
+			// Not acknowledged → warning
+			issues = append(issues, LintIssue{
+				Code:     "inherited_anti_pattern_not_acknowledged",
+				Severity: "warning",
+				Field:    fmt.Sprintf("summary.inherited[%d]", i),
+				Message: fmt.Sprintf("high-severity inherited constraint %s not acknowledged: %s — add to acknowledged_constraints with disposition (preserved/mitigated/not_applicable/intentionally_changed)",
+					ic.ConstraintID, briefWhat(ic.What)),
+			})
 			continue
 		}
-		if !isHigh {
-			// Lower-severity unacknowledged constraints are info-only
-			// so reviewers can see them surfaced without the lint
-			// becoming noisy. v1 only *requires* high-severity ack.
+		// Legacy path: token-overlap heuristic for old seals
+		ack := domain.AcknowledgementOf(ic, summary)
+		if ack != domain.AckNone {
 			issues = append(issues, LintIssue{
-				Code:     "inherited_anti_pattern_surfaced",
+				Code:     "inherited_anti_pattern_acknowledged",
 				Severity: "info",
 				Field:    fmt.Sprintf("summary.inherited[%d]", i),
-				Message: fmt.Sprintf("inherited %s-severity anti_pattern from %s touches your files: %s — consider acknowledging",
-					nonEmpty(ic.Severity, "unspecified"), ic.SourceIntent, briefWhat(ic.What)),
+				Message: fmt.Sprintf("inherited high-severity anti_pattern from %s acknowledged via %s: %s",
+					ic.SourceIntent, ack, briefWhat(ic.What)),
 			})
 			continue
 		}
@@ -389,11 +398,21 @@ func LintInheritedAcknowledgement(summary *domain.IntentSummary, inherited []dom
 			Code:     "inherited_anti_pattern_not_acknowledged",
 			Severity: "warning",
 			Field:    fmt.Sprintf("summary.inherited[%d]", i),
-			Message: fmt.Sprintf("high-severity inherited anti_pattern from %s not acknowledged in this seal: %s — add a decision, rejected_alternative, risk, or your own anti_pattern that references it",
+			Message: fmt.Sprintf("high-severity inherited anti_pattern from %s not acknowledged in this seal: %s — add to acknowledged_constraints",
 				ic.SourceIntent, briefWhat(ic.What)),
 		})
 	}
 	return issues
+}
+
+// findExplicitAck finds an AcknowledgedConstraint matching the given ID.
+func findExplicitAck(acks []domain.AcknowledgedConstraint, constraintID string) *domain.AcknowledgedConstraint {
+	for i := range acks {
+		if acks[i].ConstraintID == constraintID {
+			return &acks[i]
+		}
+	}
+	return nil
 }
 
 func briefWhat(s string) string {
@@ -402,13 +421,6 @@ func briefWhat(s string) string {
 		return s
 	}
 	return s[:99] + "…"
-}
-
-func nonEmpty(s, fallback string) string {
-	if strings.TrimSpace(s) == "" {
-		return fallback
-	}
-	return s
 }
 
 // genericRiskPatterns catches boilerplate risks that provide no

@@ -421,21 +421,26 @@ func TestLintInherited_HighAcknowledgedViaDecision(t *testing.T) {
 	}
 }
 
-func TestLintInherited_MediumNeverWarns(t *testing.T) {
-	summary := &domain.IntentSummary{}
+func TestLintInherited_ExplicitAckPreventsWarning(t *testing.T) {
+	// v2: explicit acknowledged_constraints prevents warning
+	summary := &domain.IntentSummary{
+		AcknowledgedConstraints: []domain.AcknowledgedConstraint{{
+			ConstraintID: "int_old#0",
+			Disposition:  "preserved",
+			Note:         "kept the constraint",
+		}},
+	}
 	inherited := []domain.InheritedConstraint{{
+		ConstraintID: "int_old#0",
 		SourceIntent: "int_old",
 		What:         "Skip token rotation",
-		Severity:     "medium",
+		Severity:     "high",
 	}}
 	issues := LintInheritedAcknowledgement(summary, inherited)
 	if hasCode(issues, "inherited_anti_pattern_not_acknowledged") {
-		t.Errorf("v1 only warns on high-severity; got %v", issues)
+		t.Errorf("explicit ack should prevent warning; got %v", issues)
 	}
-	if !hasCode(issues, "inherited_anti_pattern_surfaced") {
-		t.Errorf("medium should still surface as info: %v", issues)
-	}
-	if sevFor(issues, "inherited_anti_pattern_surfaced") != "info" {
-		t.Errorf("medium-severity surface must be info severity")
+	if !hasCode(issues, "inherited_anti_pattern_acknowledged") {
+		t.Errorf("expected info-level ack confirmation; got %v", issues)
 	}
 }
