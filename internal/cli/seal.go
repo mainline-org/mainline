@@ -98,7 +98,7 @@ var sealCmd = &cobra.Command{
 					fmt.Println("\nIf any of these look like a real semantic conflict, run:")
 					fmt.Printf("  mainline check --prepare --intent %s\n", result.IntentID)
 				}
-				renderSealNextSteps(svc, result)
+				renderSealNextSteps(result)
 			}
 			return
 		}
@@ -145,7 +145,7 @@ func renderSealLintHint(svc *engine.Service, intentID string) {
 // first-time user needs after a successful submit. It must not
 // prescribe a Git hosting workflow: Mainline records intent, but it
 // does not require users to push, open PRs, or merge through GitHub.
-func renderSealNextSteps(svc *engine.Service, result *engine.SealSubmitResult) {
+func renderSealNextSteps(result *engine.SealSubmitResult) {
 	fmt.Println()
 	fmt.Println("Next:")
 	fmt.Printf("  · If your workflow opens or updates a PR: `mainline pr-description --intent %s > .ml-cache/pr-description.md`\n", result.IntentID)
