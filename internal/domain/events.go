@@ -10,6 +10,7 @@ const (
 	EventIntentMergeAcknowledged EventType = "intent.merge_acknowledged"
 	EventCheckJudgment           EventType = "check.judgment"
 	EventRiskResolved            EventType = "risk.resolved"
+	EventFollowupResolved        EventType = "followup.resolved"
 )
 
 // BaseEvent holds fields common to every actor-log event.
@@ -65,6 +66,11 @@ type IntentSealedEvent struct {
 	// Carried on the sealed event (not as separate events) so the
 	// write is one actor-log append — no partial-resolution risk.
 	ResolvesRisks []RiskResolutionInput `json:"resolves_risks,omitempty"`
+
+	// Follow-up lifecycle: follow-ups completed atomically with this seal.
+	// Kept parallel to risk resolution so old summary.followups stay
+	// immutable while the effective open queue can shrink.
+	ResolvesFollowups []FollowupResolutionInput `json:"resolves_followups,omitempty"`
 }
 
 // IntentSupersededEvent records that an intent was replaced by a new one.
@@ -103,8 +109,18 @@ type CheckJudgmentEvent struct {
 // IntentSealedEvent.ResolvesRisks instead (atomic with the seal).
 type RiskResolvedEvent struct {
 	BaseEvent
-	RiskID           string `json:"risk_id"`                        // "int_xxx#0"
-	ResolvedByIntent string `json:"resolved_by_intent,omitempty"`   // optional: the intent whose work resolved it
+	RiskID           string `json:"risk_id"`                      // "int_xxx#0"
+	ResolvedByIntent string `json:"resolved_by_intent,omitempty"` // optional: the intent whose work resolved it
+	Rationale        string `json:"rationale,omitempty"`
+}
+
+// FollowupResolvedEvent records a manual follow-up resolution via
+// `mainline followups resolve`. Seal-time resolutions are carried on
+// IntentSealedEvent.ResolvesFollowups instead (atomic with the seal).
+type FollowupResolvedEvent struct {
+	BaseEvent
+	FollowupID       string `json:"followup_id"`                  // "int_xxx#0"
+	ResolvedByIntent string `json:"resolved_by_intent,omitempty"` // optional: the intent whose work resolved it
 	Rationale        string `json:"rationale,omitempty"`
 }
 
