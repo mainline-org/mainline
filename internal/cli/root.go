@@ -44,6 +44,9 @@ var (
 //     and the commit reports as uncovered. Auto-sync (gated
 //     by freshness) keeps that false-uncovered window
 //     within the 300s budget.
+//   - preflight — the readiness gate agents run before editing and
+//     before committing/sealing. A stale view would miss exactly the
+//     overlaps it exists to surface.
 //   - hub export, hub open — both rebuild a static snapshot from
 //     the local intent view. Stale data on the index page
 //     ("recent intents") and the per-file history pages is
@@ -76,6 +79,7 @@ var autoSyncCommands = map[string]bool{
 	"check":      true,
 	"status":     true,
 	"gaps":       true,
+	"preflight":  true,
 	"digest":     true,
 	"hub export": true,
 	"hub open":   true,
@@ -194,6 +198,7 @@ func init() {
 	// and team (sync/check) commands. Humans and agents both run all
 	// of these.
 	statusCmd.GroupID = groupDaily.ID
+	preflightCmd.GroupID = groupDaily.ID
 	startCmd.GroupID = groupDaily.ID
 	appendCmd.GroupID = groupDaily.ID
 	sealCmd.GroupID = groupDaily.ID
@@ -253,7 +258,7 @@ func init() {
 	versionCmd.GroupID = groupSetup.ID
 
 	rootCmd.AddCommand(
-		initCmd, statusCmd, startCmd, appendCmd, sealCmd, syncCmd,
+		initCmd, statusCmd, preflightCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, prCommentCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,

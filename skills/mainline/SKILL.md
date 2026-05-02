@@ -129,8 +129,24 @@ block code work solely because hooks are absent.
 At the start of a real task:
 
 ```bash
+mainline preflight --json
+```
+
+`preflight` is the low-noise readiness gate. If it returns
+`"level": "ok"` and `"ok_to_continue": true`, continue without expanding the
+context surface just to be safe. If it returns `warn` or `block`, read the
+`findings`, `overlaps`, and `recommended_next` fields and only then run the
+targeted follow-up commands it points to (`show`, `trace`, `context
+--files/--query`, or `check`).
+
+If the installed binary is older and lacks `preflight`, fall back to:
+
+```bash
 mainline status --json
 ```
+
+Then run `mainline list-proposals --json` and targeted `mainline context
+--files ... --json` only when status or the task suggests overlap risk.
 
 If there is no active intent and the task will make non-trivial changes, start
 one using the user's actual goal:
@@ -149,16 +165,21 @@ Before designing the change, inspect in-flight work:
 mainline list-proposals --json
 ```
 
+You do not need this separate `list-proposals` call when `preflight` is
+available and green; `preflight` already reads the proposed index and reports
+file overlap. Use `list-proposals` as the old-binary fallback or when
+`preflight` says an overlap needs investigation.
+
 ## Intent-First Code Reading
 
-Before broad grep, file reads, or implementation on non-trivial work, retrieve
-intent context:
+Before broad grep, file reads, or implementation on non-trivial work, prefer
+the compact preflight gate first:
 
 ```bash
-mainline context --current --json
+mainline preflight --json
 ```
 
-If the user named files or the likely files are already known:
+If it reports an overlap, stale view, or branch drift, expand narrowly:
 
 ```bash
 mainline context --files <path>... --json
@@ -180,6 +201,19 @@ For relevant intents:
 mainline show <intent_id> --json
 mainline trace <intent_id> --json
 ```
+
+Do not run broad `context --current`, `list-proposals`, `show`, and `trace`
+as a ritual on every task. The intended flow is: preflight first; green means
+continue; yellow/red means inspect the named intents/files and resolve the
+specific risk.
+
+Overlap convergence tree:
+
+- Upstream already solved the user's goal → abandon the local draft or stop
+  before duplicating it.
+- Local work still has incremental value → narrow it into a follow-up intent.
+- The two intents are semantically mutually exclusive → run `mainline check`
+  or ask for human judgment before continuing.
 
 ## Editing Workflow
 
@@ -205,6 +239,17 @@ Mainline does not prescribe how a repository stages changes, writes commits, or
 groups commits. Use the repository's existing Git workflow and commit
 conventions. If you are the one creating the commit, inspect the unstaged and
 staged diff first and include only the intended files.
+
+Before committing or sealing, re-run the readiness gate:
+
+```bash
+mainline preflight --json
+```
+
+If it reports `block`, stop and resolve or escalate the named overlap/drift
+instead of producing a dirty-only or stale-base seal. If it reports only
+`warn`, mention the warning in your handoff and make a conscious decision
+before continuing.
 
 Before sealing, there must be a commit for Mainline to reference. Mainline does
 not create that commit for you.
