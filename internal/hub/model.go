@@ -107,6 +107,12 @@ type HubFocusIntent struct {
 	// or any risk text — used to pin high-risk items above same-age
 	// peers in the review queue.
 	HighRisk bool `json:"high_risk,omitempty"`
+	// ActorID/ActorName carry authorship so the dashboard and digest
+	// can render "who proposed this" without a second lookup. Same
+	// fields as HubIntent — kept here so HubFocusIntent stays a
+	// self-contained DTO.
+	ActorID   string `json:"actor_id,omitempty"`
+	ActorName string `json:"actor_name,omitempty"`
 }
 
 type HubHotFile struct {
