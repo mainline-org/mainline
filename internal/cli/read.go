@@ -456,6 +456,12 @@ func printContextRetrievalText(r *engine.ContextRetrievalResult) {
 					fmt.Printf("      - %s\n", k)
 				}
 			}
+			if len(ri.OpenFollowups) > 0 {
+				fmt.Println("    open follow-ups:")
+				for _, f := range ri.OpenFollowups {
+					fmt.Printf("      - %s\n", f)
+				}
+			}
 			if ri.SupersededBy != "" {
 				fmt.Printf("    superseded by: %s\n", ri.SupersededBy)
 			}

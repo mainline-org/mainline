@@ -221,7 +221,7 @@ func (s *Store) ReadIntentViewsByFiles(paths []string) ([]domain.IntentView, err
 }
 
 // ReadIntentViewsByQuery returns every IntentView whose title /
-// goal / summary / decision / risk / anti_pattern text contains
+// goal / summary / decision / risk / follow-up / anti_pattern text contains
 // the given keyword (case-insensitive substring). Hot path for
 // `mainline context --query`. Substring rather than FTS because
 // the corpus is small (hundreds of intents) and SQLite LIKE on
@@ -250,6 +250,7 @@ func (s *Store) ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, err
 		FROM intents i
 		LEFT JOIN intent_decisions d ON d.intent_id = i.intent_id
 		LEFT JOIN intent_risks r ON r.intent_id = i.intent_id
+		LEFT JOIN intent_followups fu ON fu.intent_id = i.intent_id
 		LEFT JOIN intent_anti_patterns ap ON ap.intent_id = i.intent_id
 		WHERE LOWER(i.title) LIKE ?
 		   OR LOWER(i.goal) LIKE ?
@@ -257,10 +258,11 @@ func (s *Store) ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, err
 		   OR LOWER(i.summary_why) LIKE ?
 		   OR LOWER(d.text) LIKE ?
 		   OR LOWER(r.text) LIKE ?
+		   OR LOWER(fu.text) LIKE ?
 		   OR LOWER(ap.what) LIKE ?
 		   OR LOWER(ap.why) LIKE ?
 		ORDER BY i.activity_at DESC, i.intent_id ASC`
-	args := []any{pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern}
+	args := []any{pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern}
 	return scanIntentViews(db, query, args)
 }
 
@@ -344,6 +346,12 @@ func initialiseMainlineIndex(db *sql.DB) error {
 			text TEXT NOT NULL,
 			PRIMARY KEY (intent_id, idx)
 		)`,
+		`CREATE TABLE intent_followups (
+			intent_id TEXT NOT NULL,
+			idx INTEGER NOT NULL,
+			text TEXT NOT NULL,
+			PRIMARY KEY (intent_id, idx)
+		)`,
 		`CREATE TABLE intent_anti_patterns (
 			intent_id TEXT NOT NULL,
 			idx INTEGER NOT NULL,
@@ -416,6 +424,12 @@ func writeMainlineIndex(tx *sql.Tx, store *Store, view *domain.MainlineView) err
 	}
 	defer insertRisk.Close()
 
+	insertFollowup, err := tx.Prepare(`INSERT INTO intent_followups(intent_id, idx, text) VALUES (?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer insertFollowup.Close()
+
 	insertAntiPattern, err := tx.Prepare(`INSERT INTO intent_anti_patterns(intent_id, idx, what, why, severity) VALUES (?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
@@ -483,6 +497,11 @@ func writeMainlineIndex(tx *sql.Tx, store *Store, view *domain.MainlineView) err
 			}
 			for i, risk := range iv.Summary.Risks {
 				if _, err := insertRisk.Exec(iv.IntentID, i, risk); err != nil {
+					return err
+				}
+			}
+			for i, followup := range iv.Summary.Followups {
+				if _, err := insertFollowup.Exec(iv.IntentID, i, followup); err != nil {
 					return err
 				}
 			}

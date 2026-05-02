@@ -13,7 +13,7 @@ mainline status                                      # see your state
 
 # Read team intents for context (do this aggressively):
 mainline log --json --limit 30                       # recent intents
-mainline show <intent_id> --json                     # full why/decisions/risks
+mainline show <intent_id> --json                     # full why/decisions/risks/followups
 mainline list-proposals --json                       # what's in flight
 
 # Write your own intent:

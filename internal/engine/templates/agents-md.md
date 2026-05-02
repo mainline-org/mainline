@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 16 -->
+<!-- mainline-agents-md-version: 17 -->
 
 **Mainline is a git-native intent memory layer for AI-assisted engineering.**
 It gives coding agents the historical *why* before they inspect the
@@ -178,7 +178,7 @@ Filter by goal/title keywords matching the user's task. For each
 relevant hit, pull the full record:
 
 ```
-mainline show <intent_id> --json    # decisions / risks / fingerprint
+mainline show <intent_id> --json    # decisions / risks / followups / fingerprint
 mainline trace <intent_id> --json   # turn timeline (when each turn
                                     # was added, how long it took)
 ```
@@ -298,6 +298,12 @@ the next state in a new turn.
    Do not invent speculative "consider", "maybe", dogfood,
    telemetry, or nice-to-have items. Put accepted trade-offs in
    `decisions` and ephemeral reviewer context in `review_notes`.
+
+   If the prepare package includes `applicable_open_risks` or
+   `applicable_open_followups`, and your work actually resolves one,
+   add `resolves_risks` or `resolves_followups` at the top level of
+   the seal result. Do not copy the old item into a new risk or
+   follow-up just to mark it done.
 
    When the work establishes constraints future agents must respect,
    record them as `anti_patterns` (NOT as `risks`). Each entry MUST
