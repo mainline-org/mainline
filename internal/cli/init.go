@@ -157,7 +157,7 @@ func renderInitAgentIntegrations(r *engine.AgentIntegrationInstallResult) {
 	}
 	fmt.Println("Agent integrations:")
 	if r.Skill.Installed {
-		fmt.Println("  ✓ skill: installed via `npx skills add mainline`")
+		fmt.Printf("  ✓ skill: installed via `%s`\n", strings.Join(r.Skill.Command, " "))
 	} else if r.Skill.Skipped {
 		fmt.Printf("  · skill: skipped (%s)\n", r.Skill.Error)
 	} else if r.Skill.Error != "" {
