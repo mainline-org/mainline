@@ -3,7 +3,6 @@ package engine
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -403,61 +402,6 @@ func (s *Service) ensureLocalViews(cfg *domain.TeamConfig) {
 		}
 		_ = s.Store.WriteProposedIndex(idx)
 	}
-}
-
-// writeAgentsMD is the legacy thin wrapper retained for the Init code
-// path. Real logic moved to upsertAgentsMD (section-aware, preserves
-// user content, handles legacy section migration). See agents_md.go.
-func (s *Service) writeAgentsMD() {
-	// Failures are surfaced via doctor — Init does not abort just
-	// because the AGENTS.md template could not be written.
-	_, _ = upsertAgentsMD(s.Git.RepoRoot)
-}
-
-const currentPRTemplate = `## Summary
-
-<!-- Describe what this PR does -->
-
-## Mainline
-
-<!--
-Mainline stores intent metadata in git notes and actor refs.
-Do not add Mainline-Intent / Mainline-Seal trailers to the PR or squash commit message.
--->
-
-## Tested
-
-<!-- How was this tested? -->
-`
-
-func (s *Service) writePRTemplate() bool {
-	path := filepath.Join(s.Git.RepoRoot, ".github", "PULL_REQUEST_TEMPLATE.md")
-	if data, err := os.ReadFile(path); err == nil {
-		if !isLegacyPRTemplate(data) {
-			return false
-		}
-	} else if !os.IsNotExist(err) {
-		return false
-	}
-	// Best-effort: PR template is a convenience for humans, not
-	// load-bearing for mainline correctness. Errors here fall through.
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false
-	}
-	return os.WriteFile(path, []byte(currentPRTemplate), 0o644) == nil
-}
-
-func prTemplateState(repoRoot string) (exists bool, legacy bool) {
-	data, err := os.ReadFile(filepath.Join(repoRoot, ".github", "PULL_REQUEST_TEMPLATE.md"))
-	if err != nil {
-		return false, false
-	}
-	return true, isLegacyPRTemplate(data)
-}
-
-func isLegacyPRTemplate(data []byte) bool {
-	text := string(data)
-	return strings.Contains(text, "Mainline-Intent:") || strings.Contains(text, "Mainline-Seal:")
 }
 
 // -----------------------------------------------------------

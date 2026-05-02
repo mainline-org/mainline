@@ -24,7 +24,7 @@ func (s *Service) PRDescription(intentID string) (string, error) {
 	if view != nil {
 		for _, iv := range view.Intents {
 			if iv.IntentID == intentID && iv.Summary != nil {
-				return wrapPRDescription(formatPRIntent(iv, view, 2)), nil
+				return wrapPRDescription(formatPRIntent(iv, 2)), nil
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func (s *Service) PRComment(base, head, branch string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString(prCommentMarker + "\n\n")
 	if len(matches) == 1 {
-		sb.WriteString(formatPRIntent(matches[0], view, 2))
+		sb.WriteString(formatPRIntent(matches[0], 2))
 		return strings.TrimRight(sb.String(), "\n") + "\n", nil
 	}
 
@@ -66,7 +66,7 @@ func (s *Service) PRComment(base, head, branch string) (string, error) {
 		if i > 0 {
 			sb.WriteString("\n---\n\n")
 		}
-		sb.WriteString(formatPRIntent(iv, view, 3))
+		sb.WriteString(formatPRIntent(iv, 3))
 	}
 	return strings.TrimRight(sb.String(), "\n") + "\n", nil
 }
@@ -128,7 +128,7 @@ func isPRVisibleIntentStatus(status domain.IntentStatus) bool {
 	}
 }
 
-func formatPRIntent(iv domain.IntentView, view *domain.MainlineView, level int) string {
+func formatPRIntent(iv domain.IntentView, level int) string {
 	summary := iv.Summary
 	if summary == nil {
 		return ""

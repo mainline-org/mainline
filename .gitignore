@@ -21,3 +21,4 @@ internal/engine/testdata/rapid/
 dist/
 # eval run outputs (generated per-run, not committed):
 docs/eval-runs/
+app-linux-amd64
