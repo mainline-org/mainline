@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mainline-org/mainline/internal/domain"
 )
@@ -62,8 +63,9 @@ type ContextRetrievalRequest struct {
 // code", etc.) — repo-wide guidance the agent should hold while
 // reading the result. Per-intent guidance lives on ContextRelevant.
 type ContextRetrievalResult struct {
-	Query           ContextQueryEcho  `json:"query"`
-	RelevantIntents []ContextRelevant `json:"relevant_intents"`
+	Query           ContextQueryEcho   `json:"query"`
+	QueryDebug      *ContextQueryDebug `json:"query_debug,omitempty"`
+	RelevantIntents []ContextRelevant  `json:"relevant_intents"`
 	// InheritedConstraints lists high-severity anti_patterns from
 	// prior sealed intents whose touched files overlap with the
 	// current change. Only high severity, file-only matching.
@@ -78,6 +80,25 @@ type ContextQueryEcho struct {
 	Mode  string   `json:"mode"`
 	Files []string `json:"files,omitempty"`
 	Text  string   `json:"text,omitempty"`
+}
+
+// ContextQueryDebug exposes the current query-mode tokenisation and
+// candidate prefilter decisions. It is intentionally observational:
+// the fields below mirror today's keywordsFromText behavior and do
+// not broaden query recall.
+type ContextQueryDebug struct {
+	Raw               string               `json:"raw"`
+	EffectiveKeywords []string             `json:"effective_keywords"`
+	DroppedTerms      []ContextDroppedTerm `json:"dropped_terms"`
+	ExpandedTerms     map[string][]string  `json:"expanded_terms"`
+	CandidateCount    int                  `json:"candidate_count"`
+}
+
+// ContextDroppedTerm explains why a textual term did not become an
+// effective keyword under the current query tokenizer.
+type ContextDroppedTerm struct {
+	Term   string `json:"term"`
+	Reason string `json:"reason"`
 }
 
 // ContextRelevant is one ranked intent in the retrieval result.
@@ -133,8 +154,27 @@ const (
 // Scores are not normalised across calls — they're meant to be
 // compared within a single result, not across different queries.
 type ContextRelevance struct {
-	Score   float64  `json:"score"`
-	Reasons []string `json:"reasons"`
+	Score     float64                    `json:"score"`
+	Breakdown *ContextRelevanceBreakdown `json:"breakdown,omitempty"`
+	Reasons   []string                   `json:"reasons"`
+}
+
+// ContextRelevanceBreakdown mirrors the existing scorer's additive
+// signals. Final score is the additive fields plus lineage/same_thread
+// boosts, minus status_penalty, rounded to two decimals for output.
+type ContextRelevanceBreakdown struct {
+	File          float64 `json:"file"`
+	Subsystem     float64 `json:"subsystem"`
+	Title         float64 `json:"title"`
+	Summary       float64 `json:"summary"`
+	Decision      float64 `json:"decision"`
+	Risk          float64 `json:"risk"`
+	Followup      float64 `json:"followup"`
+	AntiPattern   float64 `json:"anti_pattern"`
+	Recency       float64 `json:"recency"`
+	SameThread    float64 `json:"same_thread"`
+	Lineage       float64 `json:"lineage"`
+	StatusPenalty float64 `json:"status_penalty"`
 }
 
 const (
@@ -211,9 +251,14 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
+		var queryDebug *ContextQueryDebug
+		if req.Mode == "query" {
+			queryDebug = buildContextQueryDebug(query, 0)
+		}
 		return &ContextRetrievalResult{
-			Query: ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
-			Notes: contextNotes(),
+			Query:      ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
+			QueryDebug: queryDebug,
+			Notes:      contextNotes(),
 		}, nil
 	}
 
@@ -231,6 +276,10 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	// identical because both paths deserialise the same IntentView
 	// struct.
 	candidates := candidateSetForRetrieval(s.Store, req.Mode, files, query, view)
+	var queryDebug *ContextQueryDebug
+	if req.Mode == "query" {
+		queryDebug = buildContextQueryDebug(query, len(candidates))
+	}
 
 	// Score every non-drafting intent; rank; truncate to Limit.
 	// Abandoned and superseded intents stay in the result set —
@@ -239,29 +288,31 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	// raw score by the multiplier in scoreIntentRelevance, and
 	// labelled with the retrieval status that tells the agent how
 	// to use them.
+	includeBreakdown := req.Mode == "query"
 	scored := make([]ContextRelevant, 0, len(candidates))
 	branch, _ := s.Git.CurrentBranch()
 	for _, iv := range candidates {
 		if iv.Status == domain.StatusDrafting {
 			continue
 		}
-		score, reasons := scoreIntentRelevance(iv, files, query, branch)
+		score, reasons, breakdown := scoreIntentRelevance(iv, files, query, branch)
 		if req.Mode == "current" && branch != "" && iv.Thread == branch {
 			score += 0.15
+			breakdown.SameThread += 0.15
 			reasons = append(reasons, "same thread")
 		}
 		if score < contextRelevanceThreshold {
 			continue
 		}
 		retrStatus := classifyRetrievalStatus(iv, churn, now)
-		scored = append(scored, packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions))
+		scored = append(scored, packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions))
 	}
 
 	// Explicit supersession links are lineage, not independent
 	// relevance matches. If a superseder is relevant, include the
 	// intents it replaced even when a SQLite candidate prefilter or
 	// relevance threshold would otherwise drop them.
-	scored = includeSupersededLineage(scored, view, churn, now, files, query, branch)
+	scored = includeSupersededLineage(scored, view, churn, now, files, query, branch, includeBreakdown)
 
 	sort.SliceStable(scored, func(i, j int) bool {
 		return scored[i].Relevance.Score > scored[j].Relevance.Score
@@ -302,6 +353,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 
 	return &ContextRetrievalResult{
 		Query:                ContextQueryEcho{Mode: req.Mode, Files: files, Text: query},
+		QueryDebug:           queryDebug,
 		RelevantIntents:      scored,
 		InheritedConstraints: inherited,
 		Notes:                notes,
@@ -495,7 +547,7 @@ func idForFile(intentID, file string) string {
 // supersession links. Relevance thresholding should filter unrelated
 // history, not hide the replaced half of a decision lineage whose
 // replacement already matched the user's task.
-func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query, branch string) []ContextRelevant {
+func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query, branch string, includeBreakdown bool) []ContextRelevant {
 	if view == nil || len(scored) == 0 {
 		return scored
 	}
@@ -526,17 +578,19 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 				if _, exists := byID[iv.IntentID]; exists {
 					continue
 				}
-				score, reasons := scoreIntentRelevance(iv, files, query, branch)
+				score, reasons, breakdown := scoreIntentRelevance(iv, files, query, branch)
 				parentScore := parent.Relevance.Score
 				if score < parentScore {
+					breakdown.Lineage += parentScore - score
 					score = parentScore
 				}
 				if score < 0.01 {
+					breakdown.Lineage += 0.01 - score
 					score = 0.01
 				}
 				reasons = append(reasons, "superseded by returned intent "+supersederID)
 				retrStatus := classifyRetrievalStatus(iv, churn, now)
-				added := packRelevant(iv, score, reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions)
+				added := packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions)
 				scored = append(scored, added)
 				byID[iv.IntentID] = added
 				changed = true
@@ -595,23 +649,27 @@ func moveIntentAfter(scored []ContextRelevant, from, after int) {
 // scoreIntentRelevance is the deterministic relevance ranker. Pure
 // signal-extraction over fingerprint + summary text; no embeddings.
 //
-// Rough budget (max ~1.0 from any single intent, but most clamp far
-// below):
+// Current additive weights:
 //
-//	file overlap:        up to 0.40   ← strongest signal
-//	subsystem overlap:   up to 0.20
-//	anti_pattern match:  up to 0.25   ← hard constraints
-//	risk keyword match:  up to 0.20   ← deliberately above decisions
-//	                                    since a risk-match is more
-//	                                    constraining for the agent
-//	decision kw match:   up to 0.15
-//	title kw match:      up to 0.10
-//	what / summary kw:   up to 0.05
-//	recency:             up to 0.10
-//	same thread/branch:  up to 0.15
-func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBranch string) (float64, []string) {
+//	file overlap:         0.20 per matching file, capped at 0.40
+//	subsystem overlap:    0.10 per path-derived subsystem match
+//	                     (the score is clamped to 1.0 immediately
+//	                     after this step, matching existing code)
+//	title keyword:        0.05 per keyword hit
+//	what / why keyword:   0.025 per keyword hit in each field
+//	decision keyword:     0.05 once, for the first matching decision
+//	risk keyword:         0.10 once, for the first matching risk
+//	follow-up keyword:    0.08 once, for the first matching follow-up
+//	anti_pattern keyword: 0.15 once, for the first matching anti_pattern
+//	recency:              0.10 when <7d old, 0.05 when <30d old
+//
+// Retrieval adds a same-thread +0.15 boost outside this function for
+// --current mode only. Abandoned/superseded/reverted source intents
+// keep their signal but receive a final x0.85 multiplier.
+func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBranch string) (float64, []string, ContextRelevanceBreakdown) {
 	var score float64
 	var reasons []string
+	var breakdown ContextRelevanceBreakdown
 
 	if iv.Fingerprint != nil {
 		// File overlap. Each matching file scores; capped so a
@@ -623,6 +681,7 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 				contrib = 0.40
 			}
 			score += contrib
+			breakdown.File += contrib
 			if fileMatches == 1 {
 				reasons = append(reasons, "touched "+firstOverlap(iv.Fingerprint.FilesTouched, files))
 			} else {
@@ -634,10 +693,12 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 		querySubsystems := subsystemsFromFiles(files)
 		subMatches := countOverlap(iv.Fingerprint.Subsystems, querySubsystems)
 		if subMatches > 0 {
+			before := score
 			score += 0.10 * float64(subMatches)
 			if score > 1.0 {
 				score = 1.0
 			}
+			breakdown.Subsystem += score - before
 			reasons = append(reasons, "same subsystem: "+firstOverlap(iv.Fingerprint.Subsystems, querySubsystems))
 		}
 	}
@@ -651,21 +712,28 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 		if iv.Summary != nil {
 			titleHits := countKeywordHits(keywords, iv.Summary.Title)
 			if titleHits > 0 {
-				score += 0.05 * float64(titleHits)
+				contrib := 0.05 * float64(titleHits)
+				score += contrib
+				breakdown.Title += contrib
 				reasons = append(reasons, "title mentions "+strings.Join(matchedKeywords(keywords, iv.Summary.Title), ", "))
 			}
 			whatHits := countKeywordHits(keywords, iv.Summary.What)
 			if whatHits > 0 {
-				score += 0.025 * float64(whatHits)
+				contrib := 0.025 * float64(whatHits)
+				score += contrib
+				breakdown.Summary += contrib
 			}
 			whyHits := countKeywordHits(keywords, iv.Summary.Why)
 			if whyHits > 0 {
-				score += 0.025 * float64(whyHits)
+				contrib := 0.025 * float64(whyHits)
+				score += contrib
+				breakdown.Summary += contrib
 			}
 			for _, d := range iv.Summary.Decisions {
 				dText := d.Point + " " + d.Chose + " " + d.Rationale
 				if countKeywordHits(keywords, dText) > 0 {
 					score += 0.05
+					breakdown.Decision += 0.05
 					reasons = append(reasons, "decision mentions "+truncateForReason(d.Point, 40))
 					break
 				}
@@ -673,6 +741,7 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 			for _, r := range iv.Summary.Risks {
 				if countKeywordHits(keywords, r) > 0 {
 					score += 0.10
+					breakdown.Risk += 0.10
 					reasons = append(reasons, "risk mentions "+truncateForReason(r, 40))
 					break
 				}
@@ -680,6 +749,7 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 			for _, f := range iv.Summary.Followups {
 				if countKeywordHits(keywords, f) > 0 {
 					score += 0.08
+					breakdown.Followup += 0.08
 					reasons = append(reasons, "follow-up mentions "+truncateForReason(f, 40))
 					break
 				}
@@ -688,6 +758,7 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 				apText := ap.What + " " + ap.Why + " " + ap.Severity
 				if countKeywordHits(keywords, apText) > 0 {
 					score += 0.15
+					breakdown.AntiPattern += 0.15
 					reasons = append(reasons, "anti_pattern mentions "+strings.Join(matchedKeywords(keywords, apText), ", "))
 					break
 				}
@@ -696,23 +767,24 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 	}
 
 	// Recency boost — agents usually care about *recent* prior work.
-	// Older intents get a small penalty so a months-old merge
-	// doesn't outrank a same-week change of similar relevance.
+	// Older intents simply receive no boost; they are not penalised.
 	if iv.SealedAt != "" {
 		if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil {
 			age := time.Since(t)
 			switch {
 			case age < 7*24*time.Hour:
 				score += 0.10
+				breakdown.Recency += 0.10
 				reasons = append(reasons, "merged this week")
 			case age < 30*24*time.Hour:
 				score += 0.05
+				breakdown.Recency += 0.05
 			}
 		}
 	}
 
 	// Same thread/branch boost is intentionally NOT applied here.
-	// It only fires for --current mode (see scoreIntentRelevanceForCurrent),
+	// It only fires for --current mode in RetrieveContext,
 	// because in --files / --query the user has explicitly named the
 	// retrieval target — whether the intent happens to be on the
 	// caller's working branch is incidental and would otherwise let
@@ -725,18 +797,21 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 	// outranks a same-relevance abandoned one.
 	switch iv.Status {
 	case domain.StatusAbandoned, domain.StatusSuperseded, domain.StatusReverted:
+		before := score
 		score *= 0.85
+		breakdown.StatusPenalty += before - score
 	}
 
 	if len(reasons) == 0 && score > 0 {
 		reasons = append(reasons, "weak signal match")
 	}
-	return score, reasons
+	return score, reasons, breakdown
 }
 
 func packRelevant(
 	iv domain.IntentView,
 	score float64,
+	breakdown *ContextRelevanceBreakdown,
 	reasons []string,
 	retrStatus string,
 	riskResolutions map[string][]domain.RiskResolution,
@@ -747,8 +822,9 @@ func packRelevant(
 		Title:    "",
 		Status:   retrStatus,
 		Relevance: ContextRelevance{
-			Score:   round2(score),
-			Reasons: reasons,
+			Score:     round2(score),
+			Breakdown: breakdown,
+			Reasons:   reasons,
 		},
 		Followups: map[string]string{
 			"show":  "mainline show " + iv.IntentID + " --json",
@@ -946,6 +1022,94 @@ func matchedKeywords(keywords []string, text string) []string {
 	return out
 }
 
+func buildContextQueryDebug(raw string, candidateCount int) *ContextQueryDebug {
+	effective := keywordsFromText(raw)
+	effectiveCopy := make([]string, 0, len(effective))
+	effectiveCopy = append(effectiveCopy, effective...)
+	return &ContextQueryDebug{
+		Raw:               raw,
+		EffectiveKeywords: effectiveCopy,
+		DroppedTerms:      droppedQueryTermsFromText(raw),
+		ExpandedTerms:     map[string][]string{},
+		CandidateCount:    candidateCount,
+	}
+}
+
+func droppedQueryTermsFromText(text string) []ContextDroppedTerm {
+	out := []ContextDroppedTerm{}
+	if text == "" {
+		return out
+	}
+	seenDropped := map[string]bool{}
+	addDropped := func(term, reason string) {
+		key := term + "\x00" + reason
+		if !seenDropped[key] {
+			seenDropped[key] = true
+			out = append(out, ContextDroppedTerm{Term: term, Reason: reason})
+		}
+	}
+	fields := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '_' && r != '-'
+	})
+	seenEffective := map[string]bool{}
+	for _, f := range fields {
+		f = strings.Trim(f, "_-")
+		if f == "" {
+			continue
+		}
+		reason := ""
+		switch {
+		case len(f) < 4:
+			reason = "too_short"
+		case stopwords[f]:
+			reason = "stopword"
+		case seenEffective[f]:
+			reason = "duplicate"
+		}
+		if reason != "" {
+			addDropped(f, reason)
+			continue
+		}
+		seenEffective[f] = true
+	}
+	for _, term := range unsupportedNonASCIIQueryTerms(text) {
+		addDropped(term, "unsupported_non_ascii")
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Term == out[j].Term {
+			return out[i].Reason < out[j].Reason
+		}
+		return out[i].Term < out[j].Term
+	})
+	return out
+}
+
+func unsupportedNonASCIIQueryTerms(text string) []string {
+	fields := strings.Fields(strings.ToLower(text))
+	seen := map[string]bool{}
+	out := []string{}
+	for _, f := range fields {
+		f = strings.TrimFunc(f, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r)
+		})
+		if f == "" || !containsUnsupportedNonASCII(f) || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+func containsUnsupportedNonASCII(s string) bool {
+	for _, r := range s {
+		if r > unicode.MaxASCII && !unicode.IsSpace(r) && !unicode.IsPunct(r) && !unicode.IsSymbol(r) {
+			return true
+		}
+	}
+	return false
+}
+
 func topDecisions(in []domain.Decision, n int) []string {
 	out := make([]string, 0, n)
 	for i, d := range in {
@@ -980,6 +1144,31 @@ func truncateForReason(s string, n int) string {
 
 func round2(f float64) float64 {
 	return float64(int(f*100+0.5)) / 100
+}
+
+func optionalRelevanceBreakdown(include bool, in ContextRelevanceBreakdown) *ContextRelevanceBreakdown {
+	if !include {
+		return nil
+	}
+	out := roundRelevanceBreakdown(in)
+	return &out
+}
+
+func roundRelevanceBreakdown(in ContextRelevanceBreakdown) ContextRelevanceBreakdown {
+	return ContextRelevanceBreakdown{
+		File:          round2(in.File),
+		Subsystem:     round2(in.Subsystem),
+		Title:         round2(in.Title),
+		Summary:       round2(in.Summary),
+		Decision:      round2(in.Decision),
+		Risk:          round2(in.Risk),
+		Followup:      round2(in.Followup),
+		AntiPattern:   round2(in.AntiPattern),
+		Recency:       round2(in.Recency),
+		SameThread:    round2(in.SameThread),
+		Lineage:       round2(in.Lineage),
+		StatusPenalty: round2(in.StatusPenalty),
+	}
 }
 
 // keep linker happy if filepath ends up unused on some builds.

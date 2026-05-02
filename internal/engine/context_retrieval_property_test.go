@@ -4,6 +4,7 @@ package engine
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"testing"
 	"time"
@@ -190,6 +191,40 @@ func TestPropertySupersessionRanking(t *testing.T) {
 	})
 }
 
+// Relevance breakdown observability: every raw score mutation in
+// scoreIntentRelevance must be mirrored in ContextRelevanceBreakdown.
+// Example tests pin visible JSON shapes; this property catches future
+// scorer edits that add a signal but forget the debug surface.
+func TestPropertyScoreBreakdownTracksRawScore(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		iv := drawScoredIntentView(rt, "score")
+		files := rapid.SampledFrom([][]string{
+			nil,
+			{"src/auth/jwt.go"},
+			{"src/billing/charges.go"},
+			{"internal/engine/context_retrieval.go"},
+			{"src/auth/jwt.go", "internal/engine/context_retrieval.go"},
+		}).Draw(rt, "files")
+		query := rapid.SampledFrom([]string{
+			"",
+			"auth jwt",
+			"context retrieval",
+			"risk followup",
+			"anti_pattern constraint",
+			"billing charges",
+		}).Draw(rt, "query")
+
+		score, _, breakdown := scoreIntentRelevance(iv, files, query, "feature/test")
+		sum := breakdown.File + breakdown.Subsystem + breakdown.Title + breakdown.Summary +
+			breakdown.Decision + breakdown.Risk + breakdown.Followup + breakdown.AntiPattern +
+			breakdown.Recency + breakdown.SameThread + breakdown.Lineage - breakdown.StatusPenalty
+		if math.Abs(sum-score) > 0.000001 {
+			rt.Fatalf("score breakdown drift: sum=%.6f score=%.6f breakdown=%+v iv=%+v files=%+v query=%q",
+				sum, score, breakdown, iv, files, query)
+		}
+	})
+}
+
 // -----------------------------------------------------------
 // Generators
 // -----------------------------------------------------------
@@ -315,6 +350,58 @@ func drawSealedIntent(rt *rapid.T, label string) domain.IntentView {
 		Fingerprint: &domain.SemanticFingerprint{
 			Subsystems:   []string{"sub"},
 			FilesTouched: dedup,
+		},
+	}
+}
+
+func drawScoredIntentView(rt *rapid.T, label string) domain.IntentView {
+	id := "int_" + label + "_" + randomTestString(4)
+	status := rapid.SampledFrom([]domain.IntentStatus{
+		domain.StatusMerged,
+		domain.StatusProposed,
+		domain.StatusSealedLocal,
+		domain.StatusAbandoned,
+		domain.StatusReverted,
+		domain.StatusSuperseded,
+	}).Draw(rt, label+".status")
+	ageDays := rapid.SampledFrom([]int{1, 5, 20, 45}).Draw(rt, label+".ageDays")
+	files := rapid.SampledFrom([][]string{
+		{"src/auth/jwt.go"},
+		{"src/billing/charges.go"},
+		{"internal/engine/context_retrieval.go"},
+		{"src/auth/jwt.go", "internal/engine/context_retrieval.go", "src/billing/charges.go"},
+	}).Draw(rt, label+".files")
+	subsystems := subsystemsFromFiles(files)
+	if rapid.Bool().Draw(rt, label+".extraSubsystem") {
+		subsystems = append(subsystems, "extra")
+	}
+	return domain.IntentView{
+		IntentID:      id,
+		Status:        status,
+		ActorID:       "actor_test",
+		Thread:        "feature/" + label,
+		SealedAt:      time.Now().Add(-time.Duration(ageDays) * 24 * time.Hour).UTC().Format(time.RFC3339),
+		ViewRebuiltAt: time.Now().UTC().Format(time.RFC3339),
+		Summary: &domain.IntentSummary{
+			Title: "auth jwt context retrieval " + id,
+			What:  "implemented context retrieval for billing charges",
+			Why:   "because auth risk and followup visibility matter",
+			Decisions: []domain.Decision{{
+				Point:     "context retrieval decision",
+				Chose:     "score auth and billing signals",
+				Rationale: "decision rationale mentions jwt",
+			}},
+			Risks:     []string{"risk followup can drift"},
+			Followups: []string{"followup context query audit"},
+			AntiPatterns: []domain.AntiPattern{{
+				What:     "anti_pattern constraint",
+				Why:      "avoid hidden context retrieval drift",
+				Severity: "high",
+			}},
+		},
+		Fingerprint: &domain.SemanticFingerprint{
+			Subsystems:   subsystems,
+			FilesTouched: files,
 		},
 	}
 }
