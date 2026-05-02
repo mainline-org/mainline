@@ -37,9 +37,10 @@ const (
 	// agingProposedWarningHours / agingProposedStaleHours / etc.
 	// drive the review-queue and open-work aging buckets. Spec §7.3
 	// values, hardcoded for v1.
-	agingProposedWarningHours = 12
-	agingProposedStaleHours   = 24
+	agingProposedWarningHours  = 12
+	agingProposedStaleHours    = 24
 	agingProposedCriticalHours = 48
+	agingProposedCleanupHours  = 72
 	agingOpenStaleHours        = 24
 	agingOpenCriticalHours     = 72
 
@@ -105,6 +106,9 @@ func (t *HubTeamHealth) populateAging(m *HubModel, now time.Time) {
 		if hours >= agingProposedCriticalHours {
 			t.ProposedOlderThan48h++
 		}
+		if hours >= agingProposedCleanupHours {
+			t.ProposedOlderThan72h++
+		}
 	}
 	t.OldestProposedHours = oldestProposedH
 
@@ -162,8 +166,8 @@ func (t *HubTeamHealth) populateRisk(m *HubModel, now time.Time) {
 	// Top risk-heavy files: sort by risk-bearing-intent count desc,
 	// break ties by alphabetical so output is deterministic.
 	type riskFile struct {
-		path  string
-		count int
+		path   string
+		count  int
 		recent int
 	}
 	files := make([]riskFile, 0, len(rowsByPath))
@@ -369,10 +373,10 @@ func (t *HubTeamHealth) populateActorActivity(m *HubModel, now time.Time) {
 	rows := make([]HubActorActivity, 0, len(nameByActor))
 	for id := range nameByActor {
 		rows = append(rows, HubActorActivity{
-			ActorID:           id,
-			ActorName:         nameByActor[id],
-			OpenProposed:      openByActor[id],
-			SealedThisWindow:  sealedByActor[id],
+			ActorID:          id,
+			ActorName:        nameByActor[id],
+			OpenProposed:     openByActor[id],
+			SealedThisWindow: sealedByActor[id],
 		})
 	}
 	// Alphabetical by ActorID — deliberate. Ranking by counts would
@@ -438,7 +442,7 @@ func (t *HubTeamHealth) populateHealthLevel() {
 	if t.Coverage.Available && t.Coverage.HighRiskUncoveredCommits > 0 {
 		criticalSignals++
 	}
-	if t.ProposedOlderThan48h > 0 {
+	if t.ProposedOlderThan72h > 0 {
 		criticalSignals++
 	}
 	if t.OpenOlderThan72h > 0 {
@@ -485,7 +489,10 @@ func formatHealthSummary(prefix string, t *HubTeamHealth) string {
 		fmt.Sprintf("%d sealed intents, %d open work, %d proposed.",
 			t.TotalIntents, t.OpenIntents, t.ProposedIntents))
 	attentionBits := []string{}
-	if t.ProposedOlderThan24h > 0 {
+	if t.ProposedOlderThan72h > 0 {
+		attentionBits = append(attentionBits,
+			fmt.Sprintf("%d proposed waiting >72h; run proposal doctor", t.ProposedOlderThan72h))
+	} else if t.ProposedOlderThan24h > 0 {
 		attentionBits = append(attentionBits,
 			fmt.Sprintf("%d proposed waiting >24h", t.ProposedOlderThan24h))
 	}
