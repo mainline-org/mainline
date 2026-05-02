@@ -40,6 +40,7 @@ func TestPropertySealSubmitNeverMutatesOnValidationFailure(t *testing.T) {
 		draftBefore, _ := svc.Store.ReadDraft(drafts[0])
 		if draftBefore == nil {
 			rt.Fatal("nil draft")
+			return // unreachable; satisfies staticcheck SA5011
 		}
 		statusBefore := draftBefore.Status
 

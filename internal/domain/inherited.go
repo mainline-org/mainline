@@ -316,28 +316,6 @@ func matchedFileReasons(iv *IntentView, files map[string]bool) []string {
 	return out
 }
 
-// matchedReasons is the legacy version that includes subsystem matching.
-// Kept for BuildInheritedHeatmap which still uses intent-level matching
-// for its per-file roll-up (subsystem matches don't appear in heatmap
-// anyway because they can't pin to a single path).
-func matchedReasons(iv *IntentView, files, subs map[string]bool) []string {
-	if iv.Fingerprint == nil {
-		return nil
-	}
-	out := make([]string, 0, 4)
-	for _, f := range iv.Fingerprint.FilesTouched {
-		if files[f] {
-			out = append(out, "file:"+f)
-		}
-	}
-	for _, s := range iv.Fingerprint.Subsystems {
-		if subs[s] {
-			out = append(out, "subsystem:"+s)
-		}
-	}
-	return out
-}
-
 // hasExplicitAck checks whether the acknowledged_constraints list
 // contains an entry for the given constraint ID. Exact match only.
 func hasExplicitAck(acks []AcknowledgedConstraint, constraintID string) bool {

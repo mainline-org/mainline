@@ -298,9 +298,11 @@ func TestPropertyRebuildViewCheckJudgmentLastWriteWins(t *testing.T) {
 		iv := findIntentView(view, intentID)
 		if iv == nil {
 			rt.Fatal("intent not in view")
+			return // unreachable; satisfies staticcheck SA5011
 		}
 		if iv.LastCheck == nil {
 			rt.Fatal("LastCheck is nil after check judgments")
+			return // unreachable; satisfies staticcheck SA5011
 		}
 		if iv.LastCheck.HasConflict != lastHasConflict {
 			rt.Fatalf("LastCheck.HasConflict: got %v, want %v (last event %s)",

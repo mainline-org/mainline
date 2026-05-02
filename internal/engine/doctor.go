@@ -507,7 +507,7 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 	if rep.HasRemote {
 		remoteURL := s.Git.ConfigGet("remote." + remote + ".url")
 		if isSSHRemote(remoteURL) {
-			rep.SSHMultiplexOK = sshControlMasterConfigured(remoteURL)
+			rep.SSHMultiplexOK = sshControlMasterConfigured()
 			if !rep.SSHMultiplexOK {
 				rep.Suggestions = append(rep.Suggestions,
 					"SSH ControlMaster not detected — enable it to cut sync latency from ~3s to ~1s on repeat runs. "+
@@ -590,7 +590,7 @@ func isSSHRemote(url string) bool {
 // the remote URL has ControlMaster configured in ~/.ssh/config.
 // This is a best-effort heuristic — it reads the SSH config file and
 // looks for ControlMaster in Host blocks matching the remote host.
-func sshControlMasterConfigured(remoteURL string) bool {
+func sshControlMasterConfigured() bool {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false
