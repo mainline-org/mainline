@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -48,10 +49,18 @@ func (s *Service) InstallDefaultAgentIntegrations() *AgentIntegrationInstallResu
 }
 
 func (s *Service) installDefaultSkill() SkillInstallResult {
-	res := SkillInstallResult{
-		Requested: true,
-		Command:   []string{"npx", "--yes", "skills", "add", "mainline"},
+	res := SkillInstallResult{Requested: true}
+
+	// Prefer local skills/mainline directory if it exists in the repo.
+	// This avoids network clone issues (private repos, bare name
+	// resolution colliding with local binaries named "mainline").
+	localSkillDir := filepath.Join(s.Git.RepoRoot, "skills", "mainline")
+	source := "mainline-org/mainline"
+	if isDir(localSkillDir) {
+		source = "./skills/mainline"
 	}
+
+	res.Command = []string{"npx", "--yes", "skills", "add", source}
 	npx, err := exec.LookPath("npx")
 	if err != nil {
 		res.Skipped = true
@@ -60,13 +69,13 @@ func (s *Service) installDefaultSkill() SkillInstallResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, npx, "--yes", "skills", "add", "mainline")
+	cmd := exec.CommandContext(ctx, npx, "--yes", "skills", "add", source)
 	cmd.Dir = s.Git.RepoRoot
 	out, err := cmd.CombinedOutput()
 	res.Output = trimCommandOutput(string(out))
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			res.Error = "npx skills add mainline timed out"
+			res.Error = "npx skills add timed out"
 		} else {
 			res.Error = err.Error()
 		}
@@ -83,6 +92,11 @@ func trimCommandOutput(out string) string {
 		return out
 	}
 	return out[:max] + "\n...<truncated>"
+}
+
+func isDir(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 func (s *Service) installDefaultHooks() []HookInstallResult {
