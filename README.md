@@ -767,9 +767,10 @@ mainline/
 
 ## Roadmap
 
-The current implementation is on the **v0.3** line: coverage invariants,
-seal snapshot evidence, auto-pin on sync, context reliability, hub export,
-and eval reporting are already part of the working product.
+The current implementation is on the **v0.4** line. Release packaging,
+CI hardening, coverage invariants, seal snapshot evidence, auto-pin on
+sync, context reliability, hub export, and eval reporting are already
+part of the working product; remaining v0.4 work is public-launch polish.
 
 | Milestone | Focus | Status |
 |---|---|---|
@@ -780,7 +781,7 @@ and eval reporting are already part of the working product.
 | rc6 | `[check:X]` cascade with phase 1 / phase 2 priority; per-intent phase 1 cache; column drops on terminal status | Implemented |
 | v0.2 | Drop deprecated `reconcile` alias; auto-pin on sync (no separate `pin` step in daily use; manual `pin <intent> <commit>` retained as fallback) | Implemented |
 | v0.3 | Coverage model, seal snapshot contract, context reliability, eval reporting, hub export | Implemented |
-| v0.4 | Release packaging, public security process, CI hardening, hosted docs polish | In progress |
+| v0.4 | Release packaging, public security process, CI hardening, hosted docs polish | Current / launch polish |
 | v0.5 | Reviewer dashboards; multi-repo intent threading | Planned |
 
 ## Community and security
