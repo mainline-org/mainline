@@ -6,7 +6,7 @@
 {{range .RiskRows}}
 <section class="riskcard">
   <h2><a href="intents/{{.Intent.ID}}.html">{{.Intent.Title}}</a> <code class="muted">{{shortID .Intent.ID}}</code></h2>
-  <p class="meta">{{.Intent.Status}} · {{timeAgo .Intent.SealedAt}}</p>
+  <p class="meta">{{.Intent.Status}} · {{timeAgo .Intent.SealedAt}}{{if .Intent.ActorID}} · <a href="actors/{{actorSlug .Intent.ActorID}}.html">{{if .Intent.ActorName}}{{.Intent.ActorName}}{{else}}{{shortID .Intent.ActorID}}{{end}}</a>{{end}}</p>
   {{if .Risks}}<h3>Soft risks</h3><ul class="risks">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>{{end}}
   {{if .Intent.AntiPatterns}}<h3>Hard constraints</h3><ul class="constraints">{{range .Intent.AntiPatterns}}<li><strong>{{.What}}</strong>{{if .Why}} — {{.Why}}{{end}}{{if .Severity}} <span class="severity severity-{{.Severity}}">[{{.Severity}}]</span>{{end}}</li>{{end}}</ul>{{end}}
 </section>

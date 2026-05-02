@@ -1,0 +1,37 @@
+{{define "intents"}}{{template "header" .}}
+<h1>{{t .Lang "intents.heading"}}</h1>
+<p class="lead">{{len .Intents}} {{t .Lang "intents.lead_suffix"}}</p>
+{{if not .Intents}}<p class="muted">{{t .Lang "intents.empty"}}</p>{{end}}
+{{if .Intents}}
+<div class="table-scroll">
+<table class="intents">
+<thead>
+<tr>
+  <th>{{t .Lang "recent.col_id"}}</th>
+  <th>{{t .Lang "recent.col_title"}}</th>
+  <th>{{t .Lang "recent.col_status"}}</th>
+  <th>{{t .Lang "recent.col_actor"}}</th>
+  <th>{{t .Lang "recent.col_thread"}}</th>
+  <th>{{t .Lang "recent.col_sealed"}}</th>
+  <th>{{t .Lang "recent.col_files"}}</th>
+  <th>{{t .Lang "recent.col_risks"}}</th>
+</tr>
+</thead>
+<tbody>
+{{range .Intents}}
+<tr>
+  <td><a href="intents/{{.ID}}.html"><code>{{shortID .ID}}</code></a></td>
+  <td>{{.Title}}</td>
+  <td><span class="status status-{{.Status}}">{{.Status}}</span></td>
+  <td>{{if .ActorID}}<a href="actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a>{{end}}</td>
+  <td><code class="thread">{{.Thread}}</code></td>
+  <td class="muted" title="{{.SealedAt}}">{{timeAgo .SealedAt}}</td>
+  <td class="num">{{len .FilesTouched}}</td>
+  <td class="num">{{len .AntiPatterns}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}
+{{template "footer" .}}{{end}}

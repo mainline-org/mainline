@@ -348,6 +348,7 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	for _, want := range []string{
 		"index.html",
 		"open.html",
+		"intents.html",
 		"review.html",
 		"files.html",
 		"risks.html",
@@ -362,6 +363,23 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	} {
 		if _, err := os.Stat(filepath.Join(out, want)); err != nil {
 			t.Errorf("expected %s on disk: %v", want, err)
+		}
+	}
+
+	// Author should surface on every intent-listing page, not just the
+	// per-intent detail. risks.html is the regression that motivated
+	// this — verify the actor link renders there. intents.html is the
+	// new "browse all" canonical surface.
+	risksPage, _ := os.ReadFile(filepath.Join(out, "risks.html"))
+	for _, fragment := range []string{"int_a", "actor_alice", "actors/actor_alice.html"} {
+		if !strings.Contains(string(risksPage), fragment) {
+			t.Errorf("risks.html missing %q (author should be linked from risk-bearing intent)", fragment)
+		}
+	}
+	intentsPage, _ := os.ReadFile(filepath.Join(out, "intents.html"))
+	for _, fragment := range []string{"int_a", "int_b", "actor_alice", "actors/actor_alice.html"} {
+		if !strings.Contains(string(intentsPage), fragment) {
+			t.Errorf("intents.html missing %q (browse-all surface should list every intent with author)", fragment)
 		}
 	}
 
