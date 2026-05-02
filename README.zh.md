@@ -118,6 +118,62 @@ mainline lint <intent_id>                # 检查队友 seal 的质量
 这些你不必输入 — 记住一个 `mainline hub open` 就够了；其余的在你需要
 的时候才用。
 
+## 安装
+
+### macOS / Linux 脚本安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
+```
+
+安装脚本会从 GitHub Releases 下载当前平台对应的最新 archive，用
+`checksums.txt` 校验后，把 `mainline` 安装到第一个可写的 PATH 目录：
+`/usr/local/bin`、`/opt/homebrew/bin` 或 `~/.local/bin`。
+
+也可以指定版本或安装目录：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_VERSION=v0.4.0 bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_INSTALL_DIR="$HOME/.local/bin" bash
+```
+
+脚本支持 macOS / Linux 的 `amd64` 和 `arm64`。Windows 用户请从 GitHub
+Releases 下载预编译 archive。
+
+### GitHub Releases
+
+从 [GitHub Releases](https://github.com/mainline-org/mainline/releases/latest)
+下载预编译二进制。每个 release 都包含多平台 archive 和用于校验的
+`checksums.txt`。
+
+Archive 命名规则：
+
+```text
+mainline_<version>_<os>_<arch>.tar.gz
+mainline_<version>_windows_amd64.zip
+```
+
+### Go install
+
+```bash
+go install github.com/mainline-org/mainline@latest
+```
+
+需要 Go 1.22 或更新版本。
+
+### 从源码构建
+
+```bash
+git clone https://github.com/mainline-org/mainline
+cd mainline && go build -o mainline .
+```
+
+安装后可以随时检查本机配置：
+
+```bash
+mainline doctor --setup
+```
+
 ## 让你的 agent 用起来
 
 每个 repo 一次性配置：

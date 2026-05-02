@@ -193,11 +193,49 @@ not required.
 
 ## Install
 
+### macOS / Linux install script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
+```
+
+The installer downloads the latest GitHub Release archive for your platform,
+verifies it against `checksums.txt`, and installs `mainline` into the first
+writable PATH directory among `/usr/local/bin`, `/opt/homebrew/bin`, and
+`~/.local/bin`.
+
+Pin a version or choose an install directory with environment variables:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_VERSION=v0.4.0 bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_INSTALL_DIR="$HOME/.local/bin" bash
+```
+
+The script supports macOS and Linux on `amd64` and `arm64`. Windows users should
+download a prebuilt archive from GitHub Releases.
+
+### GitHub Releases
+
+Download a prebuilt binary from
+[GitHub Releases](https://github.com/mainline-org/mainline/releases/latest).
+Each release includes platform archives plus `checksums.txt` for verification.
+
+Archive names follow this pattern:
+
+```text
+mainline_<version>_<os>_<arch>.tar.gz
+mainline_<version>_windows_amd64.zip
+```
+
+### Go install
+
 ```bash
 go install github.com/mainline-org/mainline@latest
 ```
 
-Or build from source:
+Requires Go 1.22 or newer.
+
+### Build from source
 
 ```bash
 git clone https://github.com/mainline-org/mainline
