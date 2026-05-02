@@ -16,13 +16,14 @@ import (
 // Every commit reachable from main is in exactly one of three states:
 //
 //   covered    notes ref points at a sealed (non-abandoned) intent
-//   skipped    Mainline-Skip: trailer  OR  matched [mainline.skip] pattern
+//   skipped    Mainline-Skip: trailer, matched [mainline.skip] pattern,
+//              or pre-Mainline baseline history
 //   uncovered  neither
 //
 // State is computed directly from git facts:
 //   - refs/notes/mainline/intents (already-shipped rc3+ infrastructure)
 //   - commit messages (subject + trailer block)
-//   - team-config [mainline.skip] patterns
+//   - team-config [mainline.skip] patterns and [mainline.coverage] baseline
 //
 // No mainline-private derived schema.
 
@@ -33,6 +34,8 @@ const (
 	CoverageSkipped   CoverageState = "skipped"
 	CoverageUncovered CoverageState = "uncovered"
 )
+
+const preMainlineBaselineReason = "pre-Mainline baseline"
 
 // MainlineSkipTrailer is the canonical trailer key. Empty reason after
 // the colon is rejected — see SkipReasonFromMessage.
@@ -53,8 +56,8 @@ type CommitCoverage struct {
 	IntentIDs []string `json:"intent_ids,omitempty"`
 
 	// SkipReason is populated when State == Skipped. Either a
-	// human-supplied reason from the trailer or "matched config
-	// pattern: <pattern>" when the pattern path won.
+	// human-supplied reason from the trailer, "matched config
+	// pattern: <pattern>", or "pre-Mainline baseline: <sha>".
 	SkipReason string `json:"skip_reason,omitempty"`
 }
 
@@ -115,6 +118,13 @@ func (s *Service) CoverageWindow(n int, view *domain.MainlineView, cfg *domain.T
 	}
 
 	skipPatterns := compileSkipPatterns(cfg)
+	baselineCommit := strings.TrimSpace(cfg.Mainline.Coverage.BaselineCommit)
+	var baselineAncestors map[string]bool
+	if baselineCommit != "" {
+		if set, err := s.Git.RevListSet(baselineCommit); err == nil {
+			baselineAncestors = set
+		}
+	}
 
 	out := make([]CommitCoverage, 0, len(entries))
 	for _, e := range entries {
@@ -144,7 +154,18 @@ func (s *Service) CoverageWindow(n int, view *domain.MainlineView, cfg *domain.T
 			}
 		}
 
-		// Pri 2: skipped (trailer or pattern). LogWindow returns subject
+		// Pri 2: pre-Mainline baseline. Existing project history
+		// before `mainline init` is not a gap in Mainline usage. A
+		// later explicit note still wins because covered is checked
+		// first.
+		if baselineAncestors[e.Hash] {
+			cov.State = CoverageSkipped
+			cov.SkipReason = preMainlineBaselineReason + ": " + short8(baselineCommit)
+			out = append(out, cov)
+			continue
+		}
+
+		// Pri 3: skipped (trailer or pattern). LogWindow returns subject
 		// only; the trailer lives in the body, so fetch the full message
 		// just for commits we have not already classified as covered.
 		full, _ := s.Git.FullCommitMessage(e.Hash)
