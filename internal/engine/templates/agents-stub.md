@@ -27,7 +27,7 @@ mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
 Sync, pin, merge are automatic — do not invoke them.
 
 **Language rule**: write everything you put into Mainline (goal,
-appends, seal title/what/why/decisions/risks/anti_patterns) in the
+appends, seal title/what/why/decisions/risks/anti_patterns/followups) in the
 language the user used. Chinese in, Chinese out; English in, English
 out. The seal is the team's memory — translating it makes it harder
 to read for the people whose memory it is. Code identifiers, command
