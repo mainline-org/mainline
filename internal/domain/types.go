@@ -217,12 +217,28 @@ type IntentSummary struct {
 	AntiPatterns []AntiPattern         `json:"anti_patterns,omitempty"`
 	Followups    []string              `json:"followups"`
 
+	// AcknowledgedConstraints records how the agent handled each
+	// inherited high-severity constraint it saw during this seal.
+	// Keyed by stable ConstraintID ("int_xxx#N"). Persists through
+	// seal → event → view so lint, Hub, and heatmap can audit.
+	AcknowledgedConstraints []AcknowledgedConstraint `json:"acknowledged_constraints,omitempty"`
+
 	// ReviewNotes are ephemeral observations for this PR's reviewer —
 	// scope explanations, test-run context, "reviewer should focus on X".
 	// They do NOT propagate to inherited constraints, hub heatmap, or
 	// context retrieval. After the PR merges they are effectively dead
 	// (still stored in the ledger, but no query surface touches them).
 	ReviewNotes []string `json:"review_notes,omitempty"`
+}
+
+// AcknowledgedConstraint records how the agent handled a specific
+// inherited constraint. The ConstraintID is stable ("int_xxx#N"
+// where N is the anti_pattern array index in the source intent) so
+// matching is exact rather than text-guessing.
+type AcknowledgedConstraint struct {
+	ConstraintID string `json:"constraint_id"`          // "int_xxx#N"
+	Disposition  string `json:"disposition"`            // preserved | mitigated | not_applicable | intentionally_changed
+	Note         string `json:"note,omitempty"`
 }
 
 // AntiPattern is a hard constraint future agents MUST avoid when
@@ -275,6 +291,7 @@ type InheritedConstraintHotspot struct {
 // What/Why/Severity mirror AntiPattern verbatim — same shape, just
 // annotated with provenance and match reasons.
 type InheritedConstraint struct {
+	ConstraintID string   `json:"constraint_id"`          // "int_xxx#N" — stable ID for acknowledgement
 	SourceIntent string   `json:"source_intent"`
 	What         string   `json:"what"`
 	Why          string   `json:"why"`

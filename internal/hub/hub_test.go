@@ -841,8 +841,8 @@ func TestBuildInheritedHotspots_PopulatesPerFile(t *testing.T) {
 	if h.FilePath != "a.go" {
 		t.Errorf("file path: %q", h.FilePath)
 	}
-	if h.ConstraintCount != 2 {
-		t.Errorf("constraint count: want 2, got %d", h.ConstraintCount)
+	if h.ConstraintCount != 1 {
+		t.Errorf("constraint count: want 1 (only high severity), got %d", h.ConstraintCount)
 	}
 	if h.HighSeverityCount != 1 {
 		t.Errorf("high severity count: want 1, got %d", h.HighSeverityCount)
