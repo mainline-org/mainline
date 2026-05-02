@@ -193,8 +193,5 @@ func short12(s string) string {
 }
 
 func truncateLine(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
+	return truncate(s, n)
 }
