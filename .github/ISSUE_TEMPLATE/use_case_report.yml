@@ -1,0 +1,58 @@
+name: Use case report
+description: Describe a real scenario where you used (or tried to use) Mainline.
+title: "use-case: "
+labels:
+  - use-case
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We're collecting real use cases to understand how Mainline fits into
+        actual workflows. Even failed attempts are valuable — they show us
+        where the tool doesn't match reality yet.
+  - type: textarea
+    id: scenario
+    attributes:
+      label: What were you trying to do?
+      description: |
+        The real task — not in Mainline terms, but in your project terms.
+        e.g. "Refactor auth module across 3 services" or "Onboard a new
+        team member who keeps breaking the billing boundary".
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How did you use Mainline?
+      description: |
+        Which commands / workflow did you follow? Did the agent drive it
+        or did you run commands manually?
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options:
+        - Mainline helped — would do it again
+        - Mainline helped a little — not sure it was worth the overhead
+        - Mainline didn't help — the workflow didn't fit
+        - Mainline got in the way — made things harder
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: What happened
+      description: |
+        Walk us through the result. Did the intent record prove useful later?
+        Did the agent respect prior anti-patterns? Did conflict detection catch
+        anything real?
+    validations:
+      required: true
+  - type: textarea
+    id: takeaway
+    attributes:
+      label: Your takeaway
+      description: |
+        One sentence: what should we learn from this use case?

@@ -1,0 +1,44 @@
+name: Confusing concept
+description: Report a concept, term, or workflow that was hard to understand.
+title: "concept: "
+labels:
+  - documentation
+  - ux
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Mainline introduces several concepts (intents, seals, turns, fingerprints,
+        anti-patterns, inherited constraints, ...). If any of them confused you,
+        that's a product problem — not a you problem. Tell us about it.
+  - type: textarea
+    id: concept
+    attributes:
+      label: What was confusing
+      description: |
+        Which concept, command, or workflow step didn't make sense?
+        Quote the docs / CLI output / error message if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: What you expected it to mean
+      description: |
+        Before you figured it out (or gave up), what did you think it meant or did?
+    validations:
+      required: true
+  - type: textarea
+    id: resolution
+    attributes:
+      label: How you figured it out (if you did)
+      description: |
+        Did the docs help? Did you read the source? Ask someone?
+        "I never figured it out" is a valid answer.
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: How would you explain it?
+      description: |
+        If you had to rename or re-explain this concept to a teammate,
+        what would you say?
