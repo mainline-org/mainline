@@ -386,7 +386,7 @@ func TestContextRetrieval_QueryModeScoresAntiPatterns(t *testing.T) {
 	}
 }
 
-func TestContextRetrieval_QueryModeKeepsRecentWeakSignals(t *testing.T) {
+func TestContextRetrieval_QueryModeDropsRecentWeakSignalsFromResults(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
@@ -437,8 +437,11 @@ func TestContextRetrieval_QueryModeKeepsRecentWeakSignals(t *testing.T) {
 	for _, ri := range res.RelevantIntents {
 		ids[ri.IntentID] = true
 	}
-	if !ids["int_keyword"] || !ids["int_recent_context"] {
-		t.Fatalf("query cache candidates should preserve keyword and recent weak signals, got %+v", res.RelevantIntents)
+	if !ids["int_keyword"] {
+		t.Fatalf("query mode should keep content matches, got %+v", res.RelevantIntents)
+	}
+	if ids["int_recent_context"] {
+		t.Fatalf("query mode should not return recency-only weak signals, got %+v", res.RelevantIntents)
 	}
 }
 
