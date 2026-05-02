@@ -324,6 +324,10 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 		t.Errorf("agent-judgment field summary.title should be empty in starter, got %q",
 			pkg.Starter.Summary.Title)
 	}
+	if pkg.Starter.Summary.UserGoal != "implement feature X" {
+		t.Errorf("starter user_goal should mirror start goal: got %q",
+			pkg.Starter.Summary.UserGoal)
+	}
 	// FilesTouched mirrors DiffSummary.FilesChanged so the starter
 	// is consistent with what the package already documents.
 	if len(pkg.Starter.Fingerprint.FilesTouched) != len(pkg.DiffSummary.FilesChanged) {
@@ -338,7 +342,7 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 			Title:    "Implement feature X",
 			What:     "Added feature X to module Y",
 			Why:      "Users requested feature X",
-			UserGoal: "implement feature X",
+			UserGoal: "wrong execution instruction",
 			Decisions: []domain.Decision{{
 				Point:     "feature scope",
 				Chose:     "add feature X to module Y",
@@ -362,6 +366,27 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 	}
 	if submitResult.Hash == "" {
 		t.Error("hash should not be empty")
+	}
+	view, err := svc.Store.ReadMainlineView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *domain.IntentView
+	for i := range view.Intents {
+		if view.Intents[i].IntentID == startResult.IntentID {
+			found = &view.Intents[i]
+			break
+		}
+	}
+	if found == nil || found.Summary == nil {
+		t.Fatalf("sealed intent should be in the view, view=%+v", view)
+	}
+	if found.Goal != "implement feature X" {
+		t.Errorf("view goal should stay authoritative: got %q", found.Goal)
+	}
+	if found.Summary.UserGoal != "implement feature X" {
+		t.Errorf("seal submit should canonicalize summary.user_goal from draft goal, got %q",
+			found.Summary.UserGoal)
 	}
 }
 

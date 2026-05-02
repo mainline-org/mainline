@@ -436,6 +436,7 @@ func hubIntentFromView(v *domain.IntentView) HubIntent {
 		ID:                 v.IntentID,
 		Status:             string(v.Status),
 		Goal:               v.Goal,
+		UserGoal:           v.Goal,
 		Thread:             v.Thread,
 		GitBranch:          v.GitBranch,
 		ActorID:            v.ActorID,
@@ -450,7 +451,9 @@ func hubIntentFromView(v *domain.IntentView) HubIntent {
 		out.Title = s.Title
 		out.What = s.What
 		out.Why = s.Why
-		out.UserGoal = s.UserGoal
+		if out.UserGoal == "" {
+			out.UserGoal = s.UserGoal
+		}
 		out.Risks = append([]string(nil), s.Risks...)
 		out.AntiPatterns = append([]domain.AntiPattern(nil), s.AntiPatterns...)
 		out.Followups = append([]string(nil), s.Followups...)

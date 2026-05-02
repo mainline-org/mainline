@@ -72,6 +72,23 @@ func TestBuildHubModel_TitleFallsBackToGoal(t *testing.T) {
 	}
 }
 
+func TestBuildHubModel_UserGoalUsesIntentGoal(t *testing.T) {
+	v := makeView(domain.IntentView{
+		IntentID: "int_goal",
+		Status:   domain.StatusProposed,
+		Goal:     "canonical start goal",
+		Summary: &domain.IntentSummary{
+			Title:    "Title",
+			What:     "What",
+			UserGoal: "bad seal-time mirror",
+		},
+	})
+	m := buildHubModel(v)
+	if got := m.Intents[0].UserGoal; got != "canonical start goal" {
+		t.Errorf("hub user goal should use IntentView.Goal, got %q", got)
+	}
+}
+
 func TestBuildHubModel_SortsNewestFirst(t *testing.T) {
 	v := makeView(
 		intent("int_old", "a", "2026-04-25T00:00:00Z", domain.StatusMerged),
