@@ -514,6 +514,8 @@ type StatusResult struct {
 	// status output short.
 	RecentSealed []StatusRecentIntent `json:"recent_sealed,omitempty"`
 
+	ProposalHealth *StatusProposalHealth `json:"proposal_health,omitempty"`
+
 	// Suggestions are actionable next-step CLI commands derived
 	// from the rest of StatusResult. The CLI prints them as a
 	// "Suggestions:" block under the main rollup.
@@ -529,6 +531,12 @@ type StatusUnsealedDraft struct {
 	Status     string `json:"status"` // drafting | sealed_local
 	TurnCount  int    `json:"turn_count"`
 	AgeSeconds int64  `json:"age_seconds"`
+}
+
+type StatusProposalHealth struct {
+	StaleAfterHours int `json:"stale_after_hours"`
+	SuspiciousCount int `json:"suspicious_count"`
+	OldestAgeHours  int `json:"oldest_age_hours,omitempty"`
 }
 
 // StatusRecentIntent is the per-intent summary in the "Recent sealed
@@ -648,9 +656,38 @@ func (s *Service) Status() (*StatusResult, error) {
 	// git work beyond what the prior CoverageWindow call did.
 	result.UnsealedDrafts = s.collectUnsealedDrafts(branch, view)
 	result.RecentSealed = collectRecentSealed(view, statusRecentSealedLimit)
+	result.ProposalHealth = collectStatusProposalHealth(view, DefaultStaleProposedAfter)
 	result.Suggestions = buildStatusSuggestions(result)
 
 	return result, nil
+}
+
+func collectStatusProposalHealth(view *domain.MainlineView, staleAfter time.Duration) *StatusProposalHealth {
+	if view == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	out := &StatusProposalHealth{StaleAfterHours: int(staleAfter.Hours())}
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusProposed || iv.SealedAt == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, iv.SealedAt)
+		if err != nil {
+			continue
+		}
+		ageHours := int(now.Sub(t).Hours())
+		if ageHours > out.OldestAgeHours {
+			out.OldestAgeHours = ageHours
+		}
+		if time.Duration(ageHours)*time.Hour >= staleAfter {
+			out.SuspiciousCount++
+		}
+	}
+	if out.SuspiciousCount == 0 {
+		return nil
+	}
+	return out
 }
 
 // statusRecentSealedLimit caps the "Recent sealed intents" block.
@@ -830,6 +867,9 @@ func buildStatusSuggestions(r *StatusResult) []string {
 	}
 	if r.Coverage != nil && r.Coverage.UncoveredCount > 0 {
 		out = append(out, "mainline gaps   # uncovered commits with rescue options")
+	}
+	if r.ProposalHealth != nil && r.ProposalHealth.SuspiciousCount > 0 {
+		out = append(out, "mainline doctor --proposals   # inspect proposed intents older than 72h")
 	}
 	if g := r.AgentsGuidance; g != nil {
 		switch g.State {
