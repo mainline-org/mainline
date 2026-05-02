@@ -154,9 +154,9 @@ const (
 // Scores are not normalised across calls — they're meant to be
 // compared within a single result, not across different queries.
 type ContextRelevance struct {
-	Score     float64                   `json:"score"`
-	Breakdown ContextRelevanceBreakdown `json:"breakdown"`
-	Reasons   []string                  `json:"reasons"`
+	Score     float64                    `json:"score"`
+	Breakdown *ContextRelevanceBreakdown `json:"breakdown,omitempty"`
+	Reasons   []string                   `json:"reasons"`
 }
 
 // ContextRelevanceBreakdown mirrors the existing scorer's additive
@@ -288,6 +288,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	// raw score by the multiplier in scoreIntentRelevance, and
 	// labelled with the retrieval status that tells the agent how
 	// to use them.
+	includeBreakdown := req.Mode == "query"
 	scored := make([]ContextRelevant, 0, len(candidates))
 	branch, _ := s.Git.CurrentBranch()
 	for _, iv := range candidates {
@@ -304,14 +305,14 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 			continue
 		}
 		retrStatus := classifyRetrievalStatus(iv, churn, now)
-		scored = append(scored, packRelevant(iv, score, breakdown, reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions))
+		scored = append(scored, packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions))
 	}
 
 	// Explicit supersession links are lineage, not independent
 	// relevance matches. If a superseder is relevant, include the
 	// intents it replaced even when a SQLite candidate prefilter or
 	// relevance threshold would otherwise drop them.
-	scored = includeSupersededLineage(scored, view, churn, now, files, query, branch)
+	scored = includeSupersededLineage(scored, view, churn, now, files, query, branch, includeBreakdown)
 
 	sort.SliceStable(scored, func(i, j int) bool {
 		return scored[i].Relevance.Score > scored[j].Relevance.Score
@@ -546,7 +547,7 @@ func idForFile(intentID, file string) string {
 // supersession links. Relevance thresholding should filter unrelated
 // history, not hide the replaced half of a decision lineage whose
 // replacement already matched the user's task.
-func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query, branch string) []ContextRelevant {
+func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query, branch string, includeBreakdown bool) []ContextRelevant {
 	if view == nil || len(scored) == 0 {
 		return scored
 	}
@@ -589,7 +590,7 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 				}
 				reasons = append(reasons, "superseded by returned intent "+supersederID)
 				retrStatus := classifyRetrievalStatus(iv, churn, now)
-				added := packRelevant(iv, score, breakdown, reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions)
+				added := packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions)
 				scored = append(scored, added)
 				byID[iv.IntentID] = added
 				changed = true
@@ -810,7 +811,7 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 func packRelevant(
 	iv domain.IntentView,
 	score float64,
-	breakdown ContextRelevanceBreakdown,
+	breakdown *ContextRelevanceBreakdown,
 	reasons []string,
 	retrStatus string,
 	riskResolutions map[string][]domain.RiskResolution,
@@ -822,7 +823,7 @@ func packRelevant(
 		Status:   retrStatus,
 		Relevance: ContextRelevance{
 			Score:     round2(score),
-			Breakdown: roundRelevanceBreakdown(breakdown),
+			Breakdown: breakdown,
 			Reasons:   reasons,
 		},
 		Followups: map[string]string{
@@ -1143,6 +1144,14 @@ func truncateForReason(s string, n int) string {
 
 func round2(f float64) float64 {
 	return float64(int(f*100+0.5)) / 100
+}
+
+func optionalRelevanceBreakdown(include bool, in ContextRelevanceBreakdown) *ContextRelevanceBreakdown {
+	if !include {
+		return nil
+	}
+	out := roundRelevanceBreakdown(in)
+	return &out
 }
 
 func roundRelevanceBreakdown(in ContextRelevanceBreakdown) ContextRelevanceBreakdown {
