@@ -267,8 +267,10 @@ the next state in a new turn.
    The package includes a `seal_result_starter` field — a partially-
    filled `SealResult` with the deterministic bits (intent_id,
    fingerprint.files_touched, fingerprint.subsystems) pre-populated.
-   Patch in the agent-judgment fields rather than typing the JSON
-   from scratch.
+   Patch in the required agent-judgment fields rather than typing the
+   JSON from scratch. Leave `risks`, `anti_patterns`, and `followups`
+   as `[]` unless the strict rules below apply; most intents should
+   keep these fields empty.
 
    Why `.ml-cache/`? Init writes that directory to `.gitignore`, so
    the temporary seal file stays out of git and does not trip the
@@ -282,6 +284,20 @@ the next state in a new turn.
    ```
    "tags": ["auth", "authentication", "security", "jwt", "session"]
    ```
+
+   `risks`, `anti_patterns`, and `followups` are exceptional fields,
+   not sections to fill for completeness:
+
+   - Use `risks` only for concrete failure modes a future reviewer
+     should actively audit.
+   - Use `anti_patterns` only for hard constraints future agents must
+     not violate.
+   - Use `followups` only when the user explicitly wants something
+     done later, or this work deliberately cut out a known next task.
+
+   Do not invent speculative "consider", "maybe", dogfood,
+   telemetry, or nice-to-have items. Put accepted trade-offs in
+   `decisions` and ephemeral reviewer context in `review_notes`.
 
    When the work establishes constraints future agents must respect,
    record them as `anti_patterns` (NOT as `risks`). Each entry MUST
@@ -297,10 +313,8 @@ the next state in a new turn.
    ]
    ```
 
-   Use `risks` for soft warnings the reviewer should weigh; use
-   `anti_patterns` for hard constraints the next agent must not
-   violate. Only `high` severity anti-patterns propagate as
-   inherited constraints to future agents editing the same files.
+   Only `high` severity anti-patterns propagate as inherited
+   constraints to future agents editing the same files.
 
    If `mainline context` surfaced `inherited_constraints`, acknowledge
    each in the seal's `summary.acknowledged_constraints`:
@@ -334,7 +348,7 @@ the next state in a new turn.
 
    `lint` runs deterministic checks against the sealed payload —
    empty / boilerplate `what`, missing decisions, decision without
-   rationale, missing risks/anti_patterns, broken supersedes refs.
+   rationale, generic/spurious risks, broken supersedes refs.
    Errors mean the seal will be hard for future retrieval to use;
    warnings are advisory. Lint is **not** wired into submit, so a
    bad seal still goes through — but a low-quality seal pollutes

@@ -194,9 +194,9 @@ func short(sha string) string {
 //
 // Agent-judgment fields stay zero/empty so the schema is visible
 // (the agent sees the field names + types and patches in their
-// content). One placeholder is included for AntiPatterns to teach
-// the shape — agents who have no anti-patterns to record set the
-// array to [].
+// content). Optional judgment arrays default to [] because most
+// intents have no concrete risk, no hard constraint, and no explicit
+// follow-up.
 //
 // Subsystems are derived from path prefixes via the same helper
 // the conflict-detection layer uses, so seal-time and check-time
@@ -237,7 +237,9 @@ Tip: copy the seal_result_starter field from this package as your
 starting point — intent_id, fingerprint.files_touched, and
 fingerprint.subsystems are pre-filled deterministically from the
 diff. Patch in the agent-judgment fields (title, what, why,
-decisions, risks, anti_patterns, confidence) and submit.
+decisions, fingerprint details, confidence) and submit. Keep risks,
+anti_patterns, and followups as [] unless the strict criteria below
+are met; do not fill them for completeness.
 
 Required structure:
 1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups, review_notes, acknowledged_constraints
@@ -249,13 +251,21 @@ Field decision tree — for each future-facing observation, pick the right field
 
   "It will fail when X" / "Y subsystem will break"    → risks
   "We chose to ship with limitation X (acceptable)"   → decisions[].chose with rationale
-  "Should be done later (telemetry / config / ...)"   → followups
+  "The user asked us to do X later" / "X was explicitly cut from this work" → followups
   "Reviewer should focus on Z" / scope explanation     → review_notes (ephemeral, not inherited)
   "Future work in this area MUST NOT do X"            → anti_patterns
   "We considered B but ruled it out"                  → rejected
   "I saw inherited constraint X and handled it"       → acknowledged_constraints
 
   If you can't pick: it's probably a decision (you made a judgment call).
+
+Default-empty rule:
+- risks, anti_patterns, and followups are exceptional fields. Most seals
+  should leave them as [].
+- Never invent a risk, anti_pattern, or follow-up just because the schema
+  has a field for it.
+- Use review_notes for ephemeral reviewer context and decisions for accepted
+  trade-offs or implementation limits.
 
 Acknowledged constraints:
 - If mainline context surfaced inherited_constraints, acknowledge each here.
@@ -272,8 +282,12 @@ Risk discipline:
   limitations, accepted trade-offs, or ordinary follow-up work in risks.
 - If there is no concrete risk, use an empty risks array — that is the
   normal default, not a suspicious omission.
-- Put deferred work in followups, accepted limitations in decisions, and
-  review context in review_notes.
+
+Follow-up discipline:
+- Put an item in summary.followups only when the user explicitly wants it
+  done later, or when this work deliberately cut out a known next task.
+- Do not write speculative "consider", "maybe", telemetry, dogfood, or
+  nice-to-have ideas as followups. Leave followups as [] instead.
 
 Risk resolution:
 - If applicable_open_risks lists risks on files you touched, and your
