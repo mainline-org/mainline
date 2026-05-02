@@ -60,6 +60,12 @@ var statusCmd = &cobra.Command{
 				fmt.Println("Intent:    (none active)")
 			}
 			fmt.Printf("Proposed:  %d intents\n", result.ProposedCount)
+			if result.ProposalHealth != nil {
+				fmt.Printf("           %d older than %dh (oldest %s)\n",
+					result.ProposalHealth.SuspiciousCount,
+					result.ProposalHealth.StaleAfterHours,
+					formatElapsed(int64(result.ProposalHealth.OldestAgeHours)*3600))
+			}
 			if result.LastSync == nil {
 				fmt.Println("Sync:      never synced — run 'mainline sync' to see team activity")
 			} else {
