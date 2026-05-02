@@ -44,6 +44,11 @@ type MainlineSection struct {
 	// "every commit needs an explaining intent" invariant. See spec
 	// docs_for_ai/mainline-spec-v0.3-coverage-and-snapshot.md §D.
 	Skip MainlineSkipSection `toml:"skip"`
+	// Coverage stores adoption-time coverage settings. BaselineCommit
+	// marks the main-branch HEAD that existed before Mainline was
+	// installed; that commit and its ancestors are treated as
+	// pre-Mainline history unless later covered by explicit notes.
+	Coverage MainlineCoverageSection `toml:"coverage"`
 }
 
 // MainlineSkipSection lists regex patterns matched against commit
@@ -53,6 +58,10 @@ type MainlineSection struct {
 // config — they live in the commit message itself.
 type MainlineSkipSection struct {
 	Patterns []string `toml:"patterns"`
+}
+
+type MainlineCoverageSection struct {
+	BaselineCommit string `toml:"baseline_commit,omitempty"`
 }
 
 type SyncSection struct {

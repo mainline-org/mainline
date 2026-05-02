@@ -142,6 +142,12 @@ typing anything. The agent itself drives the rest of the workflow (start /
 append / seal / check) per the Mainline skill — Mainline is a context
 provider, not a workflow driver.
 
+When you adopt Mainline in an existing repository, `mainline init` records the
+current `main` HEAD as the coverage baseline. Commits at or before that point
+show up as skipped pre-Mainline history, not as uncovered gaps. Future commits
+still need normal intent coverage, and you can retroactively explain important
+old commits with `mainline start --commits <sha> "<why>"`.
+
 If your AI tool doesn't support hooks, it can still follow the same
 protocol via the Mainline skill — both paths work.
 
@@ -575,6 +581,11 @@ freshness_seconds = 300              # auto-sync wrapper short-circuits within
 stale_threshold_seconds = 86400      # `mainline status` flags (stale) past this
 auto_check_after_sync = true         # phase1 runs over the delta of new
                                      # remote intents on every sync
+
+[mainline.coverage]
+baseline_commit = "..."              # main HEAD captured by `mainline init`;
+                                     # commits reachable from it are skipped
+                                     # as pre-Mainline history
 
 [merge]
 strategy = "squash"                  # only consulted by `mainline merge`
