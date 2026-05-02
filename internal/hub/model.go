@@ -301,6 +301,11 @@ type HubIntent struct {
 
 	SupersededByIntent string `json:"superseded_by_intent,omitempty"`
 
+	// Turns is the append-by-append timeline of the intent.
+	// Populated from the local store when available; nil for remote
+	// intents whose turns were never synced locally.
+	Turns []HubTurn `json:"turns,omitempty"`
+
 	// References to external materials (sessions, issues, etc.)
 	References []domain.Reference `json:"references,omitempty"`
 
@@ -353,6 +358,14 @@ type HubDecision struct {
 type HubAlternative struct {
 	Alternative string `json:"alternative"`
 	Reason      string `json:"reason,omitempty"`
+}
+
+// HubTurn is a single turn in the intent's timeline. Mirrors the
+// essential fields from domain.Turn for the Hub renderer.
+type HubTurn struct {
+	Index       int    `json:"index"`
+	Description string `json:"description"`
+	CreatedAt   string `json:"created_at,omitempty"`
 }
 
 // HubFileEntry is the reverse index: which intents touched which

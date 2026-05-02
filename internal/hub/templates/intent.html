@@ -16,6 +16,18 @@
   {{if .Why}}<div><span class="summary-label">Why</span><p>{{.Why}}</p></div>{{end}}
 </section>
 
+{{if .Turns}}
+<section class="timeline"><h2>Timeline</h2>
+<ol class="turn-list">
+{{range .Turns}}<li class="turn">
+  <span class="turn-index">#{{.Index}}</span>
+  {{if .CreatedAt}}<time class="turn-time">{{timeAgo .CreatedAt}}</time>{{end}}
+  <span class="turn-desc">{{.Description}}</span>
+</li>{{end}}
+</ol>
+</section>
+{{end}}
+
 {{if .Decisions}}
 <section><h2>Decisions</h2>
 <div class="decision-list">

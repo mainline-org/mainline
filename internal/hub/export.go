@@ -57,6 +57,7 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	}
 	model := buildHubModel(view)
 	model.OpenIntents = buildOpenIntents(store, view)
+	enrichIntentsWithTurns(store, model)
 	model.Dashboard = buildDashboard(model)
 	if len(opts.CoverageRows) > 0 {
 		model.TeamHealth.Coverage = BuildCoverageSummary(opts.CoverageRows)
@@ -171,6 +172,28 @@ func buildOpenIntents(store *storage.Store, view *domain.MainlineView) []HubOpen
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+// enrichIntentsWithTurns loads turn descriptions from the local store
+// and attaches them to the matching HubIntent entries. Only intents
+// whose turns were recorded locally will get a non-nil Turns slice;
+// remote-only intents stay untouched.
+func enrichIntentsWithTurns(store *storage.Store, m *HubModel) {
+	for i := range m.Intents {
+		turns, _ := store.ReadTurns(m.Intents[i].ID)
+		if len(turns) == 0 {
+			continue
+		}
+		ht := make([]HubTurn, 0, len(turns))
+		for _, t := range turns {
+			ht = append(ht, HubTurn{
+				Index:       t.Index,
+				Description: t.Description,
+				CreatedAt:   t.CreatedAt,
+			})
+		}
+		m.Intents[i].Turns = ht
+	}
 }
 
 func hubOpenStatus(s domain.IntentStatus) bool {

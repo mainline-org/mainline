@@ -299,3 +299,18 @@ section.commands pre:hover::after { opacity: 0.8; }
   background: var(--soft);
 }
 .lang-toggle:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+/* ----- Timeline / turns ----- */
+
+.turn-list { list-style: none; padding: 0; margin: 0; border-left: 2px solid var(--line); }
+.turn { padding: 6px 0 6px 16px; position: relative; }
+.turn::before {
+  content: '';
+  position: absolute; left: -5px; top: 12px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.turn-index { font-weight: 600; color: var(--accent); margin-right: 6px; }
+.turn-time { font-size: 0.85em; color: var(--dim); margin-right: 8px; }
+.turn-desc { color: var(--fg); }
