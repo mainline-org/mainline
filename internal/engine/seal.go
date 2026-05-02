@@ -103,7 +103,7 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	// are filled in — which removes ~50% of the typing for a
 	// first-touch agent and sets the JSON shape correctly so the
 	// validator's fingerprint checks pass on the first patch.
-	pkg.Starter = buildSealStarter(draft.IntentID, changedFiles)
+	pkg.Starter = buildSealStarter(draft.IntentID, draft.Goal, changedFiles)
 
 	// v0.4 risk lifecycle: surface open risks on files this intent
 	// touches so the agent can resolve them via resolves_risks.
@@ -200,18 +200,20 @@ func short(sha string) string {
 // buildSealStarter pre-populates a SealResult with the fields the
 // engine can derive from the draft + diff:
 //
-//   - intent_id, fingerprint.files_touched, fingerprint.subsystems
+//   - intent_id, summary.user_goal, fingerprint.files_touched,
+//     fingerprint.subsystems
 //
-// Agent-judgment fields stay zero/empty so the schema is visible
-// (the agent sees the field names + types and patches in their
-// content). Optional judgment arrays default to [] because most
-// intents have no concrete risk, no hard constraint, and no explicit
-// follow-up.
+// Agent-judgment fields stay zero/empty so the schema is visible (the
+// agent sees the field names + types and patches in their content).
+// summary.user_goal is not agent judgment: it mirrors the authoritative
+// `mainline start` goal and SealSubmit enforces that value. Optional
+// judgment arrays default to [] because most intents have no concrete
+// risk, no hard constraint, and no explicit follow-up.
 //
 // Subsystems are derived from path prefixes via the same helper
 // the conflict-detection layer uses, so seal-time and check-time
 // agree on what counts as a subsystem.
-func buildSealStarter(intentID string, files []string) *domain.SealResult {
+func buildSealStarter(intentID, userGoal string, files []string) *domain.SealResult {
 	subs := subsystemsFromFiles(files)
 	return &domain.SealResult{
 		IntentID: intentID,
@@ -219,7 +221,7 @@ func buildSealStarter(intentID string, files []string) *domain.SealResult {
 			Title:                   "",
 			What:                    "",
 			Why:                     "",
-			UserGoal:                "",
+			UserGoal:                userGoal,
 			Decisions:               []domain.Decision{},
 			Rejected:                []domain.RejectedAlternative{},
 			Risks:                   []string{},
@@ -246,10 +248,12 @@ func sealInstruction() string {
 Tip: copy the seal_result_starter field from this package as your
 starting point — intent_id, fingerprint.files_touched, and
 fingerprint.subsystems are pre-filled deterministically from the
-diff. Patch in the agent-judgment fields (title, what, why,
-decisions, fingerprint details, confidence) and submit. Keep risks,
-anti_patterns, and followups as [] unless the strict criteria below
-are met; do not fill them for completeness.
+diff. summary.user_goal is also pre-filled from mainline start and
+SealSubmit enforces that authoritative goal. Patch in the
+agent-judgment fields (title, what, why, decisions, fingerprint
+details, confidence) and submit. Keep risks, anti_patterns, and
+followups as [] unless the strict criteria below are met; do not fill
+them for completeness.
 
 Required structure:
 1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups, review_notes, acknowledged_constraints
@@ -414,6 +418,11 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		return nil, domain.NewError(domain.ErrInvalidStatus,
 			fmt.Sprintf("intent is in status %s, expected drafting", draft.Status))
 	}
+
+	// UserGoal is a lifecycle fact, not agent-authored prose. The
+	// authoritative value is fixed by `mainline start`; seal JSON may
+	// omit it or contain a bad mirror, but it must never redefine it.
+	sr.Summary.UserGoal = draft.Goal
 
 	// v0.3 snapshot-contract invariants: HEAD + branch + worktree state.
 	// Validated against the live repo; failures abort BEFORE any state
