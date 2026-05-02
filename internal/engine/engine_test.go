@@ -62,6 +62,10 @@ func TestInitAndStatus(t *testing.T) {
 	defer cleanup()
 
 	svc := NewServiceFromRoot(dir)
+	initialHead := svc.Git.ReadRef("refs/heads/main")
+	if initialHead == "" {
+		t.Fatal("test repo should have a main HEAD before init")
+	}
 
 	// Status before init
 	st, err := svc.Status()
@@ -91,6 +95,14 @@ func TestInitAndStatus(t *testing.T) {
 	}
 	if !st.Initialized {
 		t.Error("should be initialized")
+	}
+	cfg, err := svc.Store.ReadTeamConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Mainline.Coverage.BaselineCommit != initialHead {
+		t.Errorf("expected init to record pre-init main HEAD as coverage baseline: got %s, want %s",
+			cfg.Mainline.Coverage.BaselineCommit, initialHead)
 	}
 
 	// Double init should fail
