@@ -91,10 +91,10 @@ type HubStatusCount struct {
 }
 
 type HubFocusIntent struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	Status     string `json:"status"`
-	Reason     string `json:"reason"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Reason string `json:"reason"`
 	// AgeHours is the wall-clock age (sealed→now or last activity→now)
 	// in whole hours. 0 when timestamps aren't available; renderer
 	// hides the column then. Drives the review-queue aging buckets.
@@ -136,16 +136,17 @@ type HubTeamHealth struct {
 
 	// Counts duplicated from the existing Dashboard so the
 	// team-health JSON is self-contained for downstream consumers.
-	TotalIntents      int `json:"total_intents"`
-	OpenIntents       int `json:"open_intents"`
-	ProposedIntents   int `json:"proposed_intents"`
-	RiskIntentCount   int `json:"risk_intent_count"`
-	FilesWithHistory  int `json:"files_with_history"`
+	TotalIntents     int `json:"total_intents"`
+	OpenIntents      int `json:"open_intents"`
+	ProposedIntents  int `json:"proposed_intents"`
+	RiskIntentCount  int `json:"risk_intent_count"`
+	FilesWithHistory int `json:"files_with_history"`
 
 	// Aging snapshot for review-queue / open-work freshness.
 	ProposedOlderThan12h int `json:"proposed_older_than_12h"`
 	ProposedOlderThan24h int `json:"proposed_older_than_24h"`
 	ProposedOlderThan48h int `json:"proposed_older_than_48h"`
+	ProposedOlderThan72h int `json:"proposed_older_than_72h"`
 	OldestProposedHours  int `json:"oldest_proposed_hours"`
 	OpenOlderThan24h     int `json:"open_older_than_24h"`
 	OpenOlderThan72h     int `json:"open_older_than_72h"`
@@ -218,8 +219,8 @@ type HubCoverageSummary struct {
 // engine→hub bridge in export.go. Order is newest-first to match the
 // rest of the Hub UI.
 type HubCoverageDetail struct {
-	WindowSize int                   `json:"window_size"`
-	Commits    []HubCoverageCommit   `json:"commits,omitempty"`
+	WindowSize int                 `json:"window_size"`
+	Commits    []HubCoverageCommit `json:"commits,omitempty"`
 }
 
 type HubCoverageCommit struct {
@@ -238,12 +239,12 @@ type HubCoverageCommit struct {
 // risks (that already lives on the dashboard); these are the
 // actionable subsets needing review.
 type HubRiskRadar struct {
-	RiskBearingIntents     int                  `json:"risk_bearing_intents"`
-	RiskBearingProposed    int                  `json:"risk_bearing_proposed"`
-	RecentRiskBearing      int                  `json:"recent_risk_bearing"`
-	RisksMissingMitigation *int                 `json:"risks_missing_mitigation,omitempty"`
-	RiskHeavyFiles         []HubHotFile         `json:"risk_heavy_files,omitempty"`
-	RiskBearingProposedRows []HubFocusIntent    `json:"risk_bearing_proposed_rows,omitempty"`
+	RiskBearingIntents      int              `json:"risk_bearing_intents"`
+	RiskBearingProposed     int              `json:"risk_bearing_proposed"`
+	RecentRiskBearing       int              `json:"recent_risk_bearing"`
+	RisksMissingMitigation  *int             `json:"risks_missing_mitigation,omitempty"`
+	RiskHeavyFiles          []HubHotFile     `json:"risk_heavy_files,omitempty"`
+	RiskBearingProposedRows []HubFocusIntent `json:"risk_bearing_proposed_rows,omitempty"`
 }
 
 // HubWeeklyDigest is the 7-day rolling rollup. ImportantDecisions /
@@ -251,16 +252,16 @@ type HubRiskRadar struct {
 // so the dashboard section stays scannable; the full lists live on
 // their dedicated pages.
 type HubWeeklyDigest struct {
-	WindowDays         int              `json:"window_days"`
-	SealedThisWindow   int              `json:"sealed_this_window"`
-	ProposedThisWindow int              `json:"proposed_this_window"`
-	AbandonedThisWindow int             `json:"abandoned_this_window"`
-	SupersededThisWindow int            `json:"superseded_this_window"`
-	RiskBearingThisWindow int           `json:"risk_bearing_this_window"`
-	HotFilesThisWindow []HubHotFile     `json:"hot_files_this_window,omitempty"`
-	ImportantDecisions []HubFocusIntent `json:"important_decisions,omitempty"`
-	RisksToWatch       []HubFocusIntent `json:"risks_to_watch,omitempty"`
-	AbandonedApproaches []HubFocusIntent `json:"abandoned_approaches,omitempty"`
+	WindowDays            int              `json:"window_days"`
+	SealedThisWindow      int              `json:"sealed_this_window"`
+	ProposedThisWindow    int              `json:"proposed_this_window"`
+	AbandonedThisWindow   int              `json:"abandoned_this_window"`
+	SupersededThisWindow  int              `json:"superseded_this_window"`
+	RiskBearingThisWindow int              `json:"risk_bearing_this_window"`
+	HotFilesThisWindow    []HubHotFile     `json:"hot_files_this_window,omitempty"`
+	ImportantDecisions    []HubFocusIntent `json:"important_decisions,omitempty"`
+	RisksToWatch          []HubFocusIntent `json:"risks_to_watch,omitempty"`
+	AbandonedApproaches   []HubFocusIntent `json:"abandoned_approaches,omitempty"`
 }
 
 // HubIntent is the per-intent record. Fields map 1:1 onto IntentView
@@ -283,14 +284,14 @@ type HubIntent struct {
 	BaseCommit       string `json:"base_commit,omitempty"`
 	CodeCommit       string `json:"code_commit,omitempty"`
 
-	What         string              `json:"what,omitempty"`
-	Why          string              `json:"why,omitempty"`
-	UserGoal     string              `json:"user_goal,omitempty"`
-	Decisions    []HubDecision       `json:"decisions,omitempty"`
-	Rejected     []HubAlternative    `json:"rejected,omitempty"`
-	Risks        []string            `json:"risks,omitempty"`
+	What         string               `json:"what,omitempty"`
+	Why          string               `json:"why,omitempty"`
+	UserGoal     string               `json:"user_goal,omitempty"`
+	Decisions    []HubDecision        `json:"decisions,omitempty"`
+	Rejected     []HubAlternative     `json:"rejected,omitempty"`
+	Risks        []string             `json:"risks,omitempty"`
 	AntiPatterns []domain.AntiPattern `json:"anti_patterns,omitempty"`
-	Followups    []string            `json:"followups,omitempty"`
+	Followups    []string             `json:"followups,omitempty"`
 
 	Subsystems          []string `json:"subsystems,omitempty"`
 	FilesTouched        []string `json:"files_touched,omitempty"`

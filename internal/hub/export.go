@@ -574,12 +574,12 @@ func buildSharedFileRows(intents []HubIntent) []HubRelationRow {
 //
 // Directory layout (i18n):
 //
-//   <dir>/
-//     assets/style.css
-//     data/intents.json
-//     index.html  intents/X.html  files/X.html  actors/X.html  …  (EN)
-//     zh/
-//       index.html  intents/X.html  files/X.html  actors/X.html …  (ZH)
+//	<dir>/
+//	  assets/style.css
+//	  data/intents.json
+//	  index.html  intents/X.html  files/X.html  actors/X.html  …  (EN)
+//	  zh/
+//	    index.html  intents/X.html  files/X.html  actors/X.html …  (ZH)
 //
 // /assets and /data are shared at root — they don't have UI text so
 // duplicating them would just bloat the site.
@@ -752,9 +752,10 @@ func actorSlug(id string) string {
 //  1. proposed intents touching files with unacknowledged
 //     high-severity inherited constraints — the most load-bearing
 //     review surface
-//  2. proposed waiting > review-aging stale threshold (24h)
-//  3. stale open work (open intents with no activity > 24h)
-//  4. recently abandoned/superseded items that touched files with
+//  2. proposed waiting > proposal-cleanup threshold (72h)
+//  3. proposed waiting > review-aging stale threshold (24h)
+//  4. stale open work (open intents with no activity > 24h)
+//  5. recently abandoned/superseded items that touched files with
 //     concentrated history (decision hotspots)
 //
 // Each item carries a reason string that names a concrete signal —
@@ -793,8 +794,8 @@ func buildFocusList(m *HubModel, now time.Time) []HubFocusIntent {
 
 	// 1. Proposed touching unack'd high-severity inherited constraint.
 	type proposedRow struct {
-		in      HubIntent
-		hours   int
+		in       HubIntent
+		hours    int
 		hasUnack bool
 	}
 	rows := make([]proposedRow, 0)
@@ -826,9 +827,19 @@ func buildFocusList(m *HubModel, now time.Time) []HubFocusIntent {
 		}
 		add(r.in, "touches file with unacknowledged high-severity inherited constraint", r.hours)
 	}
-	// 2. Proposed waiting longer than the stale threshold.
+	// 2. Proposed waiting long enough to deserve proposal-doctor cleanup.
 	for _, r := range rows {
 		if r.hasUnack {
+			continue // already added
+		}
+		if r.hours < agingProposedCleanupHours {
+			continue
+		}
+		add(r.in, fmt.Sprintf("proposed for %s — run mainline doctor --proposals", ageLabel(r.hours)), r.hours)
+	}
+	// 3. Proposed waiting longer than the review threshold.
+	for _, r := range rows {
+		if r.hasUnack || seen[r.in.ID] {
 			continue // already added
 		}
 		if r.hours < agingProposedStaleHours {
@@ -836,7 +847,7 @@ func buildFocusList(m *HubModel, now time.Time) []HubFocusIntent {
 		}
 		add(r.in, fmt.Sprintf("proposed for %s, past %dh review threshold", ageLabel(r.hours), agingProposedStaleHours), r.hours)
 	}
-	// 3. Stale open work (no activity beyond stale threshold).
+	// 4. Stale open work (no activity beyond stale threshold).
 	for _, op := range m.OpenIntents {
 		hours := openIntentAgeHours(op, now)
 		if hours < agingOpenStaleHours {
@@ -845,7 +856,7 @@ func buildFocusList(m *HubModel, now time.Time) []HubFocusIntent {
 		add(HubIntent{ID: op.ID, Title: firstNonEmpty(op.Goal, op.ID), Status: op.Status,
 			FilesTouched: nil}, fmt.Sprintf("open work no activity for %s", ageLabel(hours)), hours)
 	}
-	// 4. Recently abandoned / superseded items in decision hotspots.
+	// 5. Recently abandoned / superseded items in decision hotspots.
 	cutoff := now.AddDate(0, 0, -digestWindowDays)
 	for _, in := range m.Intents {
 		if in.Status != string(domain.StatusAbandoned) && in.Status != string(domain.StatusSuperseded) {

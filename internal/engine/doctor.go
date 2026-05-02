@@ -4,15 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
+const DefaultStaleProposedAfter = 72 * time.Hour
+
 type DoctorOptions struct {
-	Fix        bool
-	StaleAfter time.Duration
+	Fix                bool
+	StaleAfter         time.Duration
+	Proposals          bool
+	StaleProposedAfter time.Duration
 	// Setup, when true, runs install / wiring sanity checks
 	// (remote refspec configuration, identity file present and
 	// readable) instead of the drafts orphan scan. Combined with Fix=true, missing refspec
@@ -22,11 +28,12 @@ type DoctorOptions struct {
 }
 
 type DoctorResult struct {
-	CheckedDrafts int                  `json:"checked_drafts,omitempty"`
-	OrphanDrafts  []DoctorDraftFinding `json:"orphan_drafts,omitempty"`
-	StaleDrafts   []DoctorDraftFinding `json:"stale_drafts,omitempty"`
-	DeletedDrafts []string             `json:"deleted_drafts,omitempty"`
-	Setup         *DoctorSetupReport   `json:"setup,omitempty"`
+	CheckedDrafts int                   `json:"checked_drafts,omitempty"`
+	OrphanDrafts  []DoctorDraftFinding  `json:"orphan_drafts,omitempty"`
+	StaleDrafts   []DoctorDraftFinding  `json:"stale_drafts,omitempty"`
+	DeletedDrafts []string              `json:"deleted_drafts,omitempty"`
+	Setup         *DoctorSetupReport    `json:"setup,omitempty"`
+	Proposals     *DoctorProposalReport `json:"proposals,omitempty"`
 }
 
 // DoctorSetupReport summarises every install / wiring check the doctor
@@ -74,6 +81,28 @@ type DoctorDraftFinding struct {
 	Reason         string              `json:"reason"`
 }
 
+type DoctorProposalReport struct {
+	CheckedProposals int                     `json:"checked_proposals"`
+	StaleAfter       string                  `json:"stale_after"`
+	Findings         []DoctorProposalFinding `json:"findings,omitempty"`
+}
+
+type DoctorProposalFinding struct {
+	IntentID           string   `json:"intent_id"`
+	Title              string   `json:"title,omitempty"`
+	Goal               string   `json:"goal,omitempty"`
+	Thread             string   `json:"thread,omitempty"`
+	GitBranch          string   `json:"git_branch,omitempty"`
+	ActorName          string   `json:"actor_name,omitempty"`
+	SealedAt           string   `json:"sealed_at,omitempty"`
+	AgeHours           int      `json:"age_hours,omitempty"`
+	FindingCodes       []string `json:"finding_codes,omitempty"`
+	Reasons            []string `json:"reasons,omitempty"`
+	ReplacementHints   []string `json:"replacement_hints,omitempty"`
+	RecommendedAction  string   `json:"recommended_action,omitempty"`
+	RecommendedCommand string   `json:"recommended_command,omitempty"`
+}
+
 func (s *Service) Doctor(opts DoctorOptions) (*DoctorResult, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
@@ -84,6 +113,12 @@ func (s *Service) Doctor(opts DoctorOptions) (*DoctorResult, error) {
 
 	if opts.Setup {
 		return s.doctorSetup(opts.Fix)
+	}
+	if opts.Proposals {
+		if opts.StaleProposedAfter <= 0 {
+			opts.StaleProposedAfter = DefaultStaleProposedAfter
+		}
+		return s.doctorProposals(opts.StaleProposedAfter)
 	}
 
 	currentBranch, _ := s.Git.CurrentBranch()
@@ -129,6 +164,269 @@ func (s *Service) Doctor(opts DoctorOptions) (*DoctorResult, error) {
 	}
 
 	return result, nil
+}
+
+func (s *Service) doctorProposals(staleAfter time.Duration) (*DoctorResult, error) {
+	view, _ := s.Store.ReadMainlineView()
+	report := &DoctorProposalReport{StaleAfter: staleAfter.String()}
+	if view == nil {
+		return &DoctorResult{Proposals: report}, nil
+	}
+
+	now := time.Now().UTC()
+	pinMatches := s.proposalPinMatches(view)
+	mergedByFile := mergedIntentsByFile(view)
+
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusProposed {
+			continue
+		}
+		report.CheckedProposals++
+
+		finding := proposalFindingBase(iv, now)
+		isStale := finding.AgeHours >= int(staleAfter.Hours())
+		if isStale {
+			finding.add("stale_proposed", fmt.Sprintf("proposed for %s, past %s cleanup threshold",
+				formatDoctorHours(finding.AgeHours), staleAfter))
+			if iv.CodeCommit != "" && !s.commitExists(iv.CodeCommit) {
+				finding.add("orphan_code_commit", "code commit is not reachable in this clone")
+			}
+			if iv.GitBranch != "" && !s.Git.BranchExists(iv.GitBranch) {
+				finding.add("missing_local_branch", "git branch recorded on the intent is missing locally")
+			}
+		}
+		if pin, ok := pinMatches[iv.IntentID]; ok {
+			finding.add("pin_candidate", fmt.Sprintf("matches main commit %s via %s",
+				shortDoctorHash(pin.Commit), pin.MatchStrategy))
+			finding.RecommendedAction = "pin"
+			finding.RecommendedCommand = fmt.Sprintf("mainline pin %s %s", iv.IntentID, pin.Commit)
+		}
+
+		if isStale {
+			for _, repl := range replacementHints(iv, mergedByFile, now) {
+				finding.add("later_merged_overlap", "later merged intent touches the same files")
+				finding.ReplacementHints = append(finding.ReplacementHints, repl)
+			}
+		}
+
+		if len(finding.FindingCodes) == 0 {
+			continue
+		}
+		if finding.RecommendedAction == "" {
+			finding.RecommendedAction = "review_then_abandon"
+			reason := "proposal doctor: " + strings.Join(finding.Reasons, "; ")
+			finding.RecommendedCommand = fmt.Sprintf("mainline abandon %s --reason %s",
+				iv.IntentID, strconv.Quote(reason))
+		}
+		report.Findings = append(report.Findings, finding)
+	}
+
+	sort.SliceStable(report.Findings, func(i, j int) bool {
+		if report.Findings[i].AgeHours != report.Findings[j].AgeHours {
+			return report.Findings[i].AgeHours > report.Findings[j].AgeHours
+		}
+		return report.Findings[i].IntentID < report.Findings[j].IntentID
+	})
+	return &DoctorResult{Proposals: report}, nil
+}
+
+func proposalFindingBase(iv domain.IntentView, now time.Time) DoctorProposalFinding {
+	title := iv.Goal
+	if iv.Summary != nil && iv.Summary.Title != "" {
+		title = iv.Summary.Title
+	}
+	ageHours := 0
+	if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil {
+		ageHours = int(now.Sub(t).Hours())
+	}
+	return DoctorProposalFinding{
+		IntentID:  iv.IntentID,
+		Title:     title,
+		Goal:      iv.Goal,
+		Thread:    iv.Thread,
+		GitBranch: iv.GitBranch,
+		ActorName: iv.ActorName,
+		SealedAt:  iv.SealedAt,
+		AgeHours:  ageHours,
+	}
+}
+
+func (f *DoctorProposalFinding) add(code, reason string) {
+	for _, existing := range f.FindingCodes {
+		if existing == code {
+			return
+		}
+	}
+	f.FindingCodes = append(f.FindingCodes, code)
+	f.Reasons = append(f.Reasons, reason)
+}
+
+func (s *Service) commitExists(commit string) bool {
+	_, err := s.Git.Run("rev-parse", "--verify", commit+"^{commit}")
+	return err == nil
+}
+
+func (s *Service) proposalPinMatches(view *domain.MainlineView) map[string]PinnedCommit {
+	cfg, err := s.getTeamConfig()
+	if err != nil || cfg == nil {
+		return nil
+	}
+	entries, err := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
+	if err != nil || len(entries) == 0 {
+		return nil
+	}
+	hashes := make([]string, 0, len(entries))
+	for _, e := range entries {
+		hashes = append(hashes, e.Hash)
+	}
+	var codeCommits []string
+	seen := map[string]bool{}
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusProposed || iv.CodeCommit == "" || seen[iv.CodeCommit] {
+			continue
+		}
+		codeCommits = append(codeCommits, iv.CodeCommit)
+		seen[iv.CodeCommit] = true
+	}
+	treeOf, _ := s.Git.CommitTreeHashes(hashes)
+	intentTreeOf, _ := s.Git.CommitTreeHashes(codeCommits)
+	intentSubjects, _ := s.Git.CommitSubjects(codeCommits)
+	entryMessages, _ := s.Git.FullCommitMessages(hashes)
+	commitParents, _ := s.Git.CommitParents(hashes)
+	ctx := &pinContext{
+		treeOf:         nonNilStringMap(treeOf),
+		intentTreeOf:   nonNilStringMap(intentTreeOf),
+		intentSubjects: nonNilStringMap(intentSubjects),
+		entryMessages:  nonNilStringMap(entryMessages),
+		noteCache:      map[string]string{},
+		commitParents:  nonNilStringSliceMap(commitParents),
+	}
+	out := map[string]PinnedCommit{}
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusProposed {
+			continue
+		}
+		commit, strategy := findPinMatchBatched(iv, entries, ctx)
+		if commit == "" {
+			continue
+		}
+		out[iv.IntentID] = PinnedCommit{IntentID: iv.IntentID, Commit: commit, MatchStrategy: strategy}
+	}
+	return out
+}
+
+func nonNilStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return map[string]string{}
+	}
+	return in
+}
+
+func nonNilStringSliceMap(in map[string][]string) map[string][]string {
+	if in == nil {
+		return map[string][]string{}
+	}
+	return in
+}
+
+func mergedIntentsByFile(view *domain.MainlineView) map[string][]domain.IntentView {
+	out := map[string][]domain.IntentView{}
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusMerged || iv.Fingerprint == nil {
+			continue
+		}
+		for _, f := range iv.Fingerprint.FilesTouched {
+			out[f] = append(out[f], iv)
+		}
+	}
+	return out
+}
+
+func replacementHints(iv domain.IntentView, byFile map[string][]domain.IntentView, now time.Time) []string {
+	if iv.Fingerprint == nil {
+		return nil
+	}
+	sealedAt, err := time.Parse(time.RFC3339, iv.SealedAt)
+	if err != nil {
+		sealedAt = now
+	}
+	type candidate struct {
+		id      string
+		title   string
+		overlap int
+	}
+	candidates := map[string]*candidate{}
+	for _, f := range iv.Fingerprint.FilesTouched {
+		for _, merged := range byFile[f] {
+			mt, err := time.Parse(time.RFC3339, merged.SealedAt)
+			if err != nil || !mt.After(sealedAt) {
+				continue
+			}
+			c := candidates[merged.IntentID]
+			if c == nil {
+				title := merged.Goal
+				if merged.Summary != nil && merged.Summary.Title != "" {
+					title = merged.Summary.Title
+				}
+				c = &candidate{id: merged.IntentID, title: title}
+				candidates[merged.IntentID] = c
+			}
+			c.overlap++
+		}
+	}
+	list := make([]candidate, 0, len(candidates))
+	for _, c := range candidates {
+		if c.overlap < 2 && doctorTextOverlapCount(iv.Goal, c.title) < 2 {
+			continue
+		}
+		list = append(list, *c)
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].overlap != list[j].overlap {
+			return list[i].overlap > list[j].overlap
+		}
+		return list[i].id < list[j].id
+	})
+	if len(list) > 3 {
+		list = list[:3]
+	}
+	out := make([]string, 0, len(list))
+	for _, c := range list {
+		out = append(out, fmt.Sprintf("%s (%s; %d shared file(s))", c.id, c.title, c.overlap))
+	}
+	return out
+}
+
+func doctorTextOverlapCount(a, b string) int {
+	seen := map[string]bool{}
+	for _, tok := range strings.Fields(strings.ToLower(a)) {
+		tok = strings.Trim(tok, ".,:;()[]{}<>\"'`")
+		if len(tok) >= 4 {
+			seen[tok] = true
+		}
+	}
+	count := 0
+	for _, tok := range strings.Fields(strings.ToLower(b)) {
+		tok = strings.Trim(tok, ".,:;()[]{}<>\"'`")
+		if len(tok) >= 4 && seen[tok] {
+			count++
+		}
+	}
+	return count
+}
+
+func formatDoctorHours(hours int) string {
+	if hours < 24 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dd", hours/24)
+}
+
+func shortDoctorHash(hash string) string {
+	if len(hash) <= 12 {
+		return hash
+	}
+	return hash[:12]
 }
 
 func doctorFindingFromDraft(d *domain.DraftIntent) DoctorDraftFinding {
