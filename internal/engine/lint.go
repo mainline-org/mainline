@@ -148,35 +148,35 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "generic_risk", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
-				Message: fmt.Sprintf("risk is too generic (%q); a good risk names the affected subsystem, the specific failure mode, and ideally a mitigation", truncate(risk, 60)),
+				Message: fmt.Sprintf("risk is too generic (%q); a good risk names the affected subsystem, the specific failure mode, and ideally a mitigation", truncate(risk)),
 			})
 		}
 		if isAcceptableTradeoff(risk) {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "risk_self_acceptable", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
-				Message: fmt.Sprintf("risk text says the trade-off is acceptable (%s); consider moving to decisions[].chose with rationale instead", truncate(risk, 60)),
+				Message: fmt.Sprintf("risk text says the trade-off is acceptable (%s); consider moving to decisions[].chose with rationale instead", truncate(risk)),
 			})
 		}
 		if isFollowup(risk) {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "risk_is_followup", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
-				Message: fmt.Sprintf("risk text looks like a follow-up item (%s); consider moving to followups", truncate(risk, 60)),
+				Message: fmt.Sprintf("risk text looks like a follow-up item (%s); consider moving to followups", truncate(risk)),
 			})
 		}
 		if isReviewGuidance(risk) {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "risk_review_guidance", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
-				Message: fmt.Sprintf("risk text looks like review guidance (%s); consider moving to review_notes (ephemeral, not inherited)", truncate(risk, 60)),
+				Message: fmt.Sprintf("risk text looks like review guidance (%s); consider moving to review_notes (ephemeral, not inherited)", truncate(risk)),
 			})
 		}
 		if looksLikeAntiPattern(risk) {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "risk_looks_like_antipattern", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
-				Message: fmt.Sprintf("risk text contains rule-like language (%s); if this is a hard constraint, it belongs in anti_patterns", truncate(risk, 60)),
+				Message: fmt.Sprintf("risk text contains rule-like language (%s); if this is a hard constraint, it belongs in anti_patterns", truncate(risk)),
 			})
 		}
 	}
@@ -452,8 +452,9 @@ func isGenericRisk(risk string) bool {
 	return false
 }
 
-func truncate(s string, n int) string {
+func truncate(s string) string {
 	s = strings.TrimSpace(s)
+	const n = 60
 	if len(s) <= n {
 		return s
 	}

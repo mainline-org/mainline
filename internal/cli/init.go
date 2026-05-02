@@ -156,13 +156,14 @@ func renderInitAgentIntegrations(r *engine.AgentIntegrationInstallResult) {
 		return
 	}
 	fmt.Println("Agent integrations:")
-	if r.Skill.Installed {
+	switch {
+	case r.Skill.Installed:
 		fmt.Printf("  ✓ skill: installed via `%s`\n", strings.Join(r.Skill.Command, " "))
-	} else if r.Skill.Skipped {
+	case r.Skill.Skipped:
 		fmt.Printf("  · skill: skipped (%s)\n", r.Skill.Error)
-	} else if r.Skill.Error != "" {
+	case r.Skill.Error != "":
 		fmt.Printf("  ✗ skill: %s\n", r.Skill.Error)
-	} else {
+	default:
 		fmt.Println("  · skill: no change")
 	}
 	for _, h := range r.Hooks {
