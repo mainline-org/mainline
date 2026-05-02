@@ -97,7 +97,7 @@ func TestLintIntent_ShortChoseDoesNotRequireRationale(t *testing.T) {
 	}
 }
 
-func TestLintIntent_NoConstraintsIsInfo(t *testing.T) {
+func TestLintIntent_EmptyRiskAndAntiPatternsAreClean(t *testing.T) {
 	r := LintIntent("int_x", &domain.IntentSummary{
 		What:      "did real work",
 		Why:       "y",
@@ -105,26 +105,10 @@ func TestLintIntent_NoConstraintsIsInfo(t *testing.T) {
 		Risks:     nil, AntiPatterns: nil,
 	}, nonEmptyFP(), "", nil)
 	if !r.Pass {
-		t.Errorf("info-only should pass: %+v", r)
+		t.Errorf("empty optional risk fields should pass: %+v", r)
 	}
-	if !hasCode(r.Issues, "no_constraints") {
-		t.Errorf("missing no_constraints info: %+v", r.Issues)
-	}
-	if sevFor(r.Issues, "no_constraints") != "info" {
-		t.Errorf("no_constraints should be info, got %s", sevFor(r.Issues, "no_constraints"))
-	}
-}
-
-func TestLintIntent_RisksOrAntiPatternsClearWarning(t *testing.T) {
-	r := LintIntent("int_x", &domain.IntentSummary{
-		What: "did work", Why: "y",
-		Decisions: nonEmptyDecisions(),
-		AntiPatterns: []domain.AntiPattern{
-			{What: "delete x", Why: "x is load-bearing"},
-		},
-	}, nonEmptyFP(), "", nil)
-	if hasCode(r.Issues, "no_constraints") {
-		t.Errorf("anti_patterns alone should clear no_constraints: %+v", r.Issues)
+	if len(r.Issues) != 0 {
+		t.Errorf("empty risks/anti_patterns should not produce lint issues: %+v", r.Issues)
 	}
 }
 

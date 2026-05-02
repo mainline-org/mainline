@@ -195,11 +195,15 @@ current decision. The superseded intent is valuable context
 When sealing, agents SHOULD:
 
 - Write risks only for genuine hazards with specific failure modes.
-  Do not write risks to satisfy a lint warning.
+  Do not write risks to satisfy a lint warning; empty risks are the
+  normal default.
 - Move acceptable trade-offs to `decisions[].chose` with rationale.
-- Move follow-up items to `followups`.
+- Move follow-up items to `followups` only when the user explicitly
+  wants later work, or the current task deliberately cut out a known
+  next task. Do not invent speculative "consider later" items.
 - Move reviewer guidance to `review_notes`.
-- Move hard constraints to `anti_patterns`.
+- Move hard constraints to `anti_patterns`; empty anti-patterns are
+  the normal default when no future rule was established.
 - Resolve applicable open risks when the current work addresses
   them (via `resolves_risks` on the seal result).
 
@@ -213,8 +217,9 @@ A well-formed seal:
 - Has at least one `decision` with a choice point and what was chosen.
 - Has `fingerprint.subsystems` and `fingerprint.files_touched` populated.
 - Has `tags` populated generously (synonyms, parent concepts).
-- Records `anti_patterns` (with `what` and `why`) for any constraints
-  future agents must respect.
+- Records `risks`, `anti_patterns`, and `followups` only when the
+  work establishes concrete items for those fields; otherwise leaves
+  them empty.
 
 ## 7. Task priority matrix
 
