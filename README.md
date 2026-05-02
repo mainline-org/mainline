@@ -455,13 +455,15 @@ Full daily set:
 | `mainline abandon <id>` | Drop a drafting/sealed/proposed intent — drafts deleted, sealed/proposed get an abandon event published to the team |
 | `mainline sync` | Fetch remote state, rebuild views, **auto-pin merged commits**, surface new conflicts |
 | `mainline log` | Intent history with author, time, and `[check:?\|~\|ok\|!\|human?]` |
-| `mainline show <id>` | Full intent detail (decisions, risks, fingerprint) |
+| `mainline show <id>` | Full intent detail (decisions, risks, follow-ups, fingerprint) |
 | `mainline trace <id>` | Turn timeline (start/append/seal/abandon/supersede with elapsed time) |
 | `mainline gaps` | List uncovered commits on main with reversibility-ranked rescue options |
 | `mainline context --current` | Relevance-ranked prior intents for the active branch + diff-vs-main (read this BEFORE grepping) |
 | `mainline context --files <p>` | Same retrieval, scoped to specific files |
 | `mainline context --query "..."` | Same retrieval, keyword-driven |
 | `mainline lint [<id>]` | Advisory seal-quality checks (boilerplate, missing decisions, broken refs). Never blocks. |
+| `mainline risks` | List open risks; `mainline risks resolve <id>` closes one manually |
+| `mainline followups` | List open follow-ups; `mainline followups resolve <id>` marks one completed manually |
 | `mainline hub open` | Build + open a static HTML site over the local intent view (humans, not agents) |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |
 | `mainline check --submit` | Submit phase 2 judgment; result surfaces in log column |

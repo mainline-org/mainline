@@ -72,6 +72,12 @@ type MainlineView struct {
 	// records. Populated during view rebuild from IntentSealedEvent.
 	// ResolvesRisks + RiskResolvedEvent. Missing key = open risk.
 	RiskResolutions map[string][]RiskResolution `json:"risk_resolutions,omitempty"`
+
+	// FollowupResolutions maps follow-up IDs ("int_xxx#N") to their
+	// completion records. Populated during view rebuild from
+	// IntentSealedEvent.ResolvesFollowups + FollowupResolvedEvent.
+	// Missing key = open follow-up.
+	FollowupResolutions map[string][]FollowupResolution `json:"followup_resolutions,omitempty"`
 }
 
 // ProposedIndex is the fast-lookup index for proposed (not yet merged) intents.
