@@ -1,5 +1,10 @@
 # Mainline
 
+[![CI](https://github.com/mainline-org/mainline/actions/workflows/ci.yml/badge.svg)](https://github.com/mainline-org/mainline/actions/workflows/ci.yml)
+[![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![PBT](https://img.shields.io/badge/PBT-property--based%20testing-blueviolet)](#property-based-testing)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 **Git-native intent memory for AI-assisted engineering.**
 
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
@@ -714,6 +719,21 @@ make bench
 # Lint
 make lint
 ```
+
+### Property-based testing
+
+Core subsystems are covered by property-based tests (PBT) that verify
+invariants across randomly generated inputs rather than hand-picked cases:
+
+| Area | Properties |
+|------|-----------|
+| `rebuildView` state machine | event replay determinism, status transitions, idempotency |
+| Pin cascade | strategy priority, commit coverage, squash-merge handling |
+| `SealSubmit` | snapshot contract, fingerprint completeness, conflict detection |
+| `detectSealedConflicts` | symmetry, self-no-conflict, overlap monotonicity |
+
+Run `make test` for rapid PBT (20 samples each) or `make test-pbt` for full
+coverage (100 samples, used in CI).
 
 ## Project structure
 
