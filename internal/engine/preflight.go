@@ -189,9 +189,9 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 		addFinding(PreflightFindingSyncStale, PreflightLevelWarn,
 			"Team view is stale; refresh before trusting collaboration state.", nil)
 	}
-	if in.status != nil && in.status.LocalHead != "" && in.status.MainHead != "" && in.status.LocalHead != in.status.MainHead {
+	if in.status != nil && len(in.upstreamCommits) > 0 {
 		addFinding(PreflightFindingBranchDrift, PreflightLevelWarn,
-			"Local HEAD differs from synced main; review upstream before committing or sealing.", nil)
+			"Synced main contains commits not in local HEAD; review or rebase if they affect this work.", nil)
 	}
 	if in.status != nil && in.status.ActiveIntent != nil &&
 		in.status.ActiveIntent.BaseCommit != "" &&
@@ -342,7 +342,7 @@ func preflightRecommendations(res *PreflightResult) []string {
 		case PreflightFindingSyncStale:
 			add("mainline sync")
 		case PreflightFindingBranchDrift, PreflightFindingActiveBaseBehind:
-			add("review synced main changes before editing, committing, or sealing")
+			add("review synced main changes; rebase or merge if they affect this work")
 		case PreflightFindingDirtyWithoutCommitDiff:
 			add("commit the intended code diff before seal --prepare, or keep this as a dirty-work warning")
 		}

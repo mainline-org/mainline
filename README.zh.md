@@ -195,6 +195,12 @@ mainline init --actor-name "<你的名字>"
 check），这是 Mainline skill 规定的契约 — Mainline 是 context provider，
 不是 workflow driver。
 
+在已有项目里接入 Mainline 时，`mainline init` 会把当时的 `main` HEAD
+记录成 coverage baseline。这个 commit 以及它之前的历史会显示为
+pre-Mainline skipped history，不会一上来被算成 uncovered gaps。之后新进
+`main` 的 commit 仍然需要正常 intent coverage；如果某些旧 commit 很重要，
+可以用 `mainline start --commits <sha> "<why>"` 补一条解释。
+
 如果你的 AI 工具不支持 hooks，它仍然可以通过 Mainline skill 按同样
 的协议工作 — 两条路径都能工作。
 
