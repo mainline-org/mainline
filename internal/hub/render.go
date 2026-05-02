@@ -34,6 +34,9 @@ var tplActor string
 //go:embed templates/open.html
 var tplOpen string
 
+//go:embed templates/intents.html
+var tplIntents string
+
 //go:embed templates/risks.html
 var tplRisks string
 
@@ -104,6 +107,9 @@ func renderForLang(dir string, m *HubModel, tpl *template.Template, lang string)
 		return err
 	}
 	if err := render("open.html", "open", openCtx(m)); err != nil {
+		return err
+	}
+	if err := render("intents.html", "intents", intentsCtx(m)); err != nil {
 		return err
 	}
 	if err := render("files.html", "files", filesCtx(m)); err != nil {
@@ -216,15 +222,15 @@ func otherLang(lang string) string {
 
 func buildTemplates() (*template.Template, error) {
 	funcs := template.FuncMap{
-		"shortID":       shortID,
-		"shortCommit":   shortCommit,
-		"fileSlug":      fileSlug,
-		"actorSlug":     actorSlug,
-		"timeAgo":       timeAgo,
-		"join":          strings.Join,
-		"hasPrefix":     strings.HasPrefix,
-		"healthLabel":   healthLabel,
-		"ageLabel":      ageLabel,
+		"shortID":        shortID,
+		"shortCommit":    shortCommit,
+		"fileSlug":       fileSlug,
+		"actorSlug":      actorSlug,
+		"timeAgo":        timeAgo,
+		"join":           strings.Join,
+		"hasPrefix":      strings.HasPrefix,
+		"healthLabel":    healthLabel,
+		"ageLabel":       ageLabel,
 		"coverageRatio":  coverageRatio,
 		"lifecycleRatio": lifecycleRatio,
 		"deref":          derefInt,
@@ -232,7 +238,7 @@ func buildTemplates() (*template.Template, error) {
 		"tHealth":        translateHealthLabel,
 	}
 	tpl := template.New("hub").Funcs(funcs)
-	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntent, tplFile, tplFiles, tplReview, tplActor, tplRisks, tplGraph, tplCoverage, tplDigest} {
+	for _, src := range []string{tplBase, tplIndex, tplOpen, tplIntents, tplIntent, tplFile, tplFiles, tplReview, tplActor, tplRisks, tplGraph, tplCoverage, tplDigest} {
 		var err error
 		tpl, err = tpl.Parse(src)
 		if err != nil {
@@ -320,6 +326,10 @@ type pageCtx struct {
 type intentLink struct {
 	ID    string
 	Title string
+	// Authorship — surfaced wherever the link is rendered so reviewers
+	// can see who proposed an intent without clicking through.
+	ActorID   string
+	ActorName string
 }
 
 type riskRow struct {
@@ -377,6 +387,21 @@ func openCtx(m *HubModel) pageCtx {
 		NavActive:   "open",
 		RootPath:    "",
 		OpenIntents: m.OpenIntents,
+	}
+}
+
+// intentsCtx renders the flat all-intents browse page. Sidebar caps
+// recent intents at 30; this page is the canonical "show me everything"
+// surface so reviewers can scan the whole catalog without paging.
+func intentsCtx(m *HubModel) pageCtx {
+	return pageCtx{
+		Title:       "All intents",
+		GeneratedAt: m.GeneratedAt,
+		MainBranch:  m.MainBranch,
+		MainHead:    m.MainHead,
+		NavActive:   "intents",
+		RootPath:    "",
+		Intents:     m.Intents,
 	}
 }
 
@@ -466,7 +491,7 @@ func fileCtx(m *HubModel, f HubFileEntry, byID map[string]HubIntent) pageCtx {
 // fileBriefing holds the "Before editing this file" data extracted
 // from all intents that touched a file, grouped by lifecycle status.
 type fileBriefing struct {
-	EffectiveDecisions []briefingDecision
+	EffectiveDecisions  []briefingDecision
 	AbandonedApproaches []briefingApproach
 	SupersededDecisions []briefingApproach
 	RecentProposed      []intentLink
@@ -477,12 +502,16 @@ type briefingDecision struct {
 	Chose     string
 	Rationale string
 	IntentID  string
+	ActorID   string
+	ActorName string
 }
 
 type briefingApproach struct {
-	Title    string
-	Reason   string
-	IntentID string
+	Title     string
+	Reason    string
+	IntentID  string
+	ActorID   string
+	ActorName string
 }
 
 func (b *fileBriefing) HasContent() bool {
@@ -502,6 +531,7 @@ func buildFileBriefing(f HubFileEntry, byID map[string]HubIntent) *fileBriefing 
 			for _, d := range in.Decisions {
 				b.EffectiveDecisions = append(b.EffectiveDecisions, briefingDecision{
 					Point: d.Point, Chose: d.Chose, Rationale: d.Rationale, IntentID: in.ID,
+					ActorID: in.ActorID, ActorName: in.ActorName,
 				})
 			}
 		case "abandoned":
@@ -511,6 +541,7 @@ func buildFileBriefing(f HubFileEntry, byID map[string]HubIntent) *fileBriefing 
 			}
 			b.AbandonedApproaches = append(b.AbandonedApproaches, briefingApproach{
 				Title: in.Title, Reason: reason, IntentID: in.ID,
+				ActorID: in.ActorID, ActorName: in.ActorName,
 			})
 		case "superseded":
 			reason := ""
@@ -524,13 +555,17 @@ func buildFileBriefing(f HubFileEntry, byID map[string]HubIntent) *fileBriefing 
 			}
 			b.SupersededDecisions = append(b.SupersededDecisions, briefingApproach{
 				Title: in.Title, Reason: reason, IntentID: in.ID,
+				ActorID: in.ActorID, ActorName: in.ActorName,
 			})
 		case "proposed":
 			title := in.Title
 			if title == "" {
 				title = in.ID
 			}
-			b.RecentProposed = append(b.RecentProposed, intentLink{ID: in.ID, Title: title})
+			b.RecentProposed = append(b.RecentProposed, intentLink{
+				ID: in.ID, Title: title,
+				ActorID: in.ActorID, ActorName: in.ActorName,
+			})
 		}
 	}
 	if !b.HasContent() {
@@ -678,7 +713,10 @@ func linkFor(byID map[string]HubIntent, id, prefix string) intentLink {
 		if title == "" {
 			title = id
 		}
-		return intentLink{ID: id, Title: prefix + title}
+		return intentLink{
+			ID: id, Title: prefix + title,
+			ActorID: in.ActorID, ActorName: in.ActorName,
+		}
 	}
 	return intentLink{ID: id, Title: prefix + id}
 }

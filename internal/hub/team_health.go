@@ -567,6 +567,8 @@ func focusFromIntent(in HubIntent, reason string, now time.Time) HubFocusIntent 
 		RiskCount: len(in.Risks),
 		FileCount: len(in.FilesTouched),
 		HighRisk:  highRisk,
+		ActorID:   in.ActorID,
+		ActorName: in.ActorName,
 	}
 }
 

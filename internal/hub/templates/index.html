@@ -39,6 +39,7 @@
           {{.Reason}}
           {{if .AgeHours}} · {{ageLabel .AgeHours}}{{end}}
           {{if .FileCount}} · {{.FileCount}} file{{if ne .FileCount 1}}s{{end}}{{end}}
+          {{if .ActorID}} · {{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}{{end}}
         </span>
       </span>
       <span class="status status-{{.Status}}">{{.Status}}</span>
@@ -54,7 +55,7 @@
   <p class="muted">{{t $.Lang "digest.important_decisions_lead"}}</p>
   <ul class="digest-list">
     {{range .ImportantDecisions}}
-    <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
+    <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span>{{if .ActorID}} <span class="muted">· <a href="actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a></span>{{end}}</li>
     {{end}}
   </ul>
 </section>
@@ -118,18 +119,26 @@
 <aside class="dashboard-sidebar">
   <h3>{{t .Lang "recent.heading"}}</h3>
   <ul class="intent-sidebar-list">
-  {{range .Intents}}
+  {{range $i, $in := .Intents}}
+  {{if lt $i 30}}
     <li>
-      <a href="intents/{{.ID}}.html">
-        <span class="sidebar-intent-title">{{.Title}}</span>
+      <a href="intents/{{$in.ID}}.html">
+        <span class="sidebar-intent-title">{{$in.Title}}</span>
         <span class="sidebar-intent-meta">
-          <span class="status status-{{.Status}}">{{.Status}}</span>
-          <span class="muted">{{timeAgo .SealedAt}}</span>
+          <span class="status status-{{$in.Status}}">{{$in.Status}}</span>
+          <span class="muted">{{timeAgo $in.SealedAt}}</span>
+          {{if $in.ActorID}}<span class="muted">· {{if $in.ActorName}}{{$in.ActorName}}{{else}}{{shortID $in.ActorID}}{{end}}</span>{{end}}
         </span>
       </a>
     </li>
   {{end}}
+  {{end}}
   </ul>
+  {{if gt (len .Intents) 30}}
+  <p class="sidebar-more"><a href="intents.html">{{t .Lang "sidebar.browse_all"}} ({{len .Intents}}) →</a></p>
+  {{else if .Intents}}
+  <p class="sidebar-more"><a href="intents.html">{{t .Lang "sidebar.browse_all"}} ({{len .Intents}}) →</a></p>
+  {{end}}
 </aside>
 </div><!-- end dashboard-grid -->
 {{template "footer" .}}{{end}}
