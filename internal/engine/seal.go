@@ -206,15 +206,16 @@ func buildSealStarter(intentID string, files []string) *domain.SealResult {
 	return &domain.SealResult{
 		IntentID: intentID,
 		Summary: domain.IntentSummary{
-			Title:       "",
-			What:        "",
-			Why:         "",
-			UserGoal:    "",
-			Decisions:   []domain.Decision{},
-			Rejected:    []domain.RejectedAlternative{},
-			Risks:       []string{},
-			Followups:   []string{},
-			ReviewNotes: []string{},
+			Title:                   "",
+			What:                    "",
+			Why:                     "",
+			UserGoal:                "",
+			Decisions:               []domain.Decision{},
+			Rejected:                []domain.RejectedAlternative{},
+			Risks:                   []string{},
+			Followups:               []string{},
+			ReviewNotes:             []string{},
+			AcknowledgedConstraints: []domain.AcknowledgedConstraint{},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:           subs,
@@ -239,7 +240,7 @@ diff. Patch in the agent-judgment fields (title, what, why,
 decisions, risks, anti_patterns, confidence) and submit.
 
 Required structure:
-1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups, review_notes
+1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups, review_notes, acknowledged_constraints
 2. fingerprint: subsystems, files_touched, architectural_claims, behavioral_changes,
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)
@@ -252,8 +253,14 @@ Field decision tree — for each future-facing observation, pick the right field
   "Reviewer should focus on Z" / scope explanation     → review_notes (ephemeral, not inherited)
   "Future work in this area MUST NOT do X"            → anti_patterns
   "We considered B but ruled it out"                  → rejected
+  "I saw inherited constraint X and handled it"       → acknowledged_constraints
 
   If you can't pick: it's probably a decision (you made a judgment call).
+
+Acknowledged constraints:
+- If mainline context surfaced inherited_constraints, acknowledge each here.
+- Format: {"constraint_id": "int_xxx#N", "disposition": "preserved|mitigated|not_applicable|intentionally_changed", "note": "..."}
+- "intentionally_changed" signals reviewer attention needed.
 
 Risk discipline:
 - Put an item in summary.risks only when it names a concrete failure mode,

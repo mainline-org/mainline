@@ -57,24 +57,26 @@ func TestBuildInheritedConstraints_FileOverlap(t *testing.T) {
 	if out[0].SourceIntent != "int_old" || out[0].Severity != "high" {
 		t.Errorf("unexpected: %+v", out[0])
 	}
+	if out[0].ConstraintID != "int_old#0" {
+		t.Errorf("constraint_id: want int_old#0, got %s", out[0].ConstraintID)
+	}
 	if len(out[0].MatchedBy) != 1 || out[0].MatchedBy[0] != "file:a.go" {
 		t.Errorf("matched_by: want [file:a.go], got %v", out[0].MatchedBy)
 	}
 }
 
-func TestBuildInheritedConstraints_SubsystemOverlap(t *testing.T) {
+func TestBuildInheritedConstraints_SubsystemOverlapRemoved(t *testing.T) {
+	// v2: subsystem matching is removed. Only file overlap propagates.
 	view := &MainlineView{
 		Intents: []IntentView{
 			mkIntent("int_old", time.Time{}, []string{"a.go"}, []string{"auth"},
 				[]AntiPattern{mkAP("Skip token rotation", "Replay attacks", "high")}),
 		},
 	}
+	// Same subsystem but different file → no match
 	out := BuildInheritedConstraints(view, []string{"unrelated.go"}, []string{"auth"}, "")
-	if len(out) != 1 {
-		t.Fatalf("want 1 constraint, got %d", len(out))
-	}
-	if len(out[0].MatchedBy) != 1 || out[0].MatchedBy[0] != "subsystem:auth" {
-		t.Errorf("matched_by: want [subsystem:auth], got %v", out[0].MatchedBy)
+	if len(out) != 0 {
+		t.Fatalf("subsystem-only match should no longer propagate; got %d: %+v", len(out), out)
 	}
 }
 
@@ -115,7 +117,8 @@ func TestBuildInheritedConstraints_TemporalFilter(t *testing.T) {
 	}
 }
 
-func TestBuildInheritedConstraints_SeveritySorting(t *testing.T) {
+func TestBuildInheritedConstraints_OnlyHighSeverity(t *testing.T) {
+	// v2: only high severity propagates.
 	view := &MainlineView{
 		Intents: []IntentView{
 			mkIntent("int_a", time.Time{}, []string{"a.go"}, nil,
@@ -127,14 +130,11 @@ func TestBuildInheritedConstraints_SeveritySorting(t *testing.T) {
 		},
 	}
 	out := BuildInheritedConstraints(view, []string{"a.go"}, nil, "")
-	if len(out) != 3 {
-		t.Fatalf("want 3, got %d", len(out))
+	if len(out) != 1 {
+		t.Fatalf("want 1 (only high), got %d: %+v", len(out), out)
 	}
-	want := []string{"high", "medium", "low"}
-	for i, w := range want {
-		if out[i].Severity != w {
-			t.Errorf("position %d: want %s, got %s (%s)", i, w, out[i].Severity, out[i].What)
-		}
+	if out[0].Severity != "high" || out[0].What != "B high" {
+		t.Errorf("unexpected: %+v", out[0])
 	}
 }
 
@@ -268,5 +268,24 @@ func TestAcknowledgementOf_ShortConstraintNeedsAllTokens(t *testing.T) {
 	)
 	if got := AcknowledgementOf(ic, summary); got != AckNone {
 		t.Errorf("want AckNone for partial single-token match, got %q", got)
+	}
+}
+
+func TestHasExplicitAck(t *testing.T) {
+	acks := []AcknowledgedConstraint{
+		{ConstraintID: "int_abc#0", Disposition: "preserved", Note: "kept it"},
+		{ConstraintID: "int_abc#1", Disposition: "not_applicable"},
+	}
+	if !hasExplicitAck(acks, "int_abc#0") {
+		t.Error("should find int_abc#0")
+	}
+	if !hasExplicitAck(acks, "int_abc#1") {
+		t.Error("should find int_abc#1")
+	}
+	if hasExplicitAck(acks, "int_abc#2") {
+		t.Error("should not find int_abc#2")
+	}
+	if hasExplicitAck(nil, "int_abc#0") {
+		t.Error("nil acks should return false")
 	}
 }
