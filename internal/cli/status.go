@@ -130,13 +130,6 @@ var statusCmd = &cobra.Command{
 	},
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
-}
-
 func shortHash(hash string) string {
 	if len(hash) <= 12 {
 		return hash
