@@ -102,7 +102,17 @@ func (s *Service) StartWithOptions(goal string, thread string, opts *StartOption
 		// earliest listed commit so diff-stat semantics still make sense
 		// to humans reading the seal output. Errors are tolerated —
 		// downstream code does not require base for backfill intents.
-		backfill = append([]string{}, opts.BackfillCommits...)
+		//
+		// Normalize each commit to its full 40-char SHA so downstream
+		// consumers (Pin's noteCache lookup, scanMainNotes) never hit a
+		// short-hash vs full-hash mismatch.
+		for _, c := range opts.BackfillCommits {
+			if full, err := s.Git.Run("rev-parse", "--verify", c+"^{commit}"); err == nil {
+				backfill = append(backfill, strings.TrimSpace(full))
+			} else {
+				backfill = append(backfill, c) // keep as-is if resolve fails
+			}
+		}
 		if parent, err := s.Git.Run("rev-parse", backfill[0]+"^"); err == nil {
 			base = strings.TrimSpace(parent)
 		}

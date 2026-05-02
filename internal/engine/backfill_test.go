@@ -94,3 +94,69 @@ func TestBackfill_StartCommitsCoversManualCommit(t *testing.T) {
 	}
 	t.Fatalf("manual commit %s not in coverage window", manualCommit)
 }
+
+// TestBackfill_PinIdempotent verifies that backfill pin is idempotent
+// across multiple Sync() calls. This regressed when BackfillCommits were
+// stored as short hashes but noteCache was keyed by full hashes, causing
+// alreadyHasIntentCached to miss every time.
+func TestBackfill_PinIdempotent(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	gitCmd(t, dir, "checkout", "main")
+
+	// Create a manual commit on main.
+	writeFile(t, dir, "idempotent.go", "package main\n")
+	gitCmd(t, dir, "add", "idempotent.go")
+	gitCmd(t, dir, "commit", "-m", "manual edit for idempotent test")
+	manualCommit, _ := svc.Git.HeadCommit()
+
+	// Use a SHORT hash to reproduce the bug scenario.
+	shortCommit := manualCommit[:7]
+
+	startResult, err := svc.StartWithOptions("idempotent backfill test", "", &StartOptions{
+		BackfillCommits: []string{shortCommit},
+	})
+	if err != nil {
+		t.Fatalf("start --commits: %v", err)
+	}
+
+	// BackfillCommits should be normalized to full hash at start time.
+	if len(startResult.BackfillCommits) != 1 {
+		t.Fatalf("expected 1 backfill commit, got %v", startResult.BackfillCommits)
+	}
+	if len(startResult.BackfillCommits[0]) < 40 {
+		t.Fatalf("backfill commit should be normalized to full hash, got %q", startResult.BackfillCommits[0])
+	}
+
+	if _, err := svc.Append("turn description"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	sr := validSealResult(startResult.IntentID)
+	data, _ := json.Marshal(sr)
+	// SealSubmit auto-syncs, which triggers the first Pin().
+	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
+		t.Fatalf("seal submit: %v", err)
+	}
+
+	// The backfill note should exist after SealSubmit's auto-sync.
+	if raw, _ := svc.Git.NotesShow(startResult.BackfillCommits[0]); raw == "" {
+		t.Fatalf("backfill note should exist after seal submit's auto-sync")
+	}
+
+	// Subsequent Sync calls should NOT re-pin the same backfill commit.
+	for i := 0; i < 3; i++ {
+		syncResult, err := svc.Sync()
+		if err != nil {
+			t.Fatalf("sync #%d: %v", i+1, err)
+		}
+		for _, link := range syncResult.AutoPinned {
+			if link.IntentID == startResult.IntentID {
+				t.Fatalf("sync #%d re-pinned intent %s — backfill is not idempotent", i+1, startResult.IntentID)
+			}
+		}
+	}
+}
