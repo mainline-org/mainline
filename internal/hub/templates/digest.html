@@ -36,7 +36,7 @@
 <h2>{{t $.Lang "digest.important_decisions"}}</h2>
 <ul class="digest-list">
   {{range .ImportantDecisions}}
-  <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
+  <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span>{{if .ActorID}} <span class="muted">· <a href="actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a></span>{{end}}</li>
   {{end}}
 </ul>
 {{end}}
@@ -45,7 +45,7 @@
 <h2>{{t $.Lang "digest.risks_to_watch"}}</h2>
 <ul class="digest-list">
   {{range .RisksToWatch}}
-  <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span></li>
+  <li><a href="intents/{{.ID}}.html">{{.Title}}</a> — <span class="muted">{{.Reason}}</span>{{if .ActorID}} <span class="muted">· <a href="actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a></span>{{end}}</li>
   {{end}}
 </ul>
 {{end}}
@@ -54,7 +54,7 @@
 <h2>{{t $.Lang "digest.abandoned_approaches"}}</h2>
 <ul class="digest-list">
   {{range .AbandonedApproaches}}
-  <li><a href="intents/{{.ID}}.html">{{.Title}}</a></li>
+  <li><a href="intents/{{.ID}}.html">{{.Title}}</a>{{if .ActorID}} <span class="muted">· <a href="actors/{{actorSlug .ActorID}}.html">{{if .ActorName}}{{.ActorName}}{{else}}{{shortID .ActorID}}{{end}}</a></span>{{end}}</li>
   {{end}}
 </ul>
 {{end}}
