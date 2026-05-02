@@ -58,10 +58,7 @@ Follow-up IDs are deterministic: "{intent_id}#{array_index}".`,
 				marker = "o"
 			}
 			fmt.Printf("  %s [%s] %s\n", marker, f.Status, f.ID)
-			text := f.Text
-			if len(text) > 100 {
-				text = text[:99] + "..."
-			}
+			text := truncateWithSuffix(f.Text, 100, "...")
 			fmt.Printf("    %s\n", text)
 			fmt.Printf("    source: %s", f.SourceIntent)
 			if f.OpenedAt != "" {
