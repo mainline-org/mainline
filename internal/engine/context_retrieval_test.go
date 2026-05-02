@@ -762,24 +762,26 @@ func TestContextRetrieval_SurfacesInheritedConstraints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	if len(res.InheritedConstraints) < 2 {
-		t.Fatalf("expected >=2 inherited constraints, got %d (%+v)", len(res.InheritedConstraints), res.InheritedConstraints)
+	if len(res.InheritedConstraints) != 1 {
+		t.Fatalf("expected 1 inherited constraint (only high severity), got %d (%+v)", len(res.InheritedConstraints), res.InheritedConstraints)
 	}
-	// Ordering: high severity must come before medium.
 	if res.InheritedConstraints[0].Severity != "high" {
-		t.Errorf("expected high-severity constraint first, got %q",
+		t.Errorf("expected high-severity constraint, got %q",
 			res.InheritedConstraints[0].Severity)
 	}
-	// Top-level note must alert the agent.
+	if res.InheritedConstraints[0].ConstraintID == "" {
+		t.Errorf("expected non-empty constraint_id")
+	}
+	// Top-level note must alert the agent about acknowledged_constraints format.
 	hasAckNote := false
 	for _, n := range res.Notes {
-		if strings.Contains(n, "Inherited high-severity") {
+		if strings.Contains(n, "Inherited high-severity") || strings.Contains(n, "acknowledged_constraints") {
 			hasAckNote = true
 			break
 		}
 	}
 	if !hasAckNote {
-		t.Errorf("expected acknowledgement-required note in Notes; got %v", res.Notes)
+		t.Errorf("expected acknowledgement note in Notes; got %v", res.Notes)
 	}
 }
 

@@ -1,30 +1,40 @@
 package domain
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
-// Inherited-constraint propagation. AntiPatterns recorded by past
-// sealed intents become "inherited constraints" for any future
-// change that touches the same files / subsystems. Surfaced to the
-// agent via `mainline context`, to the reviewer via Hub + PR
-// description, and to the linter as a soft warning when a
-// high-severity inherited constraint is not acknowledged in the
-// new seal.
+// Inherited-constraint propagation. High-severity AntiPatterns from
+// past sealed intents become "inherited constraints" for any future
+// change that touches the same files. Surfaced to the agent via
+// `mainline context`, to the reviewer via Hub + PR description, and
+// to the linter as a warning when not explicitly acknowledged.
 //
-// v1 deliberately does NOT do violation conviction (i.e. "your seal
-// removed the function the anti_pattern said not to remove" — keyword
-// match is not strong enough evidence to error on). v1's job is
-// awareness + acknowledgement: the agent must SEE the constraint and
-// must mention it in decisions / risks / rejected_alternatives /
-// own anti_patterns. Violation detection is a v2 concern that needs
-// diff + symbol-level analysis.
+// Design principles (v2):
+//   - Only HIGH severity propagates — the checklist must be short.
+//   - Only FILE overlap triggers inheritance — subsystem matching was
+//     too coarse and generated noise that trained users to ignore it.
+//   - Acknowledgement is EXPLICIT: the seal carries acknowledged_constraints[]
+//     keyed by stable constraint_id ("int_xxx#N"), not guessed via
+//     token overlap.
+//   - Legacy fallback: old seals without acknowledged_constraints still
+//     get the v1 token-overlap heuristic in lint for backward compat.
+//
+// Violation detection remains out of scope — awareness + explicit
+// acknowledgement is the load-bearing contract.
 
-// BuildInheritedConstraints aggregates AntiPatterns from prior sealed
-// intents whose FilesTouched or Subsystems overlap with the supplied
-// (files, subsystems) of the change in progress.
+// BuildInheritedConstraints aggregates high-severity AntiPatterns
+// from prior sealed intents whose FilesTouched overlap with the
+// supplied files of the change in progress.
+//
+// v2 design: only HIGH severity anti_patterns propagate (the
+// checklist must be short and hard), and matching is FILE-ONLY
+// (subsystem matching was too coarse and generated noise). This
+// means the function no longer uses the `subsystems` parameter —
+// it is kept in the signature for API stability but ignored.
 //
 // excludeID is the intent currently being sealed/edited (its own
 // anti_patterns are not "inherited" — they're the intent's own
@@ -36,8 +46,7 @@ import (
 // active draft), no temporal filter is applied; the agent is the
 // future relative to every sealed intent.
 //
-// Output ordering: severity high → medium → low → "", then by
-// SourceIntent ID for determinism. Never truncated.
+// Output ordering: by SourceIntent ID for determinism. Never truncated.
 //
 // Pure: no I/O. The view is the only state.
 func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, excludeID string) []InheritedConstraint {
@@ -50,13 +59,7 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 			fileSet[f] = true
 		}
 	}
-	subSet := make(map[string]bool, len(subsystems))
-	for _, s := range subsystems {
-		if s != "" {
-			subSet[s] = true
-		}
-	}
-	if len(fileSet) == 0 && len(subSet) == 0 {
+	if len(fileSet) == 0 {
 		return nil
 	}
 
@@ -79,19 +82,12 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 		ic     InheritedConstraint
 		reasons map[string]bool
 	}
-	// Key is "<sourceIntent>|<what>" so the same constraint matched
-	// by multiple files in the same source intent collapses to one
-	// row with a multi-element MatchedBy.
 	merged := map[string]*bucket{}
 	for i := range view.Intents {
 		iv := &view.Intents[i]
 		if iv.IntentID == excludeID {
 			continue
 		}
-		// Lifecycle filter: don't carry constraints from abandoned
-		// or reverted approaches — the team explicitly walked away.
-		// Superseded intents stay because the supersession can be
-		// partial (the new approach kept some of the old constraints).
 		if iv.Status == StatusAbandoned || iv.Status == StatusReverted {
 			continue
 		}
@@ -100,22 +96,29 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 		}
 		if !cutoff.IsZero() && iv.SealedAt != "" {
 			if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil && t.After(cutoff) {
-				continue // source sealed AFTER current intent — not inherited
+				continue
 			}
 		}
-		matched := matchedReasons(iv, fileSet, subSet)
-		if len(matched) == 0 {
+		// File-only matching: check if this intent touched any of our files
+		matchedFiles := matchedFileReasons(iv, fileSet)
+		if len(matchedFiles) == 0 {
 			continue
 		}
-		for _, ap := range iv.Summary.AntiPatterns {
+		// Only inherit HIGH severity anti_patterns
+		for apIdx, ap := range iv.Summary.AntiPatterns {
 			if strings.TrimSpace(ap.What) == "" {
 				continue
 			}
-			key := iv.IntentID + "|" + ap.What
+			if !strings.EqualFold(strings.TrimSpace(ap.Severity), "high") {
+				continue
+			}
+			constraintID := fmt.Sprintf("%s#%d", iv.IntentID, apIdx)
+			key := constraintID
 			b, ok := merged[key]
 			if !ok {
 				b = &bucket{
 					ic: InheritedConstraint{
+						ConstraintID: constraintID,
 						SourceIntent: iv.IntentID,
 						What:         ap.What,
 						Why:          ap.Why,
@@ -125,7 +128,7 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 				}
 				merged[key] = b
 			}
-			for _, r := range matched {
+			for _, r := range matchedFiles {
 				b.reasons[r] = true
 			}
 		}
@@ -142,12 +145,7 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 		out = append(out, b.ic)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		ri := severityRank(out[i].Severity)
-		rj := severityRank(out[j].Severity)
-		if ri != rj {
-			return ri < rj
-		}
-		return out[i].SourceIntent < out[j].SourceIntent
+		return out[i].ConstraintID < out[j].ConstraintID
 	})
 	return out
 }
@@ -200,13 +198,17 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 				isRecent = true
 			}
 		}
-		// Source role: this intent contributes anti_patterns to every
-		// file it touched.
+		// Source role: this intent contributes high-severity
+		// anti_patterns to every file it touched.
 		if iv.Summary != nil {
-			for _, ap := range iv.Summary.AntiPatterns {
+			for apIdx, ap := range iv.Summary.AntiPatterns {
 				if strings.TrimSpace(ap.What) == "" {
 					continue
 				}
+				if !strings.EqualFold(strings.TrimSpace(ap.Severity), "high") {
+					continue
+				}
+				constraintID := fmt.Sprintf("%s#%d", iv.IntentID, apIdx)
 				for _, f := range iv.Fingerprint.FilesTouched {
 					m, ok := perFile[f]
 					if !ok {
@@ -214,6 +216,7 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 						perFile[f] = m
 					}
 					m[cKey{iv.IntentID, ap.What}] = InheritedConstraint{
+						ConstraintID: constraintID,
 						SourceIntent: iv.IntentID,
 						What:         ap.What,
 						Why:          ap.Why,
@@ -255,15 +258,10 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 
 		// UnacknowledgedRecentTouches: of the recent intents
 		// touching this file, how many failed to acknowledge ANY
-		// applicable high-severity inherited constraint? We count
-		// the intent itself as "unack" if for any high-severity
-		// constraint applicable here, it wasn't acknowledged in
-		// the intent's own summary.
+		// applicable high-severity inherited constraint?
 		recent := recentByFile[path]
 		hs.RecentTouches = len(recent)
 		for _, iv := range recent {
-			// An intent is itself a "source" for some constraints —
-			// they don't count as inherited from its own perspective.
 			anyUnack := false
 			for _, hc := range highList {
 				if hc.SourceIntent == iv.IntentID {
@@ -273,10 +271,16 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 					anyUnack = true
 					break
 				}
-				if AcknowledgementOf(hc, iv.Summary) == AckNone {
-					anyUnack = true
-					break
+				// Prefer explicit acknowledgement; fall back to
+				// token overlap for legacy intents without the field.
+				if hasExplicitAck(iv.Summary.AcknowledgedConstraints, hc.ConstraintID) {
+					continue
 				}
+				if len(iv.Summary.AcknowledgedConstraints) == 0 && AcknowledgementOf(hc, iv.Summary) != AckNone {
+					continue
+				}
+				anyUnack = true
+				break
 			}
 			if anyUnack {
 				hs.UnacknowledgedRecentTouches++
@@ -296,9 +300,26 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 	return out
 }
 
-// matchedReasons returns the list of "<kind>:<value>" strings
+// matchedFileReasons returns the list of "file:<path>" strings
 // describing why the source intent's anti_patterns propagate to the
-// current context. One entry per matched file or subsystem.
+// current context. v2: file-only matching (subsystem removed).
+func matchedFileReasons(iv *IntentView, files map[string]bool) []string {
+	if iv.Fingerprint == nil {
+		return nil
+	}
+	out := make([]string, 0, 4)
+	for _, f := range iv.Fingerprint.FilesTouched {
+		if files[f] {
+			out = append(out, "file:"+f)
+		}
+	}
+	return out
+}
+
+// matchedReasons is the legacy version that includes subsystem matching.
+// Kept for BuildInheritedHeatmap which still uses intent-level matching
+// for its per-file roll-up (subsystem matches don't appear in heatmap
+// anyway because they can't pin to a single path).
 func matchedReasons(iv *IntentView, files, subs map[string]bool) []string {
 	if iv.Fingerprint == nil {
 		return nil
@@ -315,6 +336,17 @@ func matchedReasons(iv *IntentView, files, subs map[string]bool) []string {
 		}
 	}
 	return out
+}
+
+// hasExplicitAck checks whether the acknowledged_constraints list
+// contains an entry for the given constraint ID. Exact match only.
+func hasExplicitAck(acks []AcknowledgedConstraint, constraintID string) bool {
+	for _, a := range acks {
+		if a.ConstraintID == constraintID {
+			return true
+		}
+	}
+	return false
 }
 
 // severityRank maps anti_pattern severity to a sort key. Lower rank

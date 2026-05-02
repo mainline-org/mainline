@@ -64,13 +64,10 @@ type ContextRetrievalRequest struct {
 type ContextRetrievalResult struct {
 	Query           ContextQueryEcho  `json:"query"`
 	RelevantIntents []ContextRelevant `json:"relevant_intents"`
-	// InheritedConstraints aggregates anti_patterns from prior sealed
-	// intents whose touched files / subsystems overlap with the
-	// current change. Distinct from RelevantIntents: a constraint
-	// can land here even when the source intent itself is not in
-	// the relevance result (e.g. low score for the current query
-	// but it touched the same file). NEVER truncated — these are
-	// hard constraints the agent must see before editing.
+	// InheritedConstraints lists high-severity anti_patterns from
+	// prior sealed intents whose touched files overlap with the
+	// current change. Only high severity, file-only matching.
+	// Each carries a stable constraint_id for explicit acknowledgement.
 	InheritedConstraints []domain.InheritedConstraint `json:"inherited_constraints,omitempty"`
 	Notes                []string                     `json:"notes"`
 }
@@ -294,9 +291,11 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	inherited := domain.BuildInheritedConstraints(view, files, subsystems, excludeID)
 
 	notes := contextNotes()
-	if hasHighSeverity(inherited) {
+	if len(inherited) > 0 {
 		notes = append(notes,
-			"Inherited high-severity anti_patterns surfaced — read inherited_constraints; acknowledge each in your seal's decisions, risks, or rejected_alternatives before sealing.")
+			"Inherited high-severity constraints surfaced — each has a constraint_id. "+
+				"When sealing, add each to acknowledged_constraints[] with: "+
+				`{"constraint_id": "<id>", "disposition": "preserved|mitigated|not_applicable|intentionally_changed", "note": "..."}`)
 	}
 
 	return &ContextRetrievalResult{
@@ -305,18 +304,6 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		InheritedConstraints: inherited,
 		Notes:                notes,
 	}, nil
-}
-
-// hasHighSeverity reports whether any inherited constraint carries
-// severity == "high". Used to decide whether to add the
-// acknowledgement-required note to the retrieval result.
-func hasHighSeverity(constraints []domain.InheritedConstraint) bool {
-	for _, c := range constraints {
-		if strings.EqualFold(strings.TrimSpace(c.Severity), "high") {
-			return true
-		}
-	}
-	return false
 }
 
 // candidateSetForRetrieval picks the intents the scorer iterates
