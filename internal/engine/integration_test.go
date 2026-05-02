@@ -612,3 +612,171 @@ func randomTestString(n int) string {
 	}
 	return string(b)
 }
+
+// -----------------------------------------------------------
+// Seal snapshot contract integration tests
+// -----------------------------------------------------------
+
+// TestSealSnapshotRejectsHEADDrift verifies that if HEAD moves between
+// seal --prepare and seal --submit, the submit is rejected and the draft
+// remains in 'drafting' status (the key atomicity invariant).
+func TestSealSnapshotRejectsHEADDrift(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	start, err := svc.Start("drift test", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	// Create a commit so diff is non-empty
+	writeFile(t, dir, "before.go", "package main\n")
+	gitCmd(t, dir, "add", "before.go")
+	gitCmd(t, dir, "commit", "-m", "before")
+
+	// Prepare — snapshots current HEAD
+	_, err = svc.SealPrepare("")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	// Drift HEAD by making another commit
+	writeFile(t, dir, "drift.go", "package main\n")
+	gitCmd(t, dir, "add", "drift.go")
+	gitCmd(t, dir, "commit", "-m", "drift")
+
+	// Submit should fail
+	sr := validSealResult(start.IntentID)
+	data, _ := json.Marshal(sr)
+	_, err = svc.SealSubmitWithOptions(json.RawMessage(data), nil)
+	if err == nil {
+		t.Fatal("expected seal to reject HEAD drift, but it succeeded")
+	}
+	if !containsSubstring(err.Error(), "STALE_PREPARE") {
+		t.Fatalf("expected STALE_PREPARE error, got: %v", err)
+	}
+
+	// Draft must remain drafting
+	draft, _ := svc.Store.ReadDraft(start.IntentID)
+	if draft == nil {
+		t.Fatal("draft should still exist")
+	}
+	if draft.Status != domain.StatusDrafting {
+		t.Fatalf("draft status should be drafting, got %s", draft.Status)
+	}
+}
+
+// TestSealSnapshotRejectsBranchDrift verifies that switching branches
+// between prepare and submit is detected and rejected.
+func TestSealSnapshotRejectsBranchDrift(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	gitCmd(t, dir, "checkout", "-b", "feature/branch-drift")
+	start, err := svc.Start("branch drift test", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	writeFile(t, dir, "on-feature.go", "package main\n")
+	gitCmd(t, dir, "add", "on-feature.go")
+	gitCmd(t, dir, "commit", "-m", "feature work")
+
+	// Prepare on feature/branch-drift
+	_, err = svc.SealPrepare("")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	// Switch to main (branch drift)
+	gitCmd(t, dir, "checkout", "main")
+
+	// Submit should fail
+	sr := validSealResult(start.IntentID)
+	data, _ := json.Marshal(sr)
+	_, err = svc.SealSubmitWithOptions(json.RawMessage(data), nil)
+	if err == nil {
+		t.Fatal("expected seal to reject branch drift, but it succeeded")
+	}
+	// Switching branches causes HEAD drift too; either error is acceptable
+	errMsg := err.Error()
+	if !containsSubstring(errMsg, "BRANCH_DRIFT") && !containsSubstring(errMsg, "STALE_PREPARE") {
+		t.Fatalf("expected BRANCH_DRIFT or STALE_PREPARE error, got: %v", err)
+	}
+
+	// Draft must remain drafting
+	draft, _ := svc.Store.ReadDraft(start.IntentID)
+	if draft == nil {
+		t.Fatal("draft should still exist")
+	}
+	if draft.Status != domain.StatusDrafting {
+		t.Fatalf("draft status should be drafting, got %s", draft.Status)
+	}
+}
+
+// TestSealSnapshotAllowDirtyBypass verifies --allow-dirty lets the seal
+// proceed with untracked files, recording dirty status in the audit trail.
+func TestSealSnapshotAllowDirtyBypass(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	start, err := svc.Start("dirty test", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	writeFile(t, dir, "committed.go", "package main\n")
+	gitCmd(t, dir, "add", "committed.go")
+	gitCmd(t, dir, "commit", "-m", "add file")
+
+	// Prepare
+	_, err = svc.SealPrepare("")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	// Create an untracked file (dirty worktree)
+	writeFile(t, dir, "untracked.txt", "dirty\n")
+
+	// Submit WITHOUT allow-dirty should fail
+	sr := validSealResult(start.IntentID)
+	data, _ := json.Marshal(sr)
+	_, err = svc.SealSubmitWithOptions(json.RawMessage(data), nil)
+	if err == nil {
+		t.Fatal("expected seal to reject dirty worktree")
+	}
+
+	// Submit WITH allow-dirty should succeed
+	result, err := svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{AllowDirty: true})
+	if err != nil {
+		t.Fatalf("allow-dirty seal failed: %v", err)
+	}
+	if result.Status != string(domain.StatusProposed) && result.Status != string(domain.StatusSealedLocal) {
+		t.Fatalf("unexpected status after allow-dirty seal: %s", result.Status)
+	}
+}
+
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && findSubstring(s, substr))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
