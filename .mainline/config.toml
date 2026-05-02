@@ -1,24 +1,35 @@
 [mainline]
-schema_version = 1
-main_branch = "main"
-actor_log_prefix = "_mainline/actor"
-require_seal_before = "push"
+  schema_version = 1
+  main_branch = "main"
+  actor_log_prefix = "_mainline/actor"
+  require_seal_before = "push"
+  remote = "origin"
+  [mainline.skip]
+    patterns = ["^Merge pull request ", "^Merge branch ", "^chore: bump version", "^mainline: init"]
 
 [sync]
-auto_sync = true
-interval = "30s"
+  auto_sync = true
+  interval = "30s"
+  freshness_seconds = 300
+  stale_threshold_seconds = 86400
+  auto_check_after_sync = true
+  auto_pin_after_sync = true
 
 [check]
-auto_check = true
-lookback = 50
-phase1_threshold = 0.10
-require_before_merge = false
+  auto_check = true
+  lookback = 50
+  phase1_threshold = 0.1
+  require_before_merge = false
 
 [publish]
-auto_publish = false
+  auto_publish = false
 
 [merge]
-strategy = "squash"
+  strategy = "squash"
 
 [log]
-default_limit = 20
+  default_limit = 20
+
+[hooks]
+  enabled = true
+  auto_sync_on_session_start = true
