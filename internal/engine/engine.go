@@ -180,6 +180,9 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 	// Create default team config
 	cfg := domain.DefaultTeamConfig()
 	cfg.Mainline.MainBranch = s.Git.MainBranch()
+	if head := s.Git.ReadRef("refs/heads/" + cfg.Mainline.MainBranch); head != "" {
+		cfg.Mainline.Coverage.BaselineCommit = head
+	}
 
 	if err := s.Store.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("create dirs: %w", err)
