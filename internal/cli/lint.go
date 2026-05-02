@@ -28,7 +28,11 @@ Checks (v1):
   no_decisions              no decisions recorded
   decision_no_chose         a decision has no chose
   decision_no_rationale     a long decision (>50 chars) has no rationale (warning)
-  no_constraints            no risks AND no anti_patterns recorded (warning)
+  generic_risk              a risk is too vague to be actionable (warning)
+  risk_self_acceptable      an accepted trade-off is written as a risk (warning)
+  risk_is_followup          follow-up work is written as a risk (warning)
+  risk_review_guidance      reviewer-only context is written as a risk (warning)
+  risk_looks_like_antipattern hard rule language is written as a risk (warning)
   fingerprint_no_subsystems fingerprint.subsystems is empty
   fingerprint_no_files      fingerprint.files_touched is empty
   supersedes_unknown        supersedes references an unknown intent`,

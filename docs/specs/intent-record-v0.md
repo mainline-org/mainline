@@ -124,9 +124,9 @@ intent.
 | `user_goal` | string | | The original user request, if different from `what`. |
 | `decisions` | Decision[] | ✓ | At least one decision. Each records a choice point, what was chosen, and optionally the rationale and rejected alternatives. |
 | `rejected` | RejectedAlternative[] | | Top-level rejected alternatives (beyond per-decision rejects). |
-| `risks` | string[] | | Soft warnings. Free-form text. See §7. |
-| `anti_patterns` | AntiPattern[] | | Hard constraints. See §7. |
-| `followups` | string[] | | Suggested future work items. |
+| `risks` | string[] | | Concrete soft warnings. Default empty; see §7. |
+| `anti_patterns` | AntiPattern[] | | Hard constraints. Default empty; see §7. |
+| `followups` | string[] | | Explicit later work the user wants or this task deliberately cut out. Default empty. |
 | `review_notes` | string[] | | Ephemeral notes for the PR reviewer. Not inherited, not surfaced in context retrieval. |
 
 ### 6.3 Decision

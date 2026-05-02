@@ -118,7 +118,7 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 		if strings.TrimSpace(d.Chose) == "" {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "decision_no_chose", Severity: "error",
-				Field: fmt.Sprintf("summary.decisions[%d].chose", i),
+				Field:   fmt.Sprintf("summary.decisions[%d].chose", i),
 				Message: fmt.Sprintf("decisions[%d].chose is empty", i),
 			})
 			continue
@@ -126,18 +126,10 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 		if len(d.Chose) > rationaleThreshold && strings.TrimSpace(d.Rationale) == "" {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "decision_no_rationale", Severity: "warning",
-				Field: fmt.Sprintf("summary.decisions[%d].rationale", i),
+				Field:   fmt.Sprintf("summary.decisions[%d].rationale", i),
 				Message: fmt.Sprintf("decisions[%d].chose is %d chars but no rationale recorded; longer choices should explain why", i, len(d.Chose)),
 			})
 		}
-	}
-
-	if len(summary.Risks) == 0 && len(summary.AntiPatterns) == 0 {
-		out.Issues = append(out.Issues, LintIssue{
-			Code: "no_constraints", Severity: "info",
-			Field:   "summary.risks",
-			Message: "empty risks and anti_patterns — this is the normal default when there is no concrete hazard or hard constraint",
-		})
 	}
 
 	// Risk quality lint: flag generic/boilerplate risks that add noise
@@ -162,7 +154,7 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "risk_is_followup", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
-				Message: fmt.Sprintf("risk text looks like a follow-up item (%s); consider moving to followups", truncate(risk)),
+				Message: fmt.Sprintf("risk text looks like a follow-up item (%s); move it to followups only if it is explicit later work, otherwise remove it", truncate(risk)),
 			})
 		}
 		if isReviewGuidance(risk) {
@@ -203,14 +195,14 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 		if len(fingerprint.Subsystems) == 0 {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "fingerprint_no_subsystems", Severity: "error",
-				Field: "fingerprint.subsystems",
+				Field:   "fingerprint.subsystems",
 				Message: "fingerprint.subsystems is empty; phase-1 conflict detection cannot match",
 			})
 		}
 		if len(fingerprint.FilesTouched) == 0 {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "fingerprint_no_files", Severity: "error",
-				Field: "fingerprint.files_touched",
+				Field:   "fingerprint.files_touched",
 				Message: "fingerprint.files_touched is empty; per-file retrieval cannot match",
 			})
 		}
