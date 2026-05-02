@@ -33,8 +33,10 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 			query:   "ack constraint inherited anti_patterns",
 			wantIDs: []string{"int_ack_constraints"},
 			check: func(t *testing.T, res *ContextRetrievalResult) {
-				assertDroppedTerm(t, res, "ack", "too_short")
+				assertEffectiveKeyword(t, res, "ack")
 				assertEffectiveKeyword(t, res, "anti_patterns")
+				assertNotDroppedTerm(t, res, "ack")
+				assertExpandedTerms(t, res, "ack", []string{"acknowledge", "acknowledged", "acknowledgement", "acknowledgment"})
 				ri := mustFindRelevant(t, res, "int_ack_constraints")
 				if len(ri.AntiPatterns) == 0 {
 					t.Fatalf("expected anti_patterns surfaced for ack constraint query")
@@ -79,8 +81,9 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 			query:   "JWT auth",
 			wantIDs: []string{"int_jwt_auth"},
 			check: func(t *testing.T, res *ContextRetrievalResult) {
-				assertDroppedTerm(t, res, "jwt", "too_short")
+				assertEffectiveKeyword(t, res, "jwt")
 				assertEffectiveKeyword(t, res, "auth")
+				assertNotDroppedTerm(t, res, "jwt")
 			},
 		},
 		{
@@ -89,8 +92,14 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 			wantIDs: []string{"int_subsystem_inheritance"},
 			check: func(t *testing.T, res *ContextRetrievalResult) {
 				assertEffectiveKeyword(t, res, "subsystem")
-				assertDroppedTerm(t, res, "不要重新引入", "unsupported_non_ascii")
-				assertDroppedTerm(t, res, "继承", "unsupported_non_ascii")
+				assertEffectiveKeyword(t, res, "不要重新引入")
+				assertEffectiveKeyword(t, res, "继承")
+				assertNotDroppedTerm(t, res, "不要重新引入")
+				assertNotDroppedTerm(t, res, "继承")
+				ri := mustFindRelevant(t, res, "int_subsystem_inheritance")
+				if ri.Relevance.Breakdown == nil || ri.Relevance.Breakdown.AntiPattern == 0 {
+					t.Fatalf("expected CJK anti_pattern signal in breakdown, got %+v", ri.Relevance.Breakdown)
+				}
 			},
 		},
 		{
@@ -132,8 +141,8 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 			if res.QueryDebug.Raw != tc.query {
 				t.Fatalf("query_debug.raw mismatch: got %q want %q", res.QueryDebug.Raw, tc.query)
 			}
-			if res.QueryDebug.ExpandedTerms == nil || len(res.QueryDebug.ExpandedTerms) != 0 {
-				t.Fatalf("PR1 should expose empty expanded_terms map, got %+v", res.QueryDebug.ExpandedTerms)
+			if res.QueryDebug.ExpandedTerms == nil {
+				t.Fatalf("expanded_terms map should be present, got nil")
 			}
 			if tc.wantEmpty {
 				if len(res.RelevantIntents) != 0 {
@@ -150,6 +159,57 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 				tc.check(t, res)
 			}
 		})
+	}
+}
+
+func TestContextRetrieval_QueryCJKOnlyFallback(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := svc.Store.WriteMainlineView(queryGoldenRegressionView(time.Now().Add(-45 * 24 * time.Hour).UTC().Format(time.RFC3339))); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "query",
+		Query: "不要重新引入 继承",
+		Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	assertEffectiveKeyword(t, res, "不要重新引入")
+	assertEffectiveKeyword(t, res, "继承")
+	ri := mustFindRelevant(t, res, "int_subsystem_inheritance")
+	if ri.Relevance.Breakdown == nil || ri.Relevance.Breakdown.AntiPattern == 0 {
+		t.Fatalf("expected CJK-only query to score via anti_pattern, got %+v", ri.Relevance.Breakdown)
+	}
+}
+
+func TestContextRetrieval_QueryDropsRecencyOnlyMatches(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := svc.Store.WriteMainlineView(queryGoldenRegressionView(time.Now().UTC().Format(time.RFC3339))); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "query",
+		Query: "zzzz-no-real-topic",
+		Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if len(res.RelevantIntents) != 0 {
+		t.Fatalf("query mode should drop recency-only matches, got %+v", res.RelevantIntents)
 	}
 }
 
@@ -494,17 +554,16 @@ func queryGoldenIntent(id, sealedAt, title, what, why string, decisions []domain
 	}
 }
 
-func assertDroppedTerm(t *testing.T, res *ContextRetrievalResult, term, reason string) {
+func assertNotDroppedTerm(t *testing.T, res *ContextRetrievalResult, term string) {
 	t.Helper()
 	if res.QueryDebug == nil {
 		t.Fatalf("query_debug missing")
 	}
 	for _, d := range res.QueryDebug.DroppedTerms {
-		if d.Term == term && d.Reason == reason {
-			return
+		if d.Term == term {
+			t.Fatalf("term %q should not be dropped, got %+v", term, res.QueryDebug.DroppedTerms)
 		}
 	}
-	t.Fatalf("expected dropped term %s/%s, got %+v", term, reason, res.QueryDebug.DroppedTerms)
 }
 
 func assertEffectiveKeyword(t *testing.T, res *ContextRetrievalResult, keyword string) {
@@ -518,6 +577,25 @@ func assertEffectiveKeyword(t *testing.T, res *ContextRetrievalResult, keyword s
 		}
 	}
 	t.Fatalf("expected effective keyword %q, got %+v", keyword, res.QueryDebug.EffectiveKeywords)
+}
+
+func assertExpandedTerms(t *testing.T, res *ContextRetrievalResult, term string, want []string) {
+	t.Helper()
+	if res.QueryDebug == nil {
+		t.Fatalf("query_debug missing")
+	}
+	got, ok := res.QueryDebug.ExpandedTerms[term]
+	if !ok {
+		t.Fatalf("expected expanded terms for %q, got %+v", term, res.QueryDebug.ExpandedTerms)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expanded terms for %q length mismatch: got %+v want %+v", term, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expanded terms for %q mismatch: got %+v want %+v", term, got, want)
+		}
+	}
 }
 
 func mustFindRelevant(t *testing.T, res *ContextRetrievalResult, intentID string) ContextRelevant {
