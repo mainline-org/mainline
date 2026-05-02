@@ -1,1 +1,1 @@
-{"event_id":"evt_2343ded5","schema_version":1,"event_type":"intent.abandoned","actor_id":"actor_a5057afd","actor_name":"z2z23n0","timestamp":"2026-05-02T11:55:52Z","intent_id":"int_7a46cc68","reason":"proposal doctor: proposed for 3d, past 72h0m0s cleanup threshold"}
+{"event_id":"evt_20e178ad","schema_version":1,"event_type":"intent.abandoned","actor_id":"actor_a5057afd","actor_name":"z2z23n0","timestamp":"2026-05-02T11:57:37Z","intent_id":"int_9475c026","reason":"proposal doctor: proposed for 4d, past 72h0m0s cleanup threshold"}
