@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mainline-org/mainline/internal/domain"
@@ -140,6 +141,137 @@ func TestCoverageWindow_UncoveredFromManualCommit(t *testing.T) {
 	if head.State != CoverageUncovered {
 		t.Fatalf("expected head to be uncovered, got %s", head.State)
 	}
+}
+
+func TestCoverageWindow_SkipsPreMainlineBaseline(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+
+	gitCmd(t, dir, "checkout", "main")
+	writeFile(t, dir, "legacy.go", "package main\n")
+	gitCmd(t, dir, "add", "legacy.go")
+	gitCmd(t, dir, "commit", "-m", "chore: initial legacy import")
+	legacyHead, _ := svc.Git.HeadCommit()
+
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	view, _ := svc.Store.ReadMainlineView()
+	cfg, _ := svc.Store.ReadTeamConfig()
+	if view == nil {
+		view = &domain.MainlineView{}
+	}
+	cov, err := svc.CoverageWindow(10, view, cfg)
+	if err != nil {
+		t.Fatalf("CoverageWindow: %v", err)
+	}
+
+	var baselineSeen bool
+	for _, c := range cov {
+		if c.Commit == legacyHead {
+			baselineSeen = true
+		}
+		if c.Commit == legacyHead || c.Subject == "initial" {
+			if c.State != CoverageSkipped {
+				t.Fatalf("expected pre-init commit %s (%q) to be skipped, got %s",
+					c.Commit, c.Subject, c.State)
+			}
+			if !strings.HasPrefix(c.SkipReason, preMainlineBaselineReason+": ") {
+				t.Fatalf("expected pre-Mainline baseline skip reason, got %q", c.SkipReason)
+			}
+		}
+	}
+	if !baselineSeen {
+		t.Fatalf("did not find legacy baseline head %s in coverage=%+v", legacyHead, cov)
+	}
+}
+
+func TestCoverageWindow_PostInitManualCommitStillUncovered(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	gitCmd(t, dir, "checkout", "main")
+	writeFile(t, dir, "post_init.go", "package main\n")
+	gitCmd(t, dir, "add", "post_init.go")
+	gitCmd(t, dir, "commit", "-m", "manual edit after init")
+	postInitCommit, _ := svc.Git.HeadCommit()
+
+	view, _ := svc.Store.ReadMainlineView()
+	cfg, _ := svc.Store.ReadTeamConfig()
+	if view == nil {
+		view = &domain.MainlineView{}
+	}
+	cfg.Mainline.Skip.Patterns = nil
+	cov, err := svc.CoverageWindow(10, view, cfg)
+	if err != nil {
+		t.Fatalf("CoverageWindow: %v", err)
+	}
+
+	for _, c := range cov {
+		if c.Commit == postInitCommit {
+			if c.State != CoverageUncovered {
+				t.Fatalf("expected post-init manual commit to remain uncovered, got %s", c.State)
+			}
+			return
+		}
+	}
+	t.Fatalf("did not find post-init commit %s in coverage=%+v", postInitCommit, cov)
+}
+
+func TestCoverageWindow_CoveredOverridesBaseline(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+
+	gitCmd(t, dir, "checkout", "main")
+	writeFile(t, dir, "legacy_note.go", "package main\n")
+	gitCmd(t, dir, "add", "legacy_note.go")
+	gitCmd(t, dir, "commit", "-m", "legacy change with explicit note")
+	legacyCommit, _ := svc.Git.HeadCommit()
+
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	const intentID = "int_baseline_explicit"
+	note := domain.CommitNote{
+		SchemaVersion: 1,
+		Kind:          "mainline.commit_note",
+		Intents:       []domain.IntentReference{{IntentID: intentID}},
+	}
+	if err := upsertCommitNote(svc.Git, legacyCommit, note); err != nil {
+		t.Fatalf("upsert commit note: %v", err)
+	}
+
+	cfg, _ := svc.Store.ReadTeamConfig()
+	view := &domain.MainlineView{
+		Intents: []domain.IntentView{{
+			IntentID: intentID,
+			Status:   domain.StatusMerged,
+		}},
+	}
+	cov, err := svc.CoverageWindow(10, view, cfg)
+	if err != nil {
+		t.Fatalf("CoverageWindow: %v", err)
+	}
+
+	for _, c := range cov {
+		if c.Commit == legacyCommit {
+			if c.State != CoverageCovered {
+				t.Fatalf("expected explicit commit note to beat baseline skip, got %s", c.State)
+			}
+			if len(c.IntentIDs) != 1 || c.IntentIDs[0] != intentID {
+				t.Fatalf("expected covered by %s, got ids=%v", intentID, c.IntentIDs)
+			}
+			return
+		}
+	}
+	t.Fatalf("did not find legacy commit %s in coverage=%+v", legacyCommit, cov)
 }
 
 func TestCoverageWindow_EmptyTrailerReasonRejected(t *testing.T) {

@@ -65,6 +65,40 @@ func TestPreflightBlocksDirtyFileOverlapWithProposedIntent(t *testing.T) {
 	}
 }
 
+func TestPreflightDoesNotWarnBranchDriftForNormalFeatureAhead(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	markSyncedToHead(t, svc)
+	gitCmd(t, dir, "checkout", "-b", "feature/ahead")
+	if _, err := svc.Start("normal feature work", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	writeFile(t, dir, "feature.go", "package feature\n")
+	gitCmd(t, dir, "add", "feature.go")
+	gitCmd(t, dir, "commit", "-m", "feature: normal branch work")
+
+	res, err := svc.Preflight()
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if res.Level != PreflightLevelOK || !res.OKToContinue {
+		t.Fatalf("normal ahead-only feature branch should be quiet, got %+v", res)
+	}
+	if hasPreflightFinding(res, PreflightFindingBranchDrift) {
+		t.Fatalf("ahead-only feature branch must not report branch drift: %+v", res.Findings)
+	}
+	if !containsString(res.Facts.CommitDiffFiles, "feature.go") {
+		t.Fatalf("feature diff should still be tracked for overlap checks, got %+v", res.Facts.CommitDiffFiles)
+	}
+	if !containsString(res.Facts.CurrentFiles, "feature.go") {
+		t.Fatalf("feature file should still be current work, got %+v", res.Facts.CurrentFiles)
+	}
+}
+
 func TestPreflightBlocksOnlyNewMergedIntentOverlapWhenLocalBehind(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -113,6 +147,9 @@ func TestPreflightBlocksOnlyNewMergedIntentOverlapWhenLocalBehind(t *testing.T) 
 	}
 	if !hasPreflightFinding(res, PreflightFindingActiveBaseBehind) {
 		t.Fatalf("expected active-base-behind finding, got %+v", res.Findings)
+	}
+	if !hasPreflightFinding(res, PreflightFindingBranchDrift) {
+		t.Fatalf("expected branch drift when synced main has commits missing from local HEAD, got %+v", res.Findings)
 	}
 	if !hasPreflightOverlap(res, PreflightOverlapUpstreamMerged, "int_new_merged") {
 		t.Fatalf("expected upstream merged overlap with int_new_merged, got %+v", res.Overlaps)
@@ -273,6 +310,15 @@ func hasPreflightFinding(res *PreflightResult, code string) bool {
 func hasPreflightOverlap(res *PreflightResult, kind, id string) bool {
 	for _, o := range res.Overlaps {
 		if o.Kind == kind && o.IntentID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}
