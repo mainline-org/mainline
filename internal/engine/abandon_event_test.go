@@ -2,6 +2,8 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/mainline-org/mainline/internal/domain"
@@ -124,5 +126,75 @@ func TestAbandonDraftingDeletesDraft(t *testing.T) {
 	}
 	if _, err := svc.Start("a fresh attempt", ""); err != nil {
 		t.Fatalf("should be able to Start after drafting-abandon: %v", err)
+	}
+}
+
+func TestActorLogConcurrentAppendsPreserveAllEvents(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, err := svc.getTeamConfig()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	const n = 24
+	start := make(chan struct{})
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			err := svc.Store.AppendActorLogEvent(initRes.ActorID, cfg.Mainline.ActorLogPrefix, domain.IntentAbandonedEvent{
+				BaseEvent: domain.BaseEvent{
+					EventID:       fmt.Sprintf("evt_concurrent_%02d", i),
+					SchemaVersion: 1,
+					EventType:     domain.EventIntentAbandoned,
+					ActorID:       initRes.ActorID,
+					ActorName:     "agent",
+					Timestamp:     fmt.Sprintf("2026-05-02T00:00:%02dZ", i),
+				},
+				IntentID: fmt.Sprintf("int_concurrent_%02d", i),
+				Reason:   "concurrent append regression",
+			})
+			if err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("append actor log event: %v", err)
+	}
+
+	rawEvents, err := svc.Store.ReadActorLogEvents(initRes.ActorID, cfg.Mainline.ActorLogPrefix)
+	if err != nil {
+		t.Fatalf("read actor log events: %v", err)
+	}
+	if len(rawEvents) != n {
+		t.Fatalf("expected %d actor log events, got %d", n, len(rawEvents))
+	}
+
+	seen := map[string]bool{}
+	for _, raw := range rawEvents {
+		var evt domain.BaseEvent
+		if err := json.Unmarshal(raw, &evt); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		seen[evt.EventID] = true
+	}
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("evt_concurrent_%02d", i)
+		if !seen[id] {
+			t.Fatalf("missing actor log event %s after concurrent appends", id)
+		}
 	}
 }
