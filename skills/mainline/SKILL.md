@@ -70,28 +70,29 @@ command -v mainline
 mainline status --json
 ```
 
-If the CLI is missing, prefer the public install channel once available. For
-the current private-repository phase, use Go's native installer:
+If the CLI is missing, prefer the public install script on macOS/Linux:
 
 ```bash
-GOPRIVATE=github.com/mainline-org/* go install github.com/mainline-org/mainline@main
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
 ```
 
-If installing a fixed internal version:
+If the user prefers Go's native installer or the install script is unavailable,
+use Go 1.22+:
 
 ```bash
-GOPRIVATE=github.com/mainline-org/* go install github.com/mainline-org/mainline@v0.1.0
+go install github.com/mainline-org/mainline@latest
 ```
 
-If Go cannot fetch the private GitHub repository over HTTPS, configure GitHub
-SSH access rather than embedding credentials:
+Use `@main` only when the user explicitly wants the current unreleased
+development version:
 
 ```bash
-git config --global url."git@github.com:".insteadOf "https://github.com/"
+go install github.com/mainline-org/mainline@main
 ```
 
-After install, ensure the Go binary directory, commonly `~/go/bin`, is on
-PATH. Re-run `mainline status --json`.
+After install, ensure the install directory (commonly `~/.local/bin` for the
+script or `~/go/bin` for `go install`) is on PATH. Re-run
+`mainline status --json`.
 
 If the CLI exists but the repository is not initialized and the user asked to
 set up Mainline, initialize it. `mainline init` installs the default Mainline
@@ -423,11 +424,10 @@ Do not rewrite published history unless the user explicitly asks.
 
 ## Skill Distribution
 
-Install this skill with `npx skills` for the target agent. During the current
-private-repository phase:
+Install this skill with `npx skills` for the target agent:
 
 ```bash
-npx skills add git@github.com:mainline-org/mainline.git --skill mainline -a codex
+npx skills add mainline-org/mainline --skill mainline -a codex
 ```
 
 For local development:
@@ -436,12 +436,5 @@ For local development:
 npx skills add ./skills/mainline -a codex
 ```
 
-When the repository is public:
-
-```bash
-npx skills add mainline-org/mainline --skill mainline -a codex
-```
-
-This distribution section is temporary operational scaffolding. The durable
-purpose of the skill is to teach agents to install, initialize, use, publish,
-and review Mainline intent data correctly.
+The durable purpose of the skill is to teach agents to install, initialize,
+use, publish, and review Mainline intent data correctly.

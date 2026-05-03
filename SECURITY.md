@@ -9,9 +9,12 @@ publishing versioned releases.
 
 Please do not report security vulnerabilities in a public issue.
 
-Use GitHub's private vulnerability reporting for this repository when
-available. If that is unavailable, contact a maintainer through a private
-channel and include:
+Use GitHub's private vulnerability reporting for this repository. If it is not
+enabled, open a public issue titled `security: private disclosure channel
+needed` without vulnerability details so maintainers can provide a private
+channel.
+
+In the private report, include:
 
 - affected version or commit
 - steps to reproduce

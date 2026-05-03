@@ -7,10 +7,22 @@ on:
     branches: [main]
 
 jobs:
+  hygiene:
+    name: Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Repo hygiene
+        run: make hygiene
+
   build:
+    # Keep the historical check name stable for branch protection, but run the
+    # quick gate here. Full rapid PBT runs in full-pbt.yml and release.yml.
     name: Build & Test
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         go-version: ['1.22', '1.23']
 
@@ -36,10 +48,10 @@ jobs:
         run: go mod download
 
       - name: Build
-        run: go build -v ./...
+        run: make build
 
-      - name: Test
-        run: go test -v -race -count=1 ./...
+      - name: Quick test
+        run: make quick-test
 
   lint:
     name: Lint
@@ -51,6 +63,19 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-lint-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-lint-
+
+      - name: Download dependencies
+        run: go mod download
 
       # Pin to v1.62.x so the linter set described in .golangci.yml
       # is the one that runs in CI; `version: latest` would silently

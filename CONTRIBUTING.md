@@ -16,6 +16,16 @@ go build -o mainline .
 make quick-test
 ```
 
+CI is split into fast and deep stages:
+
+- `make hygiene` checks that local caches/configs, generated Hub exports, and
+  high-signal credential patterns are not tracked.
+- `make ci-quick` matches the required PR gate: hygiene, lint, build, and
+  quick tests.
+- `make ci-full` runs full rapid PBT coverage with race detection; it is for
+  nightly/manual deep checks, not required for every PR.
+- `make ci-release` runs the full release gate before publishing artifacts.
+
 `make test` and `make test-pbt` are broader checks and may take longer.
 
 ## Pull Requests
