@@ -7,6 +7,14 @@
 
 **Git-native intent memory for AI-assisted engineering.**
 
+Mainline is not a Git replacement, a PR system, or a session recorder. It is
+an intent memory layer that stores engineering decisions in Git-native refs so
+agents and humans can retrieve the *why* before changing the *what*.
+
+**Status:** public alpha. The core CLI, hooks, Hub, and release packaging are
+usable, but schemas and workflow guidance may still change while we harden the
+open-source experience.
+
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
 Use it alone to give your future agents memory.
@@ -199,6 +207,12 @@ not required.
 
 ## Install
 
+Choose one install path:
+
+1. **Install script** — recommended for macOS and Linux users.
+2. **GitHub Releases** — download and verify a specific prebuilt archive.
+3. **Go install** — build from source with Go 1.22+.
+
 ### macOS / Linux install script
 
 ```bash
@@ -239,7 +253,12 @@ mainline_<version>_windows_amd64.zip
 go install github.com/mainline-org/mainline@latest
 ```
 
-Requires Go 1.22 or newer.
+Requires Go 1.22 or newer. Use `@main` instead of `@latest` only when you
+explicitly want the current unreleased development version:
+
+```bash
+go install github.com/mainline-org/mainline@main
+```
 
 ### Build from source
 
@@ -768,7 +787,7 @@ make quick-test
 # -short mode runs rapid PBT at 20 samples each (~2m)
 make test
 
-# Full PBT coverage (100 samples each, used in CI)
+# Full PBT coverage (100 samples each, nightly/manual and release gate)
 make test-pbt
 
 # Benchmarks
@@ -790,8 +809,9 @@ invariants across randomly generated inputs rather than hand-picked cases:
 | `SealSubmit` | snapshot contract, fingerprint completeness, conflict detection |
 | `detectSealedConflicts` | symmetry, self-no-conflict, overlap monotonicity |
 
-Run `make test` for rapid PBT (20 samples each) or `make test-pbt` for full
-coverage (100 samples, used in CI).
+Run `make quick-test` for the required fast PR gate, `make test` for rapid PBT
+(20 samples each), or `make test-pbt` for full coverage (100 samples, used by
+the nightly/manual full-PBT workflow and the release gate).
 
 ## Project structure
 
