@@ -3,17 +3,21 @@
 [![CI](https://github.com/mainline-org/mainline/actions/workflows/ci.yml/badge.svg)](https://github.com/mainline-org/mainline/actions/workflows/ci.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![PBT](https://img.shields.io/badge/PBT-property--based%20testing-blueviolet)](#property-based-testing)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/License-PolyForm%20Shield%201.0.0-blue.svg)](./LICENSE)
 
-**Git-native intent memory for AI-assisted engineering.**
+**Stop AI coding agents from repeating old engineering mistakes.**
 
 Mainline is not a Git replacement, a PR system, or a session recorder. It is
-an intent memory layer that stores engineering decisions in Git-native refs so
-agents and humans can retrieve the *why* before changing the *what*.
+a Git-native memory layer that tells coding agents *why the code is the way it
+is* before they edit it.
 
 **Status:** public alpha. The core CLI, hooks, Hub, and release packaging are
 usable, but schemas and workflow guidance may still change while we harden the
-open-source experience.
+source-available public experience.
+
+**License:** source-available under PolyForm Shield 1.0.0. Mainline is not
+currently OSI-approved open source. Competing products or services require a
+commercial license available only from the Mainline copyright holder.
 
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
@@ -21,6 +25,20 @@ Use it alone to give your future agents memory.
 Use it with a team to make intent visible before review and collaboration.
 
 > 中文版本: [README.zh.md](./README.zh.md)
+
+### The failure mode
+
+A team abandons a Redis-based design because replication lag broke the
+correctness model. Three weeks later, a coding agent sees `redis.go`, TODOs,
+and a Redis service in `docker-compose`. The code looks half-finished, so the
+agent tries to complete it.
+
+Mainline surfaces the earlier intent first: **abandoned Redis because
+replication lag made the design unsafe**. The agent stops before writing the
+wrong diff and chooses a safer direction.
+
+That is the core product: **repo-local engineering memory that prevents future
+agents from repeating old mistakes.**
 
 AI coding agents are fast, but code alone cannot tell them:
 
@@ -32,7 +50,7 @@ AI coding agents are fast, but code alone cannot tell them:
 
 RAG can retrieve similar code.
 Grep can verify what code exists right now.
-Mainline gives agents the missing layer: **engineering intent**.
+Mainline gives agents the missing layer: **repo-level engineering fact**.
 
 Stop your AI agent from silently undoing yesterday's decision, repeating an
 abandoned approach, missing a reviewer constraint, or stepping on a teammate's
@@ -62,7 +80,7 @@ Mainline helps solo developers:
 
 ### Teams
 
-When a team works with AI agents, the problem is shared intent.
+When a team works with AI agents, the problem is shared repo truth.
 Reviewers need to understand *why* before diff.
 Teammates need to know what is in flight.
 Future agents need to avoid old mistakes.
@@ -75,6 +93,39 @@ Mainline turns individual AI-assisted changes into shared engineering memory:
 - preserve abandoned and superseded decisions for future agents,
 - track whether important changes have intent coverage,
 - onboard new teammates into the *why* behind the code.
+
+### Who uses it daily, and who pays?
+
+- **Daily users:** developers and their coding agents. Mainline should run by
+  default before non-trivial agent edits, not only during audits.
+- **Daily reviewers:** team leads and senior engineers who need to see pending
+  intent, file-level constraints, and decision history before reviewing diffs.
+- **Likely buyers:** team leads, platform leads, engineering managers, CTOs,
+  and founders responsible for agent-assisted engineering quality across repos.
+  They buy repo-level continuity, auditability, and cross-agent consistency.
+
+Mainline is a workflow layer first and an audit surface second. The CLI feeds
+agents before they edit; Hub helps humans inspect the repo's intent history,
+pending work, risks, and constraints.
+
+### Why not just use agent-vendor memory?
+
+Cursor, Copilot, Claude, and future agents may all have memory. That memory is
+usually tied to **one vendor, one user, one workspace, or one conversation**.
+
+Mainline is different:
+
+- **Cross-agent:** the same repo intent is readable by Codex, Claude Code,
+  Cursor, Copilot, and humans.
+- **Git-native:** durable state travels through Git refs and notes, not a
+  vendor-specific workspace database.
+- **Auditable:** sealed intents record decisions, risks, rejected approaches,
+  anti-patterns, lifecycle, and commit pins.
+- **Repo-local:** it records engineering facts about *this repository*, not
+  just "my personal context".
+
+Agent vendor memory remembers **my context**. Mainline records **this repo's
+engineering facts**.
 
 ## What Mainline enables
 
@@ -97,37 +148,27 @@ Mainline is not just a log of AI work. It is an intent memory layer for the whol
 
 ## Who runs what?
 
-Mainline has two audiences in the same repo. They run different commands.
+Mainline has two layers in the same repo:
 
-**Your AI agent** (Cursor, Claude Code, Codex, etc.) reads intent before it
-edits and writes intent after it edits. The agent's loop:
+- **Human CLI and Hub** — install Mainline, open Hub, browse history, inspect
+  decisions, and find coverage gaps.
+- **Agent protocol** — a behaviour contract for coding agents: read context
+  before risky edits, record meaningful turns, seal the intent, and surface
+  conflicts or anti-patterns instead of silently pushing through.
 
-```bash
-mainline status                          # at session start
-mainline context --current --json        # before non-trivial edits — read prior decisions / anti-patterns
-mainline start "<the user's goal>"       # claim work
-mainline append "<what changed>"         # after each meaningful turn
-mainline seal --prepare > .ml-cache/seal.json   # → patch → mainline seal --submit < .ml-cache/seal.json
-```
-
-You don't memorise this — `mainline init` installs a Mainline skill that gives
-the agent the complete protocol. If hooks are installed (also done by init),
-the agent receives fresh team state at session start automatically.
-
-**You** (the human) review intent, browse history, and quality-check the
-team's record:
+Humans should not have to learn the agent JSON protocol. The human main line is:
 
 ```bash
-mainline log                             # what's been shipped recently
-mainline show <intent_id>                # full record of one decision
-mainline trace <intent_id>               # how a decision unfolded turn-by-turn
-mainline hub open                        # browse history in a browser
-mainline gaps                            # commits on main that have no recorded intent
-mainline lint <intent_id>                # quality-check a teammate's seal
+mainline init                            # one-time repo setup
+mainline hub open                        # open the human reading surface
+mainline log                             # what changed recently
+mainline show <intent_id>                # why one decision exists
+mainline gaps                            # commits on main with no intent
 ```
 
-You don't have to type these — `mainline hub open` is the one to remember; the
-rest are there when you want them.
+The agent protocol commands (`context`, `start`, `append`, `seal`) are normally
+run by the agent via the Mainline skill and hooks. They are documented below so
+teams can audit the contract, not because every user must type them daily.
 
 ## Getting started with your agent
 
@@ -184,7 +225,8 @@ not required.
 - [Install](#install)
 - [What Mainline enables](#what-mainline-enables)
 - [Eval: does intent-first actually help?](#eval-does-intent-first-actually-help)
-- [Five-minute quick start](#five-minute-quick-start)
+- [Human five-minute quick start](#human-five-minute-quick-start)
+- [Agent Protocol Contract](#agent-protocol-contract)
 - [How it fits your workflow](#how-it-fits-your-workflow)
 - [What Mainline records](#what-mainline-records)
 - [CLI and Hub](#cli-and-hub)
@@ -316,60 +358,111 @@ mainline eval agent --runner ./scripts/eval-runner-copilot.py \
 Full methodology, per-fixture breakdowns, and caveats →
 [docs/eval-results.md](./docs/eval-results.md)
 
-## Five-minute quick start
+## Human five-minute quick start
 
-The lines marked **[you]** are what you type. The rest are what the agent
-runs (driven by the Mainline skill, or auto-injected via hooks).
+This is the normal human path. Install Mainline, let your agent follow the
+protocol, and use Hub/log/show/gaps to understand the repo's engineering
+memory.
 
 ```bash
-# [you] one-time per repo
 cd your-repo
-mainline init --actor-name "alice"     # or: export MAINLINE_ACTOR_NAME first
-# if you add a git remote later, run: mainline init --rewire
-
-# hooks are installed by init; to repair or add a specific agent:
-# mainline hooks install --agent cursor
-
-# [agent] at session start
-mainline status
-
-# [agent] before non-trivial edits — read prior intent
-mainline context --current --json
-# returns relevant historical intents with status / anti_patterns / decisions
-
-# [agent] claim work
-mainline start "Add JWT auth"
-
-# [agent] after each meaningful turn
-mainline append "Implemented JWT middleware"
-mainline append "Added refresh-token rotation"
-
-# [you OR agent] commit code the normal way
-git add . && git commit -m "Add JWT auth"
-
-# [agent] seal at end of task
-mainline seal --prepare > .ml-cache/seal.json
-# (.ml-cache/ is gitignored by init, so this temp file does not
-# trip the dirty-worktree check)
-# the package contains a `seal_result_starter` field with intent_id
-# + files_touched + subsystems pre-filled; the agent patches in
-# title/what/why/decisions/risks/anti_patterns/confidence and submits
-mainline seal --submit < .ml-cache/seal.json
-# deterministic lint errors now fail before submit mutates state;
-# warning-only lint notes and conflicts (phase 1) still print inline
-
-# [you] open a PR on GitHub; merge with the web UI
-
-# [you or agent] next sync auto-pins the squash commit to the intent
-mainline sync
+mainline init --actor-name "alice"
+mainline hub open
+mainline log
+mainline show <intent_id>
+mainline gaps
 ```
 
-That's the whole loop. No special merge command required.
+That is enough for a human to start: install once, open Hub, inspect history,
+and find commits that still need intent.
 
-After a few intents have landed, run `mainline hub open` (yours, or
-suggested by the agent) — Mainline opens a static HTML browser of recent
-intents, per-file history, risks, and supersedes/conflict graph. This is
-the human-reader surface; agents use the JSON commands above.
+Your coding agent runs the protocol commands through the Mainline skill. If
+hooks are installed, the agent also receives fresh team state at session start.
+You still review and merge code through your normal GitHub/GitLab workflow.
+
+## Agent Protocol Contract
+
+Mainline's core asset is not just a CLI. It is a behaviour contract that gives
+coding agents long-term repo memory.
+
+The contract is intentionally stricter than "run a command sometimes":
+
+- **Read before writing:** retrieve repo intent before non-trivial edits.
+- **Record meaning, not keystrokes:** append decisions, pivots, risks, and
+  completed slices.
+- **Make constraints visible:** if an anti-pattern applies, state the action
+  the agent will not take.
+- **Recover conservatively:** dirty state, stale sync, drift, parse failures,
+  and conflict warnings stop silent progress.
+- **Leave reviewable intent:** a human reviewer should be able to compare the
+  implementation against the stated why, decisions, risks, and constraints.
+
+### When agents must call context
+
+Before editing, agents must retrieve Mainline context for non-trivial work:
+
+- architecture changes, refactors, migrations, deletions, auth/billing/data
+  model/permissions work, release/CI changes, and cross-file behaviour changes;
+- questions like "can we delete this?", "why is this here?", or "was this tried
+  before?";
+- any change touching files with known anti-patterns, inherited constraints, or
+  prior risky decisions.
+
+Agents may skip Mainline for typo fixes, formatting-only edits, one-line
+obvious syntax fixes, or read-only inspection where the user explicitly asks to
+look at a single file.
+
+Skipping Mainline is a narrow exception. If the agent is unsure whether a
+change is trivial, it should call `mainline context --current --json`.
+
+### What the agent runs
+
+```bash
+mainline context --current --json        # before non-trivial edits
+mainline start "<the user's goal>"       # claim work when the task is real
+mainline append "<meaningful turn>"      # after a completed logical step
+mainline seal --prepare > .ml-cache/seal.json
+mainline seal --submit < .ml-cache/seal.json
+```
+
+`context` is the pre-edit gate. `start` claims a real unit of engineering work.
+`append` records meaningful progress. `seal --prepare` freezes the evidence
+that will be submitted. `seal --submit` records the final intent and surfaces
+lint or conflict summaries.
+
+Append at the granularity of engineering meaning: a design choice, a completed
+slice, a pivot, a risk discovered, or validation that changes confidence. Do
+not append every shell command.
+
+If the agent reads a relevant anti-pattern, it should explicitly say what it
+will not do and why, for example: "I will not complete Redis replication
+because the prior intent abandoned it due to replication lag."
+
+### Recovery rules
+
+- **Dirty worktree:** if dirty files are not clearly owned by the current task,
+  stop and ask before appending or sealing.
+- **Allowed dirty worktree:** if the user explicitly chose dirty work, the
+  agent must still name the dirty files and explain why they are safe to carry.
+- **Sync stale / branch drift:** sync or re-run prepare before sealing; do not
+  submit stale evidence.
+- **Seal parse or lint error:** fix the SealResult and re-submit; do not bypass
+  deterministic errors.
+- **Conflict warning:** surface the conflict. Run `mainline check` or ask for
+  human judgment before continuing when the overlap is semantically real.
+- **Anti-pattern conflict:** do not proceed silently. State the constraint and
+  either preserve it, intentionally change it with reviewer attention, or stop.
+
+### How reviewers judge intent quality
+
+A trustworthy sealed intent has concrete `what` and `why`, decisions with
+rationale, rejected alternatives when relevant, specific files/subsystems/tags,
+honest risks, validation notes, and explicit acknowledgement of inherited
+constraints. Boilerplate summaries, vague risks, missing fingerprints, and
+unacknowledged anti-patterns are review smells.
+
+The reviewer question is simple: "Could a future agent read this intent before
+editing and avoid the same mistake?" If not, the intent is not good enough yet.
 
 ## How it fits your workflow
 
@@ -418,11 +511,36 @@ It preserves the durable decision record future agents and reviewers need.
 
 Mainline has two first-class surfaces:
 
-- **CLI for action** — start, append, seal, lint, sync, context, show, trace.
-- **Hub for reading** — review pending work, inspect file constraints, read important decisions, and orient around the repo's intent history.
+- **CLI for action** — humans use `init`, `hub open`, `log`, `show`, and
+  `gaps`; agents use `context`, `start`, `append`, and `seal` through the
+  protocol contract.
+- **Hub for reading** — humans review pending work, inspect file constraints,
+  read important decisions, and orient around the repo's intent history.
 
 Use the CLI when you know what to do.
 Use Hub when you need to understand what happened, what matters, and where to look next.
+
+Generate and open Hub locally:
+
+```bash
+mainline sync
+mainline hub open
+```
+
+`mainline hub open` rebuilds the default local Hub from the synced Mainline
+view and opens it in your browser.
+
+To generate a static export without opening the browser:
+
+```bash
+mainline hub export ./mainline-hub
+open ./mainline-hub/index.html      # macOS
+xdg-open ./mainline-hub/index.html  # Linux
+```
+
+The Hub output directory is generated local state and is gitignored. Do not
+commit exported HTML; capture screenshots from the local browser if you want
+to include product screenshots in docs or release notes.
 
 ## Architecture
 
@@ -493,7 +611,8 @@ Pinning a `CommitNote` to a main-branch commit is what marks the intent **merged
 
 ## Daily commands
 
-These are the commands a human or agent will actually run.
+These are the human-facing commands. Agent protocol commands live in
+[Agent Protocol Contract](#agent-protocol-contract).
 
 The three intent-inspection commands form a clean trichotomy:
 
@@ -505,33 +624,36 @@ The three intent-inspection commands form a clean trichotomy:
 
 `log` answers *"what intents exist?"*, `show` answers *"what did this intent decide?"*, `trace` answers *"how did this intent unfold?"*.
 
-Full daily set:
+Core human set:
 
 | Command | Use |
 |---|---|
 | `mainline init` | Initialise mainline in this repository |
-| `mainline status` | Current intent + sync staleness + counts + coverage rollup |
-| `mainline start "..."` | Start an intent on the current branch |
-| `mainline append "..."` | Record a turn against the active intent (see [Turns and intent history](#concepts) for what turns are and aren't) |
-| `mainline seal --prepare` | Generate the seal-prepare package (JSON) |
-| `mainline seal --submit` | Submit a SealResult; auto-syncs and runs phase 1. Use `--offline` to skip the network step. `--allow-dirty` to bypass the worktree-clean check (recorded in audit trail). |
-| `mainline abandon <id>` | Drop a drafting/sealed/proposed intent — drafts deleted, sealed/proposed get an abandon event published to the team |
-| `mainline sync` | Fetch remote state, rebuild views, **auto-pin merged commits**, surface new conflicts |
+| `mainline hub open` | Build + open a static HTML site over the local intent view |
 | `mainline log` | Intent history with author, time, and `[check:?\|~\|ok\|!\|human?]` |
 | `mainline show <id>` | Full intent detail (decisions, risks, follow-ups, fingerprint) |
-| `mainline trace <id>` | Turn timeline (start/append/seal/abandon/supersede with elapsed time) |
 | `mainline gaps` | List uncovered commits on main with reversibility-ranked rescue options |
-| `mainline context --current` | Relevance-ranked prior intents for the active branch + diff-vs-main (read this BEFORE grepping) |
-| `mainline context --files <p>` | Same retrieval, scoped to specific files |
-| `mainline context --query "..."` | Same retrieval, keyword-driven |
+
+Reviewer and maintainer extras:
+
+| Command | Use |
+|---|---|
+| `mainline status` | Current intent + sync staleness + counts + coverage rollup |
+| `mainline sync` | Fetch remote state, rebuild views, **auto-pin merged commits**, surface new conflicts |
+| `mainline trace <id>` | Turn timeline (start/append/seal/abandon/supersede with elapsed time) |
 | `mainline lint [<id>]` | Advisory seal-quality checks (boilerplate, missing decisions, broken refs). Never blocks. |
 | `mainline risks` | List open risks; `mainline risks resolve <id>` closes one manually |
 | `mainline followups` | List open follow-ups; `mainline followups resolve <id>` marks one completed manually |
-| `mainline hub open` | Build + open a static HTML site over the local intent view (humans, not agents) |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |
 | `mainline check --submit` | Submit phase 2 judgment; result surfaces in log column |
 | `mainline doctor --setup` | Verify installation: refspecs, identity, .gitignore; report optional AGENTS.md policy state |
 | `mainline init --rewire` | Re-apply remote refspec config + notes.displayRef + .gitignore (use after adding origin post-init) |
+
+Read-only context commands such as `mainline context --files <p>` and
+`mainline context --query "..."` are useful during investigation. Agent-facing
+commands such as `context --current --json`, `start`, `append`, and `seal` are
+still public CLI commands, but they are primarily the Mainline skill contract.
+Humans review their output; agents usually run them.
 
 All commands accept `--json`. The persistent `--no-sync` flag opts a command out of the auto-sync wrapper.
 
@@ -890,4 +1012,15 @@ part of the working product; remaining v0.4 work is public-launch polish.
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+Mainline is source-available under [PolyForm Shield License 1.0.0](./LICENSE).
+This is not currently an OSI-approved open-source license.
+
+You may use, study, modify, and distribute Mainline for permitted
+non-competing purposes under PolyForm Shield 1.0.0. Competing products or
+services require a separate commercial license available only from the Mainline
+copyright holder.
+
+The copyright holder retains commercial licensing rights. Once user needs and
+the commercial model are clearer, parts of the CLI core may move to an
+OSI-approved license such as AGPL or Apache; Hub, hosted, and enterprise
+features may remain commercial.

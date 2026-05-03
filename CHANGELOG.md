@@ -11,13 +11,22 @@ and uses semver-style versions once tags are published.
 
 ### Added
 
-- _Template: new user-visible capabilities, commands, workflows, docs, or
-  integrations._
+- README/README.zh Hub instructions for generating, opening, exporting, and
+  screenshotting local Hub output.
+- README/README.zh license positioning for PolyForm Shield 1.0.0 and reserved
+  commercial licensing.
+- README/README.zh front-page positioning around preventing AI agents from
+  repeating abandoned engineering approaches, plus buyer/user and vendor-memory
+  boundaries.
+- README/README.zh split the human quick start from the agent protocol contract
+  and documented when agents must call context, how to append, recover, and
+  write reviewable intent.
 
 ### Changed
 
-- _Template: behavior changes, defaults, UX copy, storage semantics, or workflow
-  guidance._
+- Project license changed from MIT to source-available PolyForm Shield 1.0.0.
+- CONTRIBUTING now calls out contributor licensing expectations for future
+  commercial licensing and possible component relicensing.
 
 ### Fixed
 
