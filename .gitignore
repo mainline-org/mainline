@@ -6,12 +6,14 @@
 #   webhook-queue/  — outbound webhook envelopes awaiting delivery
 #   hooks/          — agent-hooks dispatcher bookkeeping
 .mainline/local.toml
-./mainline
 /mainline
 .claude/
 .codex/
 .idea/
-.mainline/local.toml
+.vscode/
+.env
+.env.*
+!.env.example
 .DS_Store
 **/.DS_Store
 # rapid PBT failure recordings (per-run, not committed):
@@ -19,6 +21,8 @@ internal/engine/testdata/rapid/
 .cursor/
 .tmp-bin/
 dist/
+mainline-hub/
+hub-export/
 # eval run outputs (generated per-run, not committed):
 docs/eval-runs/
 app-linux-amd64

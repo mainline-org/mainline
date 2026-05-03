@@ -7,6 +7,13 @@
 
 **AI 辅助工程的 git-native intent memory。**
 
+Mainline 不是 Git 替代品、PR 系统或 session recorder。它是一个
+intent memory layer：把工程决策写进 Git-native refs，让 agent 和人类
+在改代码前先检索到历史上的 *why*。
+
+**状态：public alpha。** 核心 CLI、hooks、Hub 和 release packaging 已可用，
+但 schema 和 workflow guidance 仍可能随着开源体验打磨而调整。
+
 Mainline 让 coding agent 在理解当前代码之前，先理解历史上的 *why*。
 
 一个人用，它是未来自己和下一个 agent 的记忆。
@@ -120,6 +127,12 @@ mainline lint <intent_id>                # 检查队友 seal 的质量
 
 ## 安装
 
+选择一种安装方式：
+
+1. **安装脚本** — 推荐给 macOS 和 Linux 用户。
+2. **GitHub Releases** — 下载并校验指定版本的预编译 archive。
+3. **Go install** — 使用 Go 1.22+ 从源码构建安装。
+
 ### macOS / Linux 脚本安装
 
 ```bash
@@ -159,7 +172,12 @@ mainline_<version>_windows_amd64.zip
 go install github.com/mainline-org/mainline@latest
 ```
 
-需要 Go 1.22 或更新版本。
+需要 Go 1.22 或更新版本。只有在明确想安装当前未发布开发版时，才用
+`@main` 替代 `@latest`：
+
+```bash
+go install github.com/mainline-org/mainline@main
+```
 
 ### 从源码构建
 
