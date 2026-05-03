@@ -2,6 +2,7 @@ package engine
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/gitops"
@@ -21,9 +22,27 @@ const (
 
 	PreflightOverlapProposed       = "proposed_overlap"
 	PreflightOverlapUpstreamMerged = "upstream_merged_overlap"
+	// PreflightOverlapGoalText fires when the active draft's goal text
+	// shares enough keywords with another proposed intent's title or
+	// goal. Catches duplicate-work-in-flight before any code is written
+	// (when file-overlap detection has nothing to compare against).
+	PreflightOverlapGoalText = "goal_text_overlap"
 )
 
 const preflightOverlapLimit = 8
+
+// preflightGoalOverlapMinKeywords is the minimum effective-keyword
+// count required before goal-text overlap is even attempted. One- or
+// two-word goals are too noisy to score reliably (a single common
+// word like "fix" or "improve" would match too many intents).
+const preflightGoalOverlapMinKeywords = 2
+
+// preflightGoalOverlapMinHitRate is the fraction of the active draft's
+// goal keywords that must appear in a proposed intent's title or goal
+// before it surfaces as a duplicate-work warning. Tuned conservatively:
+// 0.5 means at least half of the goal's significant words have to land
+// somewhere on the candidate, otherwise the noise floor swamps signal.
+const preflightGoalOverlapMinHitRate = 0.5
 
 type PreflightResult struct {
 	Level           string             `json:"level"`
@@ -57,14 +76,25 @@ type PreflightFinding struct {
 }
 
 type PreflightOverlap struct {
-	Kind             string   `json:"kind"`
-	Level            string   `json:"level"`
-	IntentID         string   `json:"intent_id"`
-	Title            string   `json:"title,omitempty"`
-	Status           string   `json:"status"`
-	MatchedFiles     []string `json:"matched_files,omitempty"`
+	Kind         string   `json:"kind"`
+	Level        string   `json:"level"`
+	IntentID     string   `json:"intent_id"`
+	Title        string   `json:"title,omitempty"`
+	Status       string   `json:"status"`
+	MatchedFiles []string `json:"matched_files,omitempty"`
+	// MatchedKeywords carries the goal-text words that landed on a
+	// goal_text_overlap candidate. Empty for file-overlap kinds —
+	// matched_files carries the evidence there.
+	MatchedKeywords  []string `json:"matched_keywords,omitempty"`
 	Score            int      `json:"score"`
 	MergedMainCommit string   `json:"merged_main_commit,omitempty"`
+	// AuthorName surfaces the proposed intent's author so the warning
+	// reads "z2z23n0 already proposed this" without a second lookup.
+	// Only filled for goal_text_overlap and proposed_overlap kinds —
+	// upstream_merged_overlap intents are already on main and the
+	// committer is shown in git log.
+	AuthorName string `json:"author_name,omitempty"`
+	AuthorID   string `json:"author_id,omitempty"`
 }
 
 type preflightInput struct {
@@ -214,6 +244,21 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 				))
 			}
 		}
+	}
+
+	// Goal-text overlap: even when the worktree is clean (no commits
+	// yet, no dirty files), we want to catch "another agent already
+	// claimed this work" as soon as `mainline start` runs. File-overlap
+	// has nothing to bite on at that point, so we fall back to keyword
+	// match against proposed intents' title + goal text. Level=warn
+	// (not block) — same goal text can legitimately mean a related-but-
+	// different intent, so the agent gets a heads-up, not a refusal.
+	if in.status != nil && in.status.ActiveIntent != nil {
+		goalOverlaps := goalTextOverlaps(in.status.ActiveIntent, in.proposed)
+		res.Overlaps = append(res.Overlaps, goalOverlaps...)
+	}
+
+	if len(currentFiles) > 0 {
 		if in.view != nil && len(in.upstreamCommits) > 0 {
 			for _, iv := range in.view.Intents {
 				if iv.Status != domain.StatusMerged || iv.Fingerprint == nil {
@@ -251,7 +296,7 @@ func preflightOverlapFromIntent(kind, level string, iv domain.IntentView, curren
 		title = iv.Summary.Title
 	}
 	matched := matchedOverlapFiles(currentFiles, iv.Fingerprint.FilesTouched)
-	return PreflightOverlap{
+	o := PreflightOverlap{
 		Kind:             kind,
 		Level:            level,
 		IntentID:         iv.IntentID,
@@ -261,6 +306,14 @@ func preflightOverlapFromIntent(kind, level string, iv domain.IntentView, curren
 		Score:            len(matched),
 		MergedMainCommit: iv.StatusEvidence.MergedMainCommit,
 	}
+	// Author surfaces only on proposed_overlap (in-flight work);
+	// upstream_merged_overlap is already on main and git blame answers
+	// the question better.
+	if kind == PreflightOverlapProposed {
+		o.AuthorID = iv.ActorID
+		o.AuthorName = iv.ActorName
+	}
+	return o
 }
 
 func compactPreflightOverlaps(in []PreflightOverlap) []PreflightOverlap {
@@ -378,4 +431,65 @@ func matchedOverlapFiles(a, b []string) []string {
 
 func preflightFilesOverlap(a, b []string) bool {
 	return len(matchedOverlapFiles(a, b)) > 0
+}
+
+// goalTextOverlaps returns proposed-overlap warnings derived purely
+// from the active draft's goal text. Reuses keywordsFromText (same
+// tokenisation as conflict + context-retrieval) so the three signals
+// agree on what "the same words" means. Self-exclusion is by IntentID
+// — re-running preflight on your own draft never warns you about
+// yourself. The hit rate threshold is on the active draft's keyword
+// count (not the candidate's), so a 4-keyword goal needs at least
+// 2 of those 4 to land somewhere on a candidate.
+func goalTextOverlaps(active *domain.DraftIntent, proposed []domain.IntentView) []PreflightOverlap {
+	if active == nil {
+		return nil
+	}
+	goal := strings.TrimSpace(active.Goal)
+	if goal == "" {
+		return nil
+	}
+	keywords := keywordsFromText(goal)
+	if len(keywords) < preflightGoalOverlapMinKeywords {
+		return nil
+	}
+	required := int(float64(len(keywords))*preflightGoalOverlapMinHitRate + 0.5)
+	if required < 1 {
+		required = 1
+	}
+
+	var out []PreflightOverlap
+	for _, iv := range proposed {
+		if iv.Status != domain.StatusProposed {
+			continue
+		}
+		if iv.IntentID == active.IntentID {
+			continue
+		}
+		title := iv.Goal
+		if iv.Summary != nil && iv.Summary.Title != "" {
+			title = iv.Summary.Title
+		}
+		hay := strings.ToLower(strings.TrimSpace(iv.Goal + " " + title))
+		if hay == "" {
+			continue
+		}
+		hits := countKeywordHits(keywords, hay)
+		if hits < required {
+			continue
+		}
+		matched := matchedKeywords(keywords, hay)
+		out = append(out, PreflightOverlap{
+			Kind:            PreflightOverlapGoalText,
+			Level:           PreflightLevelWarn,
+			IntentID:        iv.IntentID,
+			Title:           title,
+			Status:          string(iv.Status),
+			MatchedKeywords: matched,
+			Score:           hits,
+			AuthorID:        iv.ActorID,
+			AuthorName:      iv.ActorName,
+		})
+	}
+	return out
 }

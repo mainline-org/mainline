@@ -76,6 +76,9 @@ var startCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
+			// JSON callers care about the result; preflight goal-text
+			// overlaps are advisory and surfaced separately by callers
+			// who run `mainline preflight --json` after start.
 			outputJSON(result)
 		} else {
 			fmt.Printf("Intent started: %s\n", result.IntentID)
@@ -88,6 +91,19 @@ var startCmd = &cobra.Command{
 					fmt.Printf("    %s\n", shortHash(c))
 				}
 			}
+
+			// Duplicate-work check: run preflight against the just-
+			// created draft and surface any goal-text overlap with
+			// already-proposed intents. Catches "another agent already
+			// claimed this work" before the user starts editing — the
+			// only earlier-than-seal collaboration signal we have when
+			// the worktree is clean. Errors are silently swallowed
+			// because preflight is advisory; a working start should
+			// never fail because the diagnostic itself blew up.
+			if pf, err := svc.Preflight(); err == nil && pf != nil {
+				printStartOverlapWarnings(pf)
+			}
+
 			// First-touch breadcrumb: a brand-new user just claimed
 			// work; the next steps are non-obvious without reading
 			// AGENTS.md. Three lines is enough to drive the loop
@@ -99,6 +115,49 @@ var startCmd = &cobra.Command{
 			fmt.Println("  3. `mainline seal --prepare > .ml-cache/seal.json` → fill the template → `mainline seal --submit < .ml-cache/seal.json`.")
 		}
 	},
+}
+
+// printStartOverlapWarnings renders the duplicate-work-in-flight
+// warnings produced by preflight, one block per overlap. Tries to
+// stay quiet when there are no warnings so the happy path keeps the
+// existing terse output.
+func printStartOverlapWarnings(pf *engine.PreflightResult) {
+	if pf == nil || len(pf.Overlaps) == 0 {
+		return
+	}
+	first := true
+	for _, o := range pf.Overlaps {
+		// Only the in-flight kinds matter at start time. upstream-
+		// merged overlap is for already-landed work and would be
+		// noise here.
+		if o.Kind != engine.PreflightOverlapGoalText && o.Kind != engine.PreflightOverlapProposed {
+			continue
+		}
+		if first {
+			fmt.Println()
+			fmt.Println("⚠ Possible duplicate work — proposed intent(s) match this goal:")
+			first = false
+		}
+		author := o.AuthorName
+		if author == "" {
+			author = o.AuthorID
+		}
+		title := o.Title
+		if title == "" {
+			title = "(no title)"
+		}
+		if author != "" {
+			fmt.Printf("  %s [proposed] %s — %s\n", shortHash(o.IntentID), author, title)
+		} else {
+			fmt.Printf("  %s [proposed] %s\n", shortHash(o.IntentID), title)
+		}
+		if len(o.MatchedKeywords) > 0 {
+			fmt.Printf("    matched: %s\n", strings.Join(o.MatchedKeywords, ", "))
+		} else if len(o.MatchedFiles) > 0 {
+			fmt.Printf("    shared files: %s\n", strings.Join(o.MatchedFiles, ", "))
+		}
+		fmt.Printf("    inspect: mainline show %s --json\n", o.IntentID)
+	}
 }
 
 func init() {
