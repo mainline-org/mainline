@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
@@ -326,6 +327,7 @@ type SealSubmitResult struct {
 	SyncRan    bool                  `json:"sync_ran"`
 	SyncError  string                `json:"sync_error,omitempty"`
 	Conflicts  []domain.ConflictPair `json:"conflicts,omitempty"`
+	LintIssues []LintIssue           `json:"lint_issues,omitempty"`
 }
 
 // SealSubmitOptions controls the rc5+ seal-submit augmentations.
@@ -344,6 +346,37 @@ type SealSubmitOptions struct {
 // options (auto sync + check on). Existing callers compile unchanged.
 func (s *Service) SealSubmit(input json.RawMessage) (*SealSubmitResult, error) {
 	return s.SealSubmitWithOptions(input, nil)
+}
+
+func blockingLintIssues(issues []LintIssue) []LintIssue {
+	var out []LintIssue
+	for _, issue := range issues {
+		if issue.Severity == "error" {
+			out = append(out, issue)
+		}
+	}
+	return out
+}
+
+func nonBlockingLintIssues(issues []LintIssue) []LintIssue {
+	var out []LintIssue
+	for _, issue := range issues {
+		if issue.Severity != "error" {
+			out = append(out, issue)
+		}
+	}
+	return out
+}
+
+func formatBlockingLintIssues(issues []LintIssue) string {
+	if len(issues) == 0 {
+		return "seal lint failed"
+	}
+	parts := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		parts = append(parts, fmt.Sprintf("%s: %s", issue.Code, issue.Message))
+	}
+	return "seal lint failed: " + strings.Join(parts, "; ")
 }
 
 func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitOptions) (*SealSubmitResult, error) {
@@ -398,14 +431,18 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		return nil, err
 	}
 
-	codeCommit := currentHead
-
-	// All gates passed. Mutate draft + write actor-log event + push.
-	draft.Status = domain.StatusSealedLocal
-	draft.LastModifiedAt = core.Now()
-	if err := s.Store.WriteDraft(draft); err != nil {
-		return nil, fmt.Errorf("update draft: %w", err)
+	view, _ := s.Store.ReadMainlineView()
+	lintResult := LintSealResultWithView(&sr, view)
+	if blocking := blockingLintIssues(lintResult.Issues); len(blocking) > 0 {
+		return nil, domain.NewRecoverableError(
+			domain.ErrSealFailed,
+			formatBlockingLintIssues(blocking),
+			"edit the seal payload to address the deterministic lint errors",
+			"re-run `mainline seal --submit` after updating title/what/why/decisions/fingerprint fields",
+		)
 	}
+
+	codeCommit := currentHead
 
 	eventID := core.GenerateEventID()
 	dirty := append([]string{}, wt.DirtyFiles...)
@@ -486,9 +523,10 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		warning = "Sealed locally (--offline). Run 'mainline publish' when online."
 	}
 
-	// Update draft status to final status. Best-effort: a write
-	// failure here just means `mainline status` reads the previous
-	// status until the next sync rebuilds the view from events.
+	// Update draft status only after the durable actor-log event exists.
+	// Best-effort: a write failure here just means `mainline status`
+	// reads the previous draft status until the next sync rebuilds the
+	// view from events.
 	draft.Status = finalStatus
 	draft.LastModifiedAt = core.Now()
 	_ = s.Store.WriteDraft(draft)
@@ -501,6 +539,7 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		EventID:    eventID,
 		Hash:       hash,
 		Warning:    warning,
+		LintIssues: nonBlockingLintIssues(lintResult.Issues),
 	}
 
 	// rc5 Patch 3: auto sync + phase1 check unless --offline.

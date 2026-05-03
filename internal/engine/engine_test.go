@@ -339,6 +339,11 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 			What:     "Added feature X to module Y",
 			Why:      "Users requested feature X",
 			UserGoal: "implement feature X",
+			Decisions: []domain.Decision{{
+				Point:     "feature scope",
+				Chose:     "add feature X to module Y",
+				Rationale: "the test payload should satisfy the submit quality gate",
+			}},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   []string{"module-y"},
@@ -566,6 +571,11 @@ func TestPublishLocalOnly(t *testing.T) {
 		IntentID: start.IntentID,
 		Summary: domain.IntentSummary{
 			Title: "T", What: "W", Why: "Y",
+			Decisions: []domain.Decision{{
+				Point:     "publish test",
+				Chose:     "use a minimal valid seal payload",
+				Rationale: "PublishLocalOnly tests publish behavior, not lint failures",
+			}},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   []string{"s"},
