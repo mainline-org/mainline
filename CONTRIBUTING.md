@@ -9,6 +9,18 @@ Thanks for helping improve Mainline.
 - Do not commit secrets, local caches, or generated hub exports.
 - Follow the Mainline workflow (see the Mainline skill or `AGENTS.md` if installed) for intent-backed changes.
 
+## Contributor Licensing
+
+Mainline is source-available under PolyForm Shield 1.0.0, with commercial
+licensing reserved by the Mainline copyright holder.
+
+By submitting a contribution, you confirm that you have the right to submit it
+and license it to the project. For substantial contributions, maintainers may
+require a Contributor License Agreement that preserves the project's ability to
+offer commercial licenses and to relicense future versions or selected
+components, including a possible future CLI-core move to AGPL, Apache, or
+another OSI-approved license.
+
 ## Development
 
 ```bash

@@ -1,10 +1,11 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 17 -->
+<!-- mainline-agents-md-version: 18 -->
 
-**Mainline is a git-native intent memory layer for AI-assisted engineering.**
-It gives coding agents the historical *why* before they inspect the
-current *what*.
+**Stop AI coding agents from repeating old engineering mistakes.**
+
+Mainline is a Git-native memory layer that tells coding agents *why the code
+is the way it is* before they edit it.
 
 This project uses Mainline to record the intent behind every AI-driven
 change and to surface conflicts between intents before they reach a PR
