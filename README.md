@@ -689,6 +689,16 @@ Session-memory tools record prompts, responses, snapshots, tool calls, or code d
 
 No. Mainline does not capture transcripts, tool calls, token usage, or session timelines. It can attach optional references to real external materials (session URLs, issues, PRs, docs, CI runs), but references support the intent — they don't replace it. The sealed intent remains the durable decision record.
 
+**Q: Where is Mainline data stored?**
+
+Mainline's durable team data lives in Git, not in a hosted service. Per-actor
+intent events are stored in Git refs under `refs/heads/_mainline/actor/<id>`,
+and merged-code pins are stored in Git notes under
+`refs/notes/mainline/intents`. `.ml-cache/` is a local working cache for drafts,
+rebuilt views, hook state, and temporary seal files; it is gitignored and must
+not be committed. `.mainline/config.toml` is team-wide config and is committed;
+`.mainline/local.toml` is per-actor local identity/config and is gitignored.
+
 **Q: Why not just use commit messages or PR descriptions?**
 
 Commit messages are short and final-state oriented. PR descriptions are review-time artifacts. Both are easy to lose, rewrite, or skip. Mainline intents are git-backed, queryable, lifecycle-aware records. They can be abandoned, superseded, inherited by files, retrieved before editing, and shown to agents as context.
@@ -753,6 +763,15 @@ The difference is the unit of memory.
 These tools can be complementary. If your team already stores sessions or checkpoints elsewhere, Mainline can link them as references on sealed intents.
 
 ## Storage layout
+
+Mainline has one durable storage layer and one local cache layer:
+
+- Durable team data is stored in Git refs and notes and travels with the repo
+  when those refs are fetched/pushed.
+- `.ml-cache/` is local-only working state. It can be deleted and rebuilt, and
+  it is intentionally gitignored.
+- `.mainline/config.toml` is committed team config; `.mainline/local.toml` is
+  local actor config and must stay untracked.
 
 ```
 .mainline/
@@ -866,6 +885,7 @@ part of the working product; remaining v0.4 work is public-launch polish.
 
 - Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Security reporting: [SECURITY.md](./SECURITY.md)
+- Changelog: [CHANGELOG.md](./CHANGELOG.md)
 - Bug reports and feature requests: [GitHub issue templates](./.github/ISSUE_TEMPLATE/)
 
 ## License

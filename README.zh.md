@@ -338,6 +338,15 @@ Session-memory 工具记录 AI coding session 里的 prompts、responses、snaps
 
 不会。Mainline 不抓取 transcript、tool calls、token usage 或完整 session timeline。它可以给 intent 附加可选 references（session URL、issue、PR、doc、CI run），但 references 支撑 intent，不替代 intent。Sealed intent 才是长期决策记录。
 
+**Q: Mainline 数据存在哪里？**
+
+Mainline 的长期团队数据存在 Git 里，不依赖 hosted service。每个 actor 的
+intent event log 存在 `refs/heads/_mainline/actor/<id>`；代码合并后的
+intent pin 存在 Git notes：`refs/notes/mainline/intents`。`.ml-cache/` 只是
+本地工作缓存，用来放 draft、重建后的 view、hook 状态和临时 seal 文件；
+它已经被 gitignore，不能提交。`.mainline/config.toml` 是团队配置，会提交；
+`.mainline/local.toml` 是本地 actor 配置，也应保持未跟踪。
+
 **Q: 为什么不用 commit message 或 PR description 就够了？**
 
 Commit message 通常很短，只描述最终改动。PR description 是 review 时的临时材料。两者都容易丢失、重写或被跳过。Mainline intent 是 git-backed、可检索、有生命周期的记录。它可以 abandoned、superseded、被文件继承、在编辑前检索，并作为 agent context 使用。
