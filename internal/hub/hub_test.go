@@ -147,6 +147,46 @@ func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 	}
 }
 
+func TestBuildRiskList_UsesOpenRiskLifecycle(t *testing.T) {
+	resolved := intent("int_resolved", "a", "2026-04-28T01:00:00Z", domain.StatusMerged)
+	resolved.Summary.Risks = []string{"resolved risk should stay historical"}
+	expired := intent("int_expired", "a", "2026-04-28T02:00:00Z", domain.StatusSuperseded)
+	expired.Summary.Risks = []string{"expired risk should stay historical"}
+	open := intent("int_open", "a", "2026-04-28T03:00:00Z", domain.StatusMerged)
+	open.Summary.Risks = []string{"open risk should appear"}
+
+	v := makeView(resolved, expired, open)
+	v.RiskResolutions = map[string][]domain.RiskResolution{
+		"int_resolved#0": {{IntentID: "int_fix", Rationale: "fixed"}},
+	}
+
+	m := buildHubModel(v)
+	if len(m.RiskIntents) != 1 || m.RiskIntents[0] != "int_open" {
+		t.Fatalf("risk list should include only open risks, got %v", m.RiskIntents)
+	}
+	byID := indexByID(m.Intents)
+	if got := len(byID["int_open"].OpenRisks); got != 1 {
+		t.Fatalf("open intent should expose 1 open risk, got %d", got)
+	}
+	if got := len(byID["int_resolved"].OpenRisks); got != 0 {
+		t.Fatalf("resolved intent should expose no open risks, got %d", got)
+	}
+	if got := len(byID["int_expired"].OpenRisks); got != 0 {
+		t.Fatalf("expired intent should expose no open risks, got %d", got)
+	}
+	if len(byID["int_resolved"].Risks) != 1 {
+		t.Fatalf("raw resolved risk should remain on intent detail/history surfaces")
+	}
+
+	ctx := risksCtx(m, byID)
+	if len(ctx.RiskRows) != 1 || ctx.RiskRows[0].Intent.ID != "int_open" {
+		t.Fatalf("risks page should default to open-risk rows only, got %+v", ctx.RiskRows)
+	}
+	if len(ctx.RiskRows[0].Risks) != 1 || ctx.RiskRows[0].Risks[0].Status != "open" {
+		t.Fatalf("risk row should carry materialized open risk, got %+v", ctx.RiskRows[0].Risks)
+	}
+}
+
 // Focus list under the post-signal-reduction taxonomy is no longer
 // "proposed > risky > merged"; it surfaces only items that have a
 // concrete actionable reason (unack inherited high-severity, stale

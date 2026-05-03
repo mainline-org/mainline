@@ -2,9 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/mainline-org/mainline/internal/core"
@@ -28,30 +25,17 @@ import (
 // Risk IDs are stable because sealed intents are immutable —
 // the risk array never changes after seal, so the index is fixed.
 
-// riskIDPattern validates risk ID format: "int_<hex>#<digit>"
-var riskIDPattern = regexp.MustCompile(`^int_[0-9a-f]+#\d+$`)
-
 // ParseRiskID splits a risk ID into (intent_id, index). Returns an
 // error if the format is invalid.
 func ParseRiskID(riskID string) (intentID string, index int, err error) {
-	parts := strings.SplitN(riskID, "#", 2)
-	if len(parts) != 2 || !riskIDPattern.MatchString(riskID) {
-		return "", 0, fmt.Errorf("invalid risk ID %q: expected format int_<hex>#<index>", riskID)
-	}
-	var idx int
-	if _, err := fmt.Sscanf(parts[1], "%d", &idx); err != nil {
-		return "", 0, fmt.Errorf("invalid risk index in %q: %w", riskID, err)
-	}
-	return parts[0], idx, nil
+	return domain.ParseRiskID(riskID)
 }
 
 // RiskID builds a deterministic risk ID from intent ID and array index.
 func RiskID(intentID string, index int) string {
-	return fmt.Sprintf("%s#%d", intentID, index)
+	return domain.RiskID(intentID, index)
 }
 
-// riskExpiredStatuses are intent statuses where all risks are expired
-// (the work was replaced, abandoned, or reverted — risks are moot).
 var riskExpiredStatuses = map[domain.IntentStatus]bool{
 	domain.StatusSuperseded: true,
 	domain.StatusAbandoned:  true,
@@ -62,111 +46,17 @@ var riskExpiredStatuses = map[domain.IntentStatus]bool{
 // fileFilter, when non-empty, restricts to risks from intents that
 // touched a file matching the prefix.
 func materializeRisks(view *domain.MainlineView, fileFilter string) []domain.Risk {
-	if view == nil {
-		return nil
-	}
-
-	resolutions := view.RiskResolutions
-	if resolutions == nil {
-		resolutions = map[string][]domain.RiskResolution{}
-	}
-
-	var risks []domain.Risk
-	for _, iv := range view.Intents {
-		if iv.Summary == nil || len(iv.Summary.Risks) == 0 {
-			continue
-		}
-
-		// File filter: skip intents that don't touch the requested path.
-		if fileFilter != "" && iv.Fingerprint != nil {
-			if !touchesPath(iv.Fingerprint.FilesTouched, fileFilter) {
-				continue
-			}
-		}
-
-		for i, text := range iv.Summary.Risks {
-			rid := RiskID(iv.IntentID, i)
-
-			status := "open"
-			var resolvedBy []domain.RiskResolution
-
-			// Check resolution events
-			if rr, ok := resolutions[rid]; ok && len(rr) > 0 {
-				status = "resolved"
-				resolvedBy = rr
-			}
-
-			// Check source intent lifecycle → expired
-			if riskExpiredStatuses[iv.Status] {
-				status = "expired"
-			}
-
-			risks = append(risks, domain.Risk{
-				ID:           rid,
-				Text:         text,
-				Status:       status,
-				SourceIntent: iv.IntentID,
-				OpenedAt:     iv.SealedAt,
-				ResolvedBy:   resolvedBy,
-			})
-		}
-	}
-
-	// Sort: open first, then resolved, then expired; within each group by recency.
-	sort.Slice(risks, func(i, j int) bool {
-		oi, oj := statusOrder(risks[i].Status), statusOrder(risks[j].Status)
-		if oi != oj {
-			return oi < oj
-		}
-		return risks[i].OpenedAt > risks[j].OpenedAt // newer first
-	})
-
-	return risks
+	return domain.MaterializeRisks(view, fileFilter)
 }
 
 // materializeOpenRisks is the seal-prepare variant: only open risks
 // on files in the given list.
 func materializeOpenRisks(view *domain.MainlineView, files []string) []domain.Risk {
-	all := materializeRisks(view, "")
-	var open []domain.Risk
-	for _, r := range all {
-		if r.Status != "open" {
-			continue
-		}
-		// Check if any of the intent's files overlap with the current files.
-		for _, iv := range view.Intents {
-			if iv.IntentID != r.SourceIntent || iv.Fingerprint == nil {
-				continue
-			}
-			if filesOverlap(iv.Fingerprint.FilesTouched, files) {
-				open = append(open, r)
-				break
-			}
-		}
-	}
-	return open
+	return domain.MaterializeOpenRisks(view, files)
 }
 
 func filesOverlap(a, b []string) bool {
-	set := make(map[string]bool, len(a)*2)
-	for _, f := range a {
-		set[f] = true
-		// Only add the immediate parent directory, not all ancestors.
-		if d := filepath.Dir(f); d != "." && d != "/" {
-			set[d+"/"] = true
-		}
-	}
-	for _, f := range b {
-		if set[f] {
-			return true
-		}
-		if d := filepath.Dir(f); d != "." && d != "/" {
-			if set[d+"/"] {
-				return true
-			}
-		}
-	}
-	return false
+	return domain.RiskFilesOverlap(a, b)
 }
 
 func touchesPath(files []string, prefix string) bool {
@@ -179,16 +69,7 @@ func touchesPath(files []string, prefix string) bool {
 }
 
 func statusOrder(s string) int {
-	switch s {
-	case "open":
-		return 0
-	case "resolved":
-		return 1
-	case "expired":
-		return 2
-	default:
-		return 3
-	}
+	return domain.RiskStatusOrder(s)
 }
 
 // ListRisks is the Service entry point for `mainline risks`.
