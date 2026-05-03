@@ -24,7 +24,9 @@ func agentsLightTemplate() string {
 
 <!-- mainline-agents-md-version: %d -->
 
-This repository uses Mainline. Agents must use the Mainline skill workflow for non-trivial engineering work.
+**Stop AI coding agents from repeating old engineering mistakes.**
+
+This repository uses Mainline, a Git-native memory layer that tells coding agents why the code is the way it is before they edit it. Agents must use the Mainline skill workflow for non-trivial engineering work.
 `, EmbeddedAgentsMDVersion())
 }
 
