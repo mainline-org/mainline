@@ -16,9 +16,10 @@ import (
 // boilerplate or missing decisions, retrieval is rich-looking but
 // useless. Lint is what stops that drift.
 //
-// Lint is *advisory* — it does not block seal --submit. The spec
-// reserves enforcement for a future hook ("hooks may soft-remind,
-// not hard-block"). Today lint runs on demand:
+// The `mainline lint` command is *advisory* — it does not itself
+// mutate or block anything. SealSubmit reuses the same deterministic
+// checks for its pre-mutation hard gate, while this command remains
+// the read-only inspection surface:
 //
 //   mainline lint                       # the active draft
 //   mainline lint <intent_id>           # any intent in view or draft
@@ -311,10 +312,9 @@ func (s *Service) Lint(id string) (*LintResult, error) {
 }
 
 // LintSealResult is the seal-payload variant: lints a fully-formed
-// SealResult before submit (when the agent runs `mainline lint`
-// piped from `mainline seal --prepare`'s schema). The seal payload
-// path is what `mainline lint` will be wired into for pre-submit
-// checks once the seal-pipeline integration lands.
+// SealResult before submit. SealSubmit uses this deterministic gate
+// before any mutation; the standalone `mainline lint` command remains
+// advisory and reads sealed view entries after the fact.
 func LintSealResult(sr *domain.SealResult, viewIntents map[string]bool) LintResult {
 	if sr == nil {
 		return LintResult{Pass: false, Issues: []LintIssue{{
@@ -323,6 +323,26 @@ func LintSealResult(sr *domain.SealResult, viewIntents map[string]bool) LintResu
 		}}}
 	}
 	return LintIntent(sr.IntentID, &sr.Summary, &sr.Fingerprint, "", viewIntents)
+}
+
+// LintSealResultWithView extends LintSealResult with inherited-constraint
+// acknowledgement checks from the current view. These remain warning-level:
+// they are surfaced before submit, but do not block sealing.
+func LintSealResultWithView(sr *domain.SealResult, view *domain.MainlineView) LintResult {
+	knownIDs := map[string]bool{}
+	if view != nil {
+		for _, iv := range view.Intents {
+			knownIDs[iv.IntentID] = true
+		}
+	}
+	res := LintSealResult(sr, knownIDs)
+	if sr == nil || view == nil {
+		return res
+	}
+	inherited := domain.BuildInheritedConstraints(view, sr.Fingerprint.FilesTouched, sr.Fingerprint.Subsystems, sr.IntentID)
+	res.Issues = append(res.Issues, LintInheritedAcknowledgement(&sr.Summary, inherited)...)
+	res.Pass = !hasErrors(res.Issues)
+	return res
 }
 
 // LintInheritedAcknowledgement walks the supplied inherited

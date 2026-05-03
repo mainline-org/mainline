@@ -48,6 +48,9 @@ func TestInstallMergesHooksAndEnablesFeature(t *testing.T) {
 	if report.HookCount != 3 {
 		t.Fatalf("HookCount = %d, want 3", report.HookCount)
 	}
+	if report.CommandMode != hooks.CommandModeBin {
+		t.Fatalf("CommandMode = %q, want %q", report.CommandMode, hooks.CommandModeBin)
+	}
 
 	raw, err := os.ReadFile(hooksPath)
 	if err != nil {
@@ -91,6 +94,40 @@ func TestInstallMergesHooksAndEnablesFeature(t *testing.T) {
 	}
 	if !st.Installed || st.NeedsRepair || st.HookCount != st.ExpectedHookCount {
 		t.Fatalf("unexpected healthy install status: %#v", st)
+	}
+	if st.CommandMode != hooks.CommandModeBin {
+		t.Fatalf("status CommandMode = %q, want %q", st.CommandMode, hooks.CommandModeBin)
+	}
+}
+
+func TestDefaultInstallUsesLocalDevInMainlineSourceRepo(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/mainline-org/mainline\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := (Agent{}).Install(dir, hooks.InstallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.CommandMode != hooks.CommandModeLocalDev {
+		t.Fatalf("CommandMode = %q, want %q", report.CommandMode, hooks.CommandModeLocalDev)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "go run . hooks codex") {
+		t.Fatalf("expected local-dev wrapper in hooks.json:\n%s", raw)
+	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.CommandMode != hooks.CommandModeLocalDev {
+		t.Fatalf("status CommandMode = %q, want %q", st.CommandMode, hooks.CommandModeLocalDev)
 	}
 }
 

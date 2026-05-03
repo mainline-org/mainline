@@ -19,7 +19,8 @@ const (
 )
 
 func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallReport, error) {
-	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true}
+	opts = hooks.ResolveInstallOptions(repoRoot, opts)
+	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true, CommandMode: hooks.InstallCommandMode(opts)}
 	hooksPath := filepath.Join(repoRoot, codexDirName, hooksFileName)
 	configPath := filepath.Join(repoRoot, codexDirName, configFileName)
 
@@ -172,6 +173,7 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 			for _, h := range g.Hooks {
 				if isManagedHook(h) {
 					managedForKey++
+					st.CommandMode = hooks.MergeCommandMode(st.CommandMode, hooks.WrapperCommandMode(h.Command))
 				}
 			}
 		}
@@ -192,6 +194,9 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 	}
 	if !codexHooksFeatureEnabled(configPath) {
 		st.RepairReasons = append(st.RepairReasons, "codex_hooks feature is disabled or missing")
+	}
+	if reason := hooks.RuntimeRepairReason(st.CommandMode); reason != "" {
+		st.RepairReasons = append(st.RepairReasons, reason)
 	}
 	st.Installed = st.HookCount > 0
 	st.RestartRequired = st.Installed
@@ -283,7 +288,7 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 		return fmt.Sprintf(`sh -c 'test -x %q && exec %q hooks codex %s || exit 0'`,
 			opts.BinPath, opts.BinPath, hookID)
 	case opts.LocalDev:
-		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks codex %s || exit 0'`, hookID)
+		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/mainline-go-build}" && exec go run . hooks codex %s || exit 0'`, hookID)
 	default:
 		return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks codex %s || exit 0'`, hookID)
 	}

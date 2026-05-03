@@ -280,6 +280,9 @@ var hooksStatusCmd = &cobra.Command{
 			if r.Status.Scope != "" {
 				fmt.Printf("  scope=%s", r.Status.Scope)
 			}
+			if r.Status.CommandMode != "" {
+				fmt.Printf("  mode=%s", r.Status.CommandMode)
+			}
 			fmt.Println()
 			if r.Err != "" {
 				fmt.Printf("    error: %s\n", r.Err)
@@ -565,12 +568,19 @@ func setHooksEnabled(enabled bool) error {
 	// defaults THEN flip enabled. Without this, setHooksEnabled(true)
 	// on a never-installed repo would leave AutoSyncOnSessionStart
 	// false, defeating the only mechanical auto-flow toggle.
+	changed := false
 	if !cfg.Hooks.Enabled && !cfg.Hooks.AutoSyncOnSessionStart {
 		cfg.Hooks = domain.DefaultHooksSection()
+		changed = true
 	}
-	cfg.Hooks.Enabled = enabled
-	if err := svc.Store.WriteTeamConfig(cfg); err != nil {
-		return err
+	if cfg.Hooks.Enabled != enabled {
+		cfg.Hooks.Enabled = enabled
+		changed = true
+	}
+	if changed {
+		if err := svc.Store.WriteTeamConfig(cfg); err != nil {
+			return err
+		}
 	}
 	if jsonOutput {
 		// Echo the resulting [hooks] section so the caller does
@@ -601,7 +611,7 @@ func init() {
 	hooksInstallCmd.Flags().StringVar(&hooksInstallAgent, "agent", "", "agent to install (defaults to every supported agent)")
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallAll, "all", false, "install for every supported agent")
 	hooksInstallCmd.Flags().BoolVar(&hooksInstallForce, "force", false, "rewrite mainline-managed entries even if unchanged")
-	hooksInstallCmd.Flags().BoolVar(&hooksInstallLocalDev, "local-dev", false, "wrap with `go run .` instead of installed mainline")
+	hooksInstallCmd.Flags().BoolVar(&hooksInstallLocalDev, "local-dev", false, "wrap with `go run .` instead of installed mainline (auto-selected in Mainline source repos)")
 	hooksInstallCmd.Flags().StringVar(&hooksInstallBin, "bin", "", "absolute (or relative) path to a prebuilt mainline binary; wrapper will exec it directly")
 
 	hooksUninstallCmd.Flags().StringVar(&hooksUninstallAgent, "agent", "", "agent to uninstall (defaults to cursor)")

@@ -12,11 +12,11 @@ import (
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
-// Property: SealSubmitWithOptions NEVER mutates draft state when validation
-// fails. This is the key atomicity invariant — a failed seal must leave the
-// draft in its original status so the user can retry after fixing the issue.
-// Historical bug: pre-fix code wrote StatusSealedLocal before identity check,
-// leaving unrecoverable state.
+// Property: SealSubmitWithOptions NEVER mutates draft state when a pre-submit
+// gate fails. This is the key atomicity invariant — a failed seal must leave
+// the draft in its original status so the user can retry after fixing the
+// issue. Historical bug: pre-fix code wrote StatusSealedLocal before identity
+// check, leaving unrecoverable state.
 func TestPropertySealSubmitNeverMutatesOnValidationFailure(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		dir, cleanup := testRepo(rt)
@@ -44,8 +44,9 @@ func TestPropertySealSubmitNeverMutatesOnValidationFailure(t *testing.T) {
 		}
 		statusBefore := draftBefore.Status
 
-		// Generate an invalid SealResult (missing required fields)
-		failureMode := rapid.IntRange(0, 4).Draw(rt, "failureMode")
+		// Generate a SealResult that fails one of the pre-submit gates:
+		// schema validation, lookup/status checks, or deterministic lint.
+		failureMode := rapid.IntRange(0, 5).Draw(rt, "failureMode")
 		var sr domain.SealResult
 		switch failureMode {
 		case 0:
@@ -70,6 +71,10 @@ func TestPropertySealSubmitNeverMutatesOnValidationFailure(t *testing.T) {
 				Why:      "",
 				Severity: "high",
 			}}
+		case 5:
+			// Deterministic lint error (boilerplate what)
+			sr = validSealResultForPBT(draftBefore.IntentID)
+			sr.Summary.What = "implemented changes"
 		}
 
 		data, _ := json.Marshal(sr)
@@ -170,6 +175,11 @@ func validSealResultForPBT(intentID string) domain.SealResult {
 			Title: "title",
 			What:  "what",
 			Why:   "why",
+			Decisions: []domain.Decision{{
+				Point:     "pbt setup",
+				Chose:     "use a non-boilerplate seal payload by default",
+				Rationale: "submit-path property tests should only fail the gate they intentionally perturb",
+			}},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   []string{"test"},
@@ -204,6 +214,11 @@ func drawValidSealResult(rt *rapid.T) domain.SealResult {
 			Title: rapid.SampledFrom(titleAlpha).Draw(rt, "title"),
 			What:  "implemented " + rapid.SampledFrom(titleAlpha).Draw(rt, "what"),
 			Why:   "because " + rapid.SampledFrom(titleAlpha).Draw(rt, "why"),
+			Decisions: []domain.Decision{{
+				Point:     "property setup",
+				Chose:     "keep generated seal results lint-clean by default",
+				Rationale: "properties that target validation should not accidentally fail deterministic lint first",
+			}},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   subs,
