@@ -298,6 +298,155 @@ func preflightIntent(id string, status domain.IntentStatus, files []string, merg
 	}
 }
 
+// Goal-text overlap is the duplicate-work-in-flight signal that
+// fires *before* any code is written, when the worktree is clean and
+// file-overlap detection has nothing to bite on. The motivating
+// scenario: agent runs `mainline start "make user_goal authoritative"`
+// on a fresh main, unaware that another teammate already proposed
+// a fix with the same goal text. Without this signal the agent burns
+// 30+ minutes building a duplicate.
+func TestPreflightWarnsGoalTextOverlapEvenWithCleanWorktree(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	markSyncedToHead(t, svc)
+	gitCmd(t, dir, "checkout", "-b", "feature/local")
+
+	// Active draft on the local branch — same words an existing
+	// proposed intent already used.
+	if _, err := svc.Start("Make user_goal authoritative across seal and Hub", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	other := preflightIntent("int_other", domain.StatusProposed, []string{"some/file.go"}, "")
+	other.ActorID = "actor_someone_else"
+	other.ActorName = "z2z23n0"
+	other.Goal = "let user_goal flow only from mainline start; seal and Hub mirror it"
+	other.Summary.Title = "Make user_goal authoritative"
+	if err := svc.Store.WriteProposedIndex(&domain.ProposedIndex{
+		SchemaVersion: 1,
+		Proposed:      []domain.IntentView{other},
+	}); err != nil {
+		t.Fatalf("write proposed index: %v", err)
+	}
+
+	res, err := svc.Preflight()
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	// Worktree is clean (no edits yet) — the only overlap we expect
+	// is goal-text. Block-level overlaps would mask a duplicate-of-
+	// my-own-work bug.
+	var goalOverlap *PreflightOverlap
+	for i := range res.Overlaps {
+		if res.Overlaps[i].Kind == PreflightOverlapGoalText {
+			goalOverlap = &res.Overlaps[i]
+			break
+		}
+	}
+	if goalOverlap == nil {
+		t.Fatalf("expected goal_text_overlap, got: %+v", res.Overlaps)
+	}
+	if goalOverlap.IntentID != "int_other" {
+		t.Errorf("matched wrong intent: %+v", goalOverlap)
+	}
+	if goalOverlap.AuthorName != "z2z23n0" {
+		t.Errorf("author should be surfaced for goal_text_overlap, got %q", goalOverlap.AuthorName)
+	}
+	if len(goalOverlap.MatchedKeywords) == 0 {
+		t.Errorf("matched_keywords should be populated, got %+v", goalOverlap)
+	}
+	// Warn level — same goal words can mean a related-but-distinct
+	// intent. We surface, but never block.
+	if goalOverlap.Level != PreflightLevelWarn {
+		t.Errorf("expected warn level, got %q", goalOverlap.Level)
+	}
+	if !res.OKToContinue {
+		t.Errorf("warn-level overlap must not block ok_to_continue")
+	}
+}
+
+// Self-exclusion: the active draft must never match itself, even when
+// it appears in the proposed list (e.g. a re-sync after a publish).
+// Without this guard the agent gets warned about its own work, which
+// trains them to ignore the warning.
+func TestPreflightGoalTextOverlapExcludesSelf(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	markSyncedToHead(t, svc)
+	gitCmd(t, dir, "checkout", "-b", "feature/local")
+
+	startRes, err := svc.Start("rewrite the cache layer with proper LRU semantics", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	self := preflightIntent(startRes.IntentID, domain.StatusProposed, nil, "")
+	self.Goal = "rewrite the cache layer with proper LRU semantics"
+	self.Summary.Title = "rewrite cache layer LRU"
+	if err := svc.Store.WriteProposedIndex(&domain.ProposedIndex{
+		SchemaVersion: 1,
+		Proposed:      []domain.IntentView{self},
+	}); err != nil {
+		t.Fatalf("write proposed index: %v", err)
+	}
+
+	res, err := svc.Preflight()
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	for _, o := range res.Overlaps {
+		if o.IntentID == startRes.IntentID {
+			t.Errorf("active draft matched itself in goal-text overlap: %+v", o)
+		}
+	}
+}
+
+// One- or two-word goals would match too many candidates ("fix" or
+// "improve" alone) — preflightGoalOverlapMinKeywords keeps the noise
+// floor down. This pins that behavior so a future tweak that lowers
+// the threshold has to consciously update both code and test.
+func TestPreflightGoalTextOverlapSkipsTooShortGoals(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	markSyncedToHead(t, svc)
+	gitCmd(t, dir, "checkout", "-b", "feature/local")
+	if _, err := svc.Start("fix bug", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	other := preflightIntent("int_other", domain.StatusProposed, nil, "")
+	other.Goal = "fix bug in the auth handler please"
+	other.Summary.Title = "fix bug"
+	if err := svc.Store.WriteProposedIndex(&domain.ProposedIndex{
+		SchemaVersion: 1,
+		Proposed:      []domain.IntentView{other},
+	}); err != nil {
+		t.Fatalf("write proposed index: %v", err)
+	}
+
+	res, err := svc.Preflight()
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	for _, o := range res.Overlaps {
+		if o.Kind == PreflightOverlapGoalText {
+			t.Errorf("short goal should not produce goal_text_overlap, got %+v", o)
+		}
+	}
+}
+
 func hasPreflightFinding(res *PreflightResult, code string) bool {
 	for _, f := range res.Findings {
 		if f.Code == code {
