@@ -336,8 +336,8 @@ mainline seal --prepare > .ml-cache/seal.json
 # + files_touched + subsystems pre-filled; the agent patches in
 # title/what/why/decisions/risks/anti_patterns/confidence and submits
 mainline seal --submit < .ml-cache/seal.json
-# inline soft-lint summary appears if the seal has issues; conflicts
-# (phase 1) print with explicit `mainline check --prepare` follow-up
+# deterministic lint errors now fail before submit mutates state;
+# warning-only lint notes and conflicts (phase 1) still print inline
 
 # [you] open a PR on GitHub; merge with the web UI
 
@@ -532,8 +532,8 @@ You usually don't need these. Documented for completeness.
 
 ## Agent hooks (opt-in)
 
-Agents like Cursor (today; Codex / Claude Code reserved) expose
-session/turn lifecycle hooks. `mainline hooks` plugs into those as a
+Agents like Cursor, Codex, and Claude Code expose session/turn lifecycle
+hooks. `mainline hooks` plugs into those as a
 **context provider** — it runs the two mechanical operations the
 agent would otherwise have to remember (`sync` + `status`) and
 injects the snapshot into the agent's system context. It does **not**
@@ -542,13 +542,20 @@ drive the rest of the workflow.
 ```bash
 mainline hooks list-agents             # what's supported
 mainline hooks install --agent cursor  # writes .cursor/hooks.json
+mainline hooks install --local-dev     # source-tree dogfood: wraps `go run .`
+mainline hooks install --bin ./mainline # wrap a specific prebuilt binary
 mainline hooks status                  # show installed agents + dispatcher toggles
 mainline hooks uninstall --agent cursor
 mainline hooks disable                 # soft-disable without uninstalling
 mainline hooks enable
 ```
 
-What hooks DO at each event (cursor today, others reserved):
+Install chooses the wrapper mode automatically: normal repositories use
+`mainline` on `PATH`; the Mainline source repository uses `go run .` so
+hooks still work before the development binary is installed globally. Use
+`--bin` when you want hooks to call a specific local build.
+
+What hooks DO at each event:
 
 | Hook event | mainline action |
 |---|---|

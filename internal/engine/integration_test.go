@@ -293,7 +293,16 @@ func TestCheckPrepareWithOverlap(t *testing.T) {
 
 	sr1 := domain.SealResult{
 		IntentID: start1.IntentID,
-		Summary:  domain.IntentSummary{Title: "Auth", What: "auth", Why: "security"},
+		Summary: domain.IntentSummary{
+			Title: "Auth",
+			What:  "auth",
+			Why:   "security",
+			Decisions: []domain.Decision{{
+				Point:     "auth implementation",
+				Chose:     "add auth middleware coverage",
+				Rationale: "the overlap fixture must seal before conflict preparation",
+			}},
+		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   []string{"auth", "middleware"},
 			FilesTouched: []string{"auth.go", "middleware.go"},
@@ -317,7 +326,16 @@ func TestCheckPrepareWithOverlap(t *testing.T) {
 
 	sr2 := domain.SealResult{
 		IntentID: start2.IntentID,
-		Summary:  domain.IntentSummary{Title: "Auth v2", What: "auth v2", Why: "upgrade"},
+		Summary: domain.IntentSummary{
+			Title: "Auth v2",
+			What:  "auth v2",
+			Why:   "upgrade",
+			Decisions: []domain.Decision{{
+				Point:     "auth v2 implementation",
+				Chose:     "touch the same auth fingerprint",
+				Rationale: "the test expects phase 1 overlap detection",
+			}},
+		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   []string{"auth", "middleware"}, // overlaps!
 			FilesTouched: []string{"auth.go"},            // overlaps!
@@ -595,6 +613,11 @@ func validSealResult(intentID string) domain.SealResult {
 			Title: "Test Title",
 			What:  "Test what",
 			Why:   "Test why",
+			Decisions: []domain.Decision{{
+				Point:     "test coverage",
+				Chose:     "keep the seal payload minimally explicit",
+				Rationale: "submit-path tests should pass the deterministic quality gate unless they override a field on purpose",
+			}},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:   []string{"test"},
@@ -765,6 +788,159 @@ func TestSealSnapshotAllowDirtyBypass(t *testing.T) {
 	}
 	if result.Status != string(domain.StatusProposed) && result.Status != string(domain.StatusSealedLocal) {
 		t.Fatalf("unexpected status after allow-dirty seal: %s", result.Status)
+	}
+}
+
+func TestSealSubmitRejectsLintErrorsBeforeMutation(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	start, err := svc.Start("lint gate test", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	writeFile(t, dir, "gate.go", "package main\n")
+	gitCmd(t, dir, "add", "gate.go")
+	gitCmd(t, dir, "commit", "-m", "gate")
+
+	sr := validSealResult(start.IntentID)
+	sr.Summary.What = "implemented changes"
+	data, _ := json.Marshal(sr)
+
+	_, err = svc.SealSubmitWithOptions(json.RawMessage(data), nil)
+	if err == nil {
+		t.Fatal("expected seal to reject deterministic lint errors")
+	}
+	if !containsSubstring(err.Error(), "boilerplate_what") {
+		t.Fatalf("expected boilerplate_what in lint gate error, got: %v", err)
+	}
+
+	draft, _ := svc.Store.ReadDraft(start.IntentID)
+	if draft == nil {
+		t.Fatal("draft should still exist")
+	}
+	if draft.Status != domain.StatusDrafting {
+		t.Fatalf("draft status should remain drafting, got %s", draft.Status)
+	}
+}
+
+func TestSealSubmitKeepsDraftingWhenActorLogWriteFails(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	start, err := svc.Start("actor log atomicity test", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	writeFile(t, dir, "atomic.go", "package main\n")
+	gitCmd(t, dir, "add", "atomic.go")
+	gitCmd(t, dir, "commit", "-m", "atomic")
+
+	objectsDir := filepath.Join(dir, ".git", "objects")
+	if err := os.Chmod(objectsDir, 0o500); err != nil {
+		t.Fatalf("chmod objects unwritable: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(objectsDir, 0o755)
+	}()
+
+	sr := validSealResult(start.IntentID)
+	data, _ := json.Marshal(sr)
+	_, err = svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{Offline: true})
+	if err == nil {
+		t.Fatal("expected actor log write failure")
+	}
+	if !containsSubstring(err.Error(), "write actor log event") {
+		t.Fatalf("expected actor log failure, got: %v", err)
+	}
+
+	if err := os.Chmod(objectsDir, 0o755); err != nil {
+		t.Fatalf("restore objects permissions: %v", err)
+	}
+
+	draft, _ := svc.Store.ReadDraft(start.IntentID)
+	if draft == nil {
+		t.Fatal("draft should still exist")
+	}
+	if draft.Status != domain.StatusDrafting {
+		t.Fatalf("draft status should remain drafting, got %s", draft.Status)
+	}
+}
+
+func TestSealSubmitSurfacesInheritedLintWarningsWithoutBlocking(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	gitCmd(t, dir, "checkout", "-b", "feature/seed-constraint")
+	seedStart, err := svc.Start("seed inherited constraint", "")
+	if err != nil {
+		t.Fatalf("start seed: %v", err)
+	}
+	writeFile(t, dir, "test.go", "package main\n")
+	gitCmd(t, dir, "add", "test.go")
+	gitCmd(t, dir, "commit", "-m", "seed constraint")
+	if _, err := svc.Append("seed inherited constraint"); err != nil {
+		t.Fatalf("append seed: %v", err)
+	}
+	seedSeal := validSealResult(seedStart.IntentID)
+	seedSeal.Summary.AntiPatterns = []domain.AntiPattern{{
+		What:     "Do not remove the OAuth session path",
+		Why:      "callback state still depends on the legacy session middleware",
+		Severity: "high",
+	}}
+	seedData, _ := json.Marshal(seedSeal)
+	if _, err := svc.SealSubmit(json.RawMessage(seedData)); err != nil {
+		t.Fatalf("seed seal: %v", err)
+	}
+	if _, err := svc.Merge(seedStart.IntentID); err != nil {
+		t.Fatalf("seed merge: %v", err)
+	}
+	if _, err := svc.Sync(); err != nil {
+		t.Fatalf("sync after seed merge: %v", err)
+	}
+
+	gitCmd(t, dir, "checkout", "main")
+	gitCmd(t, dir, "checkout", "-b", "feature/inherited-warning")
+	start, err := svc.Start("warn on inherited constraint", "")
+	if err != nil {
+		t.Fatalf("start second: %v", err)
+	}
+	writeFile(t, dir, "test.go", "package main\n// second change\n")
+	gitCmd(t, dir, "add", "test.go")
+	gitCmd(t, dir, "commit", "-m", "second change")
+
+	sr := validSealResult(start.IntentID)
+	data, _ := json.Marshal(sr)
+	result, err := svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{Offline: true})
+	if err != nil {
+		t.Fatalf("seal should succeed with inherited warning: %v", err)
+	}
+	if result.Status != string(domain.StatusSealedLocal) {
+		t.Fatalf("offline submit should remain sealed_local, got %s", result.Status)
+	}
+	found := false
+	for _, issue := range result.LintIssues {
+		if issue.Code == "inherited_anti_pattern_not_acknowledged" && issue.Severity == "warning" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected inherited warning in pre-submit lint issues, got %+v", result.LintIssues)
 	}
 }
 

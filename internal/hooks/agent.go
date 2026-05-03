@@ -2,7 +2,11 @@ package hooks
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -81,6 +85,7 @@ type InstallationStatusReporter interface {
 type InstallationStatus struct {
 	Installed         bool     `json:"installed"`
 	Scope             string   `json:"scope"`
+	CommandMode       string   `json:"command_mode,omitempty"`
 	Files             []string `json:"files,omitempty"`
 	HookCount         int      `json:"hook_count"`
 	ExpectedHookCount int      `json:"expected_hook_count"`
@@ -139,6 +144,86 @@ type InstallOptions struct {
 	BinPath string
 }
 
+const (
+	CommandModePath     = "path"
+	CommandModeLocalDev = "local-dev"
+	CommandModeBin      = "bin"
+	CommandModeMixed    = "mixed"
+	CommandModeUnknown  = "unknown"
+)
+
+// ResolveInstallOptions applies repo-aware defaults while preserving explicit
+// caller choices. Mainline's own source tree dogfoods hooks through `go run .`
+// so repo-local hooks keep working before the binary is installed on PATH.
+func ResolveInstallOptions(repoRoot string, opts InstallOptions) InstallOptions {
+	if opts.BinPath != "" || opts.LocalDev {
+		return opts
+	}
+	if isMainlineSourceRepo(repoRoot) {
+		opts.LocalDev = true
+	}
+	return opts
+}
+
+func InstallCommandMode(opts InstallOptions) string {
+	switch {
+	case opts.BinPath != "":
+		return CommandModeBin
+	case opts.LocalDev:
+		return CommandModeLocalDev
+	default:
+		return CommandModePath
+	}
+}
+
+func WrapperCommandMode(command string) string {
+	switch {
+	case strings.Contains(command, "go run . hooks "):
+		return CommandModeLocalDev
+	case strings.Contains(command, "command -v mainline") || strings.Contains(command, "exec mainline hooks "):
+		return CommandModePath
+	case strings.Contains(command, "test -x ") && strings.Contains(command, " hooks "):
+		return CommandModeBin
+	default:
+		return CommandModeUnknown
+	}
+}
+
+func MergeCommandMode(current, next string) string {
+	if next == "" {
+		return current
+	}
+	if current == "" {
+		return next
+	}
+	if current == next {
+		return current
+	}
+	return CommandModeMixed
+}
+
+func RuntimeRepairReason(mode string) string {
+	switch mode {
+	case CommandModePath:
+		if _, err := exec.LookPath("mainline"); err != nil {
+			return "path-mode hooks require `mainline` on PATH"
+		}
+	case CommandModeLocalDev:
+		if _, err := exec.LookPath("go"); err != nil {
+			return "local-dev hooks require `go` on PATH"
+		}
+	}
+	return ""
+}
+
+func isMainlineSourceRepo(repoRoot string) bool {
+	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), "module github.com/mainline-org/mainline")
+}
+
 // InstallReport tells the CLI what to print after a successful install.
 // Empty Files is allowed (no-op idempotent install reports the
 // already-installed paths).
@@ -147,6 +232,10 @@ type InstallReport struct {
 	// Current integrations are repo-local; global host config is not
 	// modified.
 	Scope string `json:"scope,omitempty"`
+
+	// CommandMode describes how the hook wrapper finds Mainline:
+	// "path", "local-dev", or "bin".
+	CommandMode string `json:"command_mode,omitempty"`
 
 	// Files are absolute paths the install touched. Used in CLI
 	// output ("wrote .cursor/hooks.json") and in `mainline hooks

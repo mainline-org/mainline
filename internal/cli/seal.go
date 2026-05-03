@@ -80,13 +80,10 @@ var sealCmd = &cobra.Command{
 				if result.Warning != "" {
 					fmt.Printf("  Warning:    %s\n", result.Warning)
 				}
-				// Soft-lint: spec §9 Step 4 — "hooks may soft-remind,
-				// not hard-block". Inline lint is the same shape: we
-				// run lint on the freshly-sealed payload and surface
-				// warnings/errors as a hint, but never block submit.
-				// First-touch users discover lint here without
-				// reading AGENTS.md or `--help`.
-				renderSealLintHint(svc, result.IntentID)
+				// SealSubmit now blocks deterministic lint errors
+				// before mutation. Inline lint here only surfaces the
+				// remaining warning/info issues that did not block.
+				renderSealLintHint(result.LintIssues, result.IntentID)
 				if len(result.Conflicts) > 0 {
 					fmt.Printf("\n⚠ %d potential conflict(s) detected (intent is sealed; review when convenient):\n",
 						len(result.Conflicts))
@@ -108,18 +105,11 @@ var sealCmd = &cobra.Command{
 	},
 }
 
-// renderSealLintHint runs lint silently against the freshly-sealed
-// intent and surfaces a one-line summary. Soft-remind only: errors
-// here never block submit. The point is discoverability — first-
-// touch users learn `mainline lint` exists at the moment it would
-// have caught a low-quality seal.
-func renderSealLintHint(svc *engine.Service, intentID string) {
-	res, err := svc.Lint(intentID)
-	if err != nil || res == nil {
-		return
-	}
+// renderSealLintHint surfaces the non-blocking lint issues that were
+// already computed during SealSubmit's pre-mutation gate.
+func renderSealLintHint(issues []engine.LintIssue, intentID string) {
 	errs, warns := 0, 0
-	for _, iss := range res.Issues {
+	for _, iss := range issues {
 		switch iss.Severity {
 		case "error":
 			errs++

@@ -19,7 +19,8 @@ const (
 )
 
 func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallReport, error) {
-	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true}
+	opts = hooks.ResolveInstallOptions(repoRoot, opts)
+	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true, CommandMode: hooks.InstallCommandMode(opts)}
 	settingsPath := filepath.Join(repoRoot, claudeDirName, settingsFileName)
 
 	rawTop, rawHooks, fileExisted, err := loadSettingsJSON(settingsPath)
@@ -159,6 +160,7 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 			for _, h := range g.Hooks {
 				if isManagedHook(h) {
 					managedForKey++
+					st.CommandMode = hooks.MergeCommandMode(st.CommandMode, hooks.WrapperCommandMode(h.Command))
 				}
 			}
 		}
@@ -181,6 +183,9 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 	st.RestartRequired = st.Installed
 	if !st.Installed {
 		st.RepairReasons = nil
+	}
+	if reason := hooks.RuntimeRepairReason(st.CommandMode); reason != "" {
+		st.RepairReasons = append(st.RepairReasons, reason)
 	}
 	st.NeedsRepair = len(st.RepairReasons) > 0
 	return st, nil
@@ -266,7 +271,7 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 		return fmt.Sprintf(`sh -c 'test -x %q && exec %q hooks claudecode %s || exit 0'`,
 			opts.BinPath, opts.BinPath, hookID)
 	case opts.LocalDev:
-		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks claudecode %s || exit 0'`, hookID)
+		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/mainline-go-build}" && exec go run . hooks claudecode %s || exit 0'`, hookID)
 	default:
 		return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks claudecode %s || exit 0'`, hookID)
 	}
