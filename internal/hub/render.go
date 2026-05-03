@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 //go:embed templates/base.html
@@ -334,7 +336,7 @@ type intentLink struct {
 
 type riskRow struct {
 	Intent HubIntent
-	Risks  []string
+	Risks  []domain.Risk
 }
 
 type relationRow struct {
@@ -595,7 +597,7 @@ func risksCtx(m *HubModel, byID map[string]HubIntent) pageCtx {
 	rows := make([]riskRow, 0, len(m.RiskIntents))
 	for _, id := range m.RiskIntents {
 		if in, ok := byID[id]; ok {
-			rows = append(rows, riskRow{Intent: in, Risks: in.Risks})
+			rows = append(rows, riskRow{Intent: in, Risks: in.OpenRisks})
 		}
 	}
 	return pageCtx{

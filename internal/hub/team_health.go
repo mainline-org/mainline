@@ -134,7 +134,7 @@ func (t *HubTeamHealth) populateRisk(m *HubModel, now time.Time) {
 	recentRiskHistByPath := map[string]int{}
 
 	for _, in := range m.Intents {
-		isRisky := len(in.Risks) > 0 || hasAnyAntiPattern(in)
+		isRisky := isEffectiveRiskBearing(in)
 		if !isRisky {
 			continue
 		}
@@ -285,12 +285,12 @@ func BuildDigest(intents []HubIntent, windowDays int, now time.Time) HubWeeklyDi
 		case "superseded":
 			out.SupersededThisWindow++
 		}
-		if len(in.Risks) > 0 || hasAnyAntiPattern(in) {
+		if isEffectiveRiskBearing(in) {
 			out.RiskBearingThisWindow++
 			if len(out.RisksToWatch) < digestRisksN {
 				reason := "has constraints or risks"
-				if len(in.Risks) > 0 {
-					reason = trimReason(in.Risks[0])
+				if len(in.OpenRisks) > 0 {
+					reason = trimReason(in.OpenRisks[0].Text)
 				}
 				out.RisksToWatch = append(out.RisksToWatch, focusFromIntent(in, reason, now))
 			}
@@ -551,20 +551,16 @@ func parseTime(s string) (time.Time, bool) {
 	return t, true
 }
 
-func hasAnyAntiPattern(in HubIntent) bool {
-	return len(in.AntiPatterns) > 0
-}
-
 func focusFromIntent(in HubIntent, reason string, now time.Time) HubFocusIntent {
 	hours := ageHours(in.SealedAt, now)
-	highRisk := len(in.Risks) > 0
+	highRisk := isEffectiveRiskBearing(in)
 	return HubFocusIntent{
 		ID:        in.ID,
 		Title:     firstNonEmpty(in.Title, in.Goal, in.ID),
 		Status:    in.Status,
 		Reason:    reason,
 		AgeHours:  hours,
-		RiskCount: len(in.Risks),
+		RiskCount: len(in.OpenRisks),
 		FileCount: len(in.FilesTouched),
 		HighRisk:  highRisk,
 		ActorID:   in.ActorID,

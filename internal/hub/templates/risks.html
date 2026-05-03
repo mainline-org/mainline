@@ -1,13 +1,13 @@
 {{define "risks"}}{{template "header" .}}
 <h1>{{t .Lang "risks.heading"}}</h1>
-<p class="lead">{{len .RiskRows}} sealed intents recorded soft risks or hard constraints at seal time.</p>
-<p class="muted">Soft risks are warnings for reviewers to weigh. Hard constraints (anti_patterns) are rules future agents must not violate. Intent conflicts and coverage gaps are separate signals — see the Coverage and Relationships pages.</p>
-{{if not .RiskRows}}<p class="muted">No intents have recorded risks or constraints yet.</p>{{end}}
+<p class="lead">{{len .RiskRows}} intents have effective open soft risks.</p>
+<p class="muted">This page defaults to current effective state: resolved and expired soft risks are hidden here and remain available on intent detail / history surfaces. Hard constraints recorded on the same intent are shown for context, but constraint retirement is handled separately. Intent conflicts and coverage gaps are separate signals — see the Coverage and Relationships pages.</p>
+{{if not .RiskRows}}<p class="muted">No open risks need review.</p>{{end}}
 {{range .RiskRows}}
 <section class="riskcard">
   <h2><a href="intents/{{.Intent.ID}}.html">{{.Intent.Title}}</a> <code class="muted">{{shortID .Intent.ID}}</code></h2>
   <p class="meta">{{.Intent.Status}} · {{timeAgo .Intent.SealedAt}}{{if .Intent.ActorID}} · <a href="actors/{{actorSlug .Intent.ActorID}}.html">{{if .Intent.ActorName}}{{.Intent.ActorName}}{{else}}{{shortID .Intent.ActorID}}{{end}}</a>{{end}}</p>
-  {{if .Risks}}<h3>Soft risks</h3><ul class="risks">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  {{if .Risks}}<h3>Open soft risks</h3><ul class="risks">{{range .Risks}}<li><code>{{.ID}}</code> {{.Text}}</li>{{end}}</ul>{{end}}
   {{if .Intent.AntiPatterns}}<h3>Hard constraints</h3><ul class="constraints">{{range .Intent.AntiPatterns}}<li><strong>{{.What}}</strong>{{if .Why}} — {{.Why}}{{end}}{{if .Severity}} <span class="severity severity-{{.Severity}}">[{{.Severity}}]</span>{{end}}</li>{{end}}</ul>{{end}}
 </section>
 {{end}}
