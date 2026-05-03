@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/mainline-org/mainline/internal/domain"
 )
@@ -82,10 +81,9 @@ type ContextQueryEcho struct {
 	Text  string   `json:"text,omitempty"`
 }
 
-// ContextQueryDebug exposes the current query-mode tokenisation and
-// candidate prefilter decisions. It is intentionally observational:
-// the fields below mirror today's keywordsFromText behavior and do
-// not broaden query recall.
+// ContextQueryDebug exposes query-mode tokenisation, expansion, and
+// candidate prefilter decisions so agents can audit why a semantic
+// query did or did not retrieve a prior intent.
 type ContextQueryDebug struct {
 	Raw               string               `json:"raw"`
 	EffectiveKeywords []string             `json:"effective_keywords"`
@@ -194,7 +192,8 @@ const (
 	// contextRelevanceThreshold filters out intents below this
 	// score. Tuned against the dogfood repo: 0.05 keeps anything
 	// with at least one weak signal (subsystem match or recency
-	// boost) and drops noise.
+	// boost) and drops noise. Query mode applies an extra guard:
+	// recency can only boost a content match, not create one.
 	contextRelevanceThreshold = 0.05
 
 	// staleAge is the wall-clock threshold at which a non-superseded,
@@ -275,10 +274,17 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	// fallback when the SQLite cache is missing — semantics
 	// identical because both paths deserialise the same IntentView
 	// struct.
-	candidates := candidateSetForRetrieval(s.Store, req.Mode, files, query, view)
+	var qTerms queryTerms
+	var queryKeywords []string
+	if req.Mode == "query" {
+		qTerms = queryTermsFromText(query)
+		queryKeywords = qTerms.scoringKeywords()
+	}
+
+	candidates := candidateSetForRetrieval(s.Store, req.Mode, files, query, qTerms, view)
 	var queryDebug *ContextQueryDebug
 	if req.Mode == "query" {
-		queryDebug = buildContextQueryDebug(query, len(candidates))
+		queryDebug = buildContextQueryDebugFromTerms(query, qTerms, len(candidates))
 	}
 
 	// Score every non-drafting intent; rank; truncate to Limit.
@@ -296,10 +302,16 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 			continue
 		}
 		score, reasons, breakdown := scoreIntentRelevance(iv, files, query, branch)
+		if req.Mode == "query" {
+			score, reasons, breakdown = scoreIntentRelevanceWithKeywords(iv, files, queryKeywords, branch)
+		}
 		if req.Mode == "current" && branch != "" && iv.Thread == branch {
 			score += 0.15
 			breakdown.SameThread += 0.15
 			reasons = append(reasons, "same thread")
+		}
+		if req.Mode == "query" && !hasQueryContentSignal(breakdown) {
+			continue
 		}
 		if score < contextRelevanceThreshold {
 			continue
@@ -312,7 +324,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	// relevance matches. If a superseder is relevant, include the
 	// intents it replaced even when a SQLite candidate prefilter or
 	// relevance threshold would otherwise drop them.
-	scored = includeSupersededLineage(scored, view, churn, now, files, query, branch, includeBreakdown)
+	scored = includeSupersededLineage(scored, view, churn, now, files, query, queryKeywords, branch, includeBreakdown)
 
 	sort.SliceStable(scored, func(i, j int) bool {
 		return scored[i].Relevance.Score > scored[j].Relevance.Score
@@ -375,7 +387,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 func candidateSetForRetrieval(store interface {
 	ReadIntentViewsByFiles(paths []string) ([]domain.IntentView, error)
 	ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, error)
-}, mode string, files []string, query string, view *domain.MainlineView) []domain.IntentView {
+}, mode string, files []string, query string, qTerms queryTerms, view *domain.MainlineView) []domain.IntentView {
 	switch mode {
 	case "files":
 		if len(files) == 0 {
@@ -387,12 +399,15 @@ func candidateSetForRetrieval(store interface {
 		}
 		return got
 	case "query":
-		// Use the query keywords as a SQLite filter; the in-memory
-		// scorer still handles relative weights. We union every
-		// keyword hit so the cache path cannot drop an intent merely
-		// because its best signal was not the alphabetically first
-		// token in the user's task.
-		keywords := keywordsFromText(query)
+		// Use the query-specific keywords and expansions as a SQLite
+		// filter; the in-memory scorer still handles relative weights.
+		// We union every keyword hit so the cache path cannot drop an
+		// intent merely because its best signal was not the
+		// alphabetically first token in the user's task.
+		keywords := qTerms.scoringKeywords()
+		if len(keywords) == 0 && query != "" {
+			keywords = queryTermsFromText(query).scoringKeywords()
+		}
 		if len(keywords) == 0 {
 			return view.Intents
 		}
@@ -411,10 +426,10 @@ func candidateSetForRetrieval(store interface {
 				out = append(out, iv)
 			}
 		}
-		out = appendRecentQueryCandidates(out, seen, view, time.Now())
 		if len(out) == 0 {
 			return view.Intents
 		}
+		out = appendRecentQueryCandidates(out, seen, view, time.Now())
 		return out
 	}
 	return view.Intents
@@ -547,7 +562,7 @@ func idForFile(intentID, file string) string {
 // supersession links. Relevance thresholding should filter unrelated
 // history, not hide the replaced half of a decision lineage whose
 // replacement already matched the user's task.
-func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query, branch string, includeBreakdown bool) []ContextRelevant {
+func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query string, queryKeywords []string, branch string, includeBreakdown bool) []ContextRelevant {
 	if view == nil || len(scored) == 0 {
 		return scored
 	}
@@ -579,6 +594,9 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 					continue
 				}
 				score, reasons, breakdown := scoreIntentRelevance(iv, files, query, branch)
+				if queryKeywords != nil {
+					score, reasons, breakdown = scoreIntentRelevanceWithKeywords(iv, files, queryKeywords, branch)
+				}
 				parentScore := parent.Relevance.Score
 				if score < parentScore {
 					breakdown.Lineage += parentScore - score
@@ -648,6 +666,9 @@ func moveIntentAfter(scored []ContextRelevant, from, after int) {
 
 // scoreIntentRelevance is the deterministic relevance ranker. Pure
 // signal-extraction over fingerprint + summary text; no embeddings.
+// It keeps the historical conflict-keyword tokenizer for current and
+// files modes; query mode calls scoreIntentRelevanceWithKeywords with
+// query-specific terms instead.
 //
 // Current additive weights:
 //
@@ -667,6 +688,10 @@ func moveIntentAfter(scored []ContextRelevant, from, after int) {
 // --current mode only. Abandoned/superseded/reverted source intents
 // keep their signal but receive a final x0.85 multiplier.
 func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBranch string) (float64, []string, ContextRelevanceBreakdown) {
+	return scoreIntentRelevanceWithKeywords(iv, files, keywordsFromText(query), currentBranch)
+}
+
+func scoreIntentRelevanceWithKeywords(iv domain.IntentView, files []string, keywords []string, currentBranch string) (float64, []string, ContextRelevanceBreakdown) {
 	var score float64
 	var reasons []string
 	var breakdown ContextRelevanceBreakdown
@@ -703,12 +728,11 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 		}
 	}
 
-	// Keyword extraction from the query string. Reuses the conflict
-	// detection's keywordsFromText — same stopword list, same
-	// tokenisation, so retrieval and conflict scoring agree on what
-	// counts as a meaningful word.
-	if query != "" {
-		keywords := keywordsFromText(query)
+	// Query/text keyword matching. Callers choose the tokenizer:
+	// current/files keep keywordsFromText, while query mode uses the
+	// query-specific tokenizer with short-token allowlist, aliases,
+	// and CJK fallback terms.
+	if len(keywords) > 0 {
 		if iv.Summary != nil {
 			titleHits := countKeywordHits(keywords, iv.Summary.Title)
 			if titleHits > 0 {
@@ -806,6 +830,15 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 		reasons = append(reasons, "weak signal match")
 	}
 	return score, reasons, breakdown
+}
+
+func hasQueryContentSignal(b ContextRelevanceBreakdown) bool {
+	return b.Title > 0 ||
+		b.Summary > 0 ||
+		b.Decision > 0 ||
+		b.Risk > 0 ||
+		b.Followup > 0 ||
+		b.AntiPattern > 0
 }
 
 func packRelevant(
@@ -1023,91 +1056,23 @@ func matchedKeywords(keywords []string, text string) []string {
 }
 
 func buildContextQueryDebug(raw string, candidateCount int) *ContextQueryDebug {
-	effective := keywordsFromText(raw)
-	effectiveCopy := make([]string, 0, len(effective))
-	effectiveCopy = append(effectiveCopy, effective...)
+	return buildContextQueryDebugFromTerms(raw, queryTermsFromText(raw), candidateCount)
+}
+
+func buildContextQueryDebugFromTerms(raw string, terms queryTerms, candidateCount int) *ContextQueryDebug {
+	effectiveCopy := append(make([]string, 0, len(terms.EffectiveKeywords)), terms.EffectiveKeywords...)
+	droppedCopy := append(make([]ContextDroppedTerm, 0, len(terms.DroppedTerms)), terms.DroppedTerms...)
+	expandedCopy := make(map[string][]string, len(terms.ExpandedTerms))
+	for term, aliases := range terms.ExpandedTerms {
+		expandedCopy[term] = append([]string(nil), aliases...)
+	}
 	return &ContextQueryDebug{
 		Raw:               raw,
 		EffectiveKeywords: effectiveCopy,
-		DroppedTerms:      droppedQueryTermsFromText(raw),
-		ExpandedTerms:     map[string][]string{},
+		DroppedTerms:      droppedCopy,
+		ExpandedTerms:     expandedCopy,
 		CandidateCount:    candidateCount,
 	}
-}
-
-func droppedQueryTermsFromText(text string) []ContextDroppedTerm {
-	out := []ContextDroppedTerm{}
-	if text == "" {
-		return out
-	}
-	seenDropped := map[string]bool{}
-	addDropped := func(term, reason string) {
-		key := term + "\x00" + reason
-		if !seenDropped[key] {
-			seenDropped[key] = true
-			out = append(out, ContextDroppedTerm{Term: term, Reason: reason})
-		}
-	}
-	fields := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '_' && r != '-'
-	})
-	seenEffective := map[string]bool{}
-	for _, f := range fields {
-		f = strings.Trim(f, "_-")
-		if f == "" {
-			continue
-		}
-		reason := ""
-		switch {
-		case len(f) < 4:
-			reason = "too_short"
-		case stopwords[f]:
-			reason = "stopword"
-		case seenEffective[f]:
-			reason = "duplicate"
-		}
-		if reason != "" {
-			addDropped(f, reason)
-			continue
-		}
-		seenEffective[f] = true
-	}
-	for _, term := range unsupportedNonASCIIQueryTerms(text) {
-		addDropped(term, "unsupported_non_ascii")
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Term == out[j].Term {
-			return out[i].Reason < out[j].Reason
-		}
-		return out[i].Term < out[j].Term
-	})
-	return out
-}
-
-func unsupportedNonASCIIQueryTerms(text string) []string {
-	fields := strings.Fields(strings.ToLower(text))
-	seen := map[string]bool{}
-	out := []string{}
-	for _, f := range fields {
-		f = strings.TrimFunc(f, func(r rune) bool {
-			return unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r)
-		})
-		if f == "" || !containsUnsupportedNonASCII(f) || seen[f] {
-			continue
-		}
-		seen[f] = true
-		out = append(out, f)
-	}
-	return out
-}
-
-func containsUnsupportedNonASCII(s string) bool {
-	for _, r := range s {
-		if r > unicode.MaxASCII && !unicode.IsSpace(r) && !unicode.IsPunct(r) && !unicode.IsSymbol(r) {
-			return true
-		}
-	}
-	return false
 }
 
 func topDecisions(in []domain.Decision, n int) []string {
