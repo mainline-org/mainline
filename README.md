@@ -28,14 +28,16 @@ Use it with a team to make intent visible before review and collaboration.
 
 ### The failure mode
 
-A team abandons a Redis-based design because replication lag broke the
-correctness model. Three weeks later, a coding agent sees `redis.go`, TODOs,
-and a Redis service in `docker-compose`. The code looks half-finished, so the
-agent tries to complete it.
+A team migrates auth from sessions to JWT, but keeps one legacy `/oauth`
+middleware path because the OAuth callback still needs session state until the
+provider migration is done. Three weeks later, a coding agent sees mostly
+JWT-based auth and treats the leftover middleware as dead code.
 
-Mainline surfaces the earlier intent first: **abandoned Redis because
-replication lag made the design unsafe**. The agent stops before writing the
-wrong diff and chooses a safer direction.
+Without Mainline, the agent removes `/oauth`, normal login still looks fine,
+and the break shows up later in production. With Mainline, the agent sees the
+anti-pattern first: **do not remove the legacy `/oauth` middleware; OAuth
+callbacks still require session state**. It stops before the diff and chooses a
+safe change instead.
 
 That is the core product: **repo-local engineering memory that prevents future
 agents from repeating old mistakes.**
@@ -94,15 +96,16 @@ Mainline turns individual AI-assisted changes into shared engineering memory:
 - track whether important changes have intent coverage,
 - onboard new teammates into the *why* behind the code.
 
-### Who uses it daily, and who pays?
+### Where Mainline sits in the workflow
 
-- **Daily users:** developers and their coding agents. Mainline should run by
-  default before non-trivial agent edits, not only during audits.
-- **Daily reviewers:** team leads and senior engineers who need to see pending
-  intent, file-level constraints, and decision history before reviewing diffs.
-- **Likely buyers:** team leads, platform leads, engineering managers, CTOs,
-  and founders responsible for agent-assisted engineering quality across repos.
-  They buy repo-level continuity, auditability, and cross-agent consistency.
+- **Before non-trivial agent edits:** the agent reads repo intent before it
+  changes code.
+- **During the work:** meaningful turns, pivots, risks, and validation are
+  recorded as intent.
+- **Before review:** humans can inspect pending intent, file-level constraints,
+  and decision history before reviewing the diff.
+- **After merge:** the sealed intent remains repo-local memory for the next
+  agent or maintainer.
 
 Mainline is a workflow layer first and an audit surface second. The CLI feeds
 agents before they edit; Hub helps humans inspect the repo's intent history,
@@ -435,8 +438,8 @@ slice, a pivot, a risk discovered, or validation that changes confidence. Do
 not append every shell command.
 
 If the agent reads a relevant anti-pattern, it should explicitly say what it
-will not do and why, for example: "I will not complete Redis replication
-because the prior intent abandoned it due to replication lag."
+will not do and why, for example: "I will not remove the legacy `/oauth`
+middleware because OAuth callbacks still require session state."
 
 ### Recovery rules
 

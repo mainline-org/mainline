@@ -16,7 +16,7 @@ and uses semver-style versions once tags are published.
 - README/README.zh license positioning for PolyForm Shield 1.0.0 and reserved
   commercial licensing.
 - README/README.zh front-page positioning around preventing AI agents from
-  repeating abandoned engineering approaches, plus buyer/user and vendor-memory
+  repeating old engineering mistakes, plus workflow and vendor-memory
   boundaries.
 - README/README.zh split the human quick start from the agent protocol contract
   and documented when agents must call context, how to append, recover, and

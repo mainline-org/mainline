@@ -22,23 +22,27 @@ features 可能保持商业化。
 
 Mainline 让 coding agent 在理解当前代码之前，先理解历史上的 *why*。
 
-一个人用，它是未来自己和下一个 agent 的记忆。
-团队用，它让 review 和协作发生在共享 intent 之上。
+一个人用，它帮未来的你和下一个 agent 记住来龙去脉。
+团队用，它让 review 和协作先对齐 intent，再看 diff。
 
 > English version: [README.md](./README.md)
 
 ### 典型失败场景
 
-团队曾经废弃过 Redis 方案，因为 replication lag 破坏了正确性模型。
-三周后，一个 coding agent 看到 `redis.go`、TODO 和 `docker-compose` 里的
-Redis 服务。代码看起来像只完成了一半，于是 agent 想继续实现它。
+团队把认证从 session 迁到 JWT，但特意保留了 legacy `/oauth` middleware：
+OAuth callback 在 provider 迁完之前还需要 session state。
 
-Mainline 会先把历史 intent 摆出来：**Redis 方案已 abandoned，因为
-replication lag 让设计不安全**。Agent 在写错 diff 前停下来，改走正确方向。
+三周后，一个 coding agent 看到大部分认证逻辑已经是 JWT，`/oauth` 看起来
+像没清干净的旧代码。它很可能顺手删掉 middleware。普通登录还过得去，线上
+OAuth callback 却会坏。
 
-这就是核心产品：**repo-local 的工程记忆，阻止未来 agent 重复旧错误。**
+Mainline 会在改动前把历史 intent 摆出来：**不要删除 legacy `/oauth`
+middleware；OAuth callback 仍然依赖 session state**。Agent 先看到这条
+anti-pattern，就不会写出错误 diff，而是换一条安全路径。
 
-AI coding agent 写代码很快，但代码本身无法告诉它：
+这就是核心产品：**存在 repo 里的工程记忆，阻止未来 agent 重复旧错误。**
+
+AI coding agent 写代码很快，但只看代码，它不知道：
 
 - 哪些方案试过然后放弃了；
 - 哪些旧实现已经被新决策替代；
@@ -46,25 +50,25 @@ AI coding agent 写代码很快，但代码本身无法告诉它：
 - 哪些约束 reviewer 期望未来变更继续遵守；
 - 哪个队友正在推进相关 intent。
 
-RAG 能找语义相似的代码。
-Grep 能验证当前代码事实。
-Mainline 提供缺失的第三层：**repo 级工程事实**。
+RAG 能找相似代码。
+Grep 能验证当前代码长什么样。
+Mainline 补上缺的那一层：**这个 repo 的工程事实**。
 
-避免 AI agent 悄悄推翻昨天的决策、重复已经失败的方案、漏掉 reviewer
-关心的约束，或踩到队友正在推进的工作。
+它防的是这些事：agent 悄悄推翻昨天的决策，重复已经失败的方案，漏掉
+reviewer 关心的约束，或者踩到队友正在推进的工作。
 
 Mainline 记录每次工程变更为什么发生：decisions、risks、anti-patterns、
-references 和 lifecycle，并在下一个 agent 或人类需要时把这些记录重新呈现出来。
+references 和 lifecycle。下一个 agent 或人类需要时，它再把这些记录拿出来。
 
 ## 谁适合使用 Mainline？
 
-### 个人开发者 / OPC
+### 个人开发者
 
-一个人用 AI agent 开发时，最大问题是连续性。
-一个 agent 可能放弃过某个方案、接受过某个风险、替代过某个旧决策。
-下一个 agent 不会自动知道这些，除非 intent 被记录下来。
+一个人用 AI agent 开发时，最容易断的是上下文。
+上一个 agent 可能放弃过某个方案、接受过某个风险，或者替换过某个旧决策。
+下一个 agent 不会自动知道这些，除非你把 intent 记下来。
 
-Mainline 给未来的自己和未来的 agent 留下一份"为什么代码是这样"的长期记忆。
+Mainline 给未来的你和未来的 agent 留下一份长期记忆：代码为什么会变成这样。
 
 Mainline 帮个人开发者：
 
@@ -76,37 +80,37 @@ Mainline 帮个人开发者：
 
 ### 团队
 
-团队使用 AI agent 时，最大问题是共享 repo truth。
-Reviewer 需要在看 diff 前理解 *why*。
-队友需要知道彼此正在推进什么。
-未来 agent 需要避免重复旧错误。
+团队一起用 AI agent 时，最大问题是大家是不是共享同一份 repo 事实。
+Reviewer 在看 diff 前，应该先知道 *why*。
+队友需要知道彼此在推进什么。
+未来的 agent 也要避开已经踩过的坑。
 
-Mainline 把单次 AI-assisted change 变成团队共享的工程记忆：
+Mainline 把一次 AI-assisted change 变成团队共享的工程记忆：
 
-- 在看 diff 前先 review intent；
+- 看 diff 前先 review intent；
 - 把 decisions、risks、anti-patterns 绑定到工程变更；
 - 在 PR 冲突出现前看到 proposed / in-flight intent；
 - 保留 abandoned / superseded decisions，避免未来 agent 重复旧错误；
 - 检查重要变更是否有 intent coverage；
 - 帮新人理解代码背后的历史 *why*。
 
-### 谁每天打开它？谁会付钱？
+### Mainline 在工作流里的位置
 
-- **日常用户：** developer 和他们的 coding agent。Mainline 应该在非平凡
-  agent edit 前默认运行，而不是只在审计时偶尔打开。
-- **日常 reviewer：** team lead 和 senior engineer。他们需要在看 diff 前
-  看到 pending intent、文件级约束和历史 decision。
-- **付费买家：** team lead、platform lead、engineering manager、CTO、
-  founder。购买的是 repo 级连续性、可审计性和跨 agent 一致性。
+- **Agent 改代码前：** 非平凡改动先读 repo intent，再动手。
+- **工作过程中：** 重要 turn、方案 pivot、风险和验证结果都写进 intent。
+- **Review 之前：** 人类先看 pending intent、文件级约束和历史 decision，
+  再看 diff。
+- **Merge 之后：** sealed intent 留在 repo 里，成为下一个 agent 或维护者的
+  长期记忆。
 
 Mainline 首先是 agent workflow 的默认层，其次才是审计工具。CLI 在 agent
-改代码前提供 context；Hub 让人类查看 repo intent history、pending work、
+改代码前提供 context；Hub 给人类看 repo intent history、pending work、
 risks 和 constraints。
 
 ### 如果 Cursor / Copilot / Claude 自带 memory 呢？
 
-Agent vendor memory 通常绑定到**某个 vendor、某个用户、某个 workspace 或
-某段 conversation**。
+Agent vendor memory 通常绑定到**某个 vendor、某个用户、某个 workspace，
+或者某段 conversation**。
 
 Mainline 的边界不同：
 
@@ -349,8 +353,8 @@ append 的粒度是工程意义：一个设计选择、完成的 slice、一次 
 risk，或让信心变化的 validation。不要每个 shell command 都 append。
 
 如果 agent 读到相关 anti-pattern，它应该显式说出不会做什么，例如：
-“我不会继续实现 Redis replication，因为历史 intent 已因 replication lag
-废弃该方向。”
+“我不会删除 legacy `/oauth` middleware，因为 OAuth callback 仍然依赖
+session state。”
 
 ### 失败时怎么恢复
 
