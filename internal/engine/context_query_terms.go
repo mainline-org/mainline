@@ -73,7 +73,7 @@ func queryTermsFromText(text string) queryTerms {
 		addEffective(f)
 	}
 
-	for _, term := range cjkQueryTerms(text) {
+	for _, term := range defaultQueryTokenizer.Terms(text) {
 		addEffective(term)
 	}
 	for _, term := range unsupportedNonASCIIQueryTerms(text) {

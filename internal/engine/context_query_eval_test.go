@@ -103,6 +103,21 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 			},
 		},
 		{
+			name:    "不要重新引入继承约束",
+			query:   "不要重新引入继承约束",
+			wantIDs: []string{"int_subsystem_inheritance"},
+			check: func(t *testing.T, res *ContextRetrievalResult) {
+				assertEffectiveKeyword(t, res, "重新")
+				assertEffectiveKeyword(t, res, "引入")
+				assertEffectiveKeyword(t, res, "继承")
+				assertEffectiveKeyword(t, res, "约束")
+				ri := mustFindRelevant(t, res, "int_subsystem_inheritance")
+				if ri.Relevance.Breakdown == nil || ri.Relevance.Breakdown.AntiPattern == 0 {
+					t.Fatalf("expected unspaced CJK query to score via anti_pattern, got %+v", ri.Relevance.Breakdown)
+				}
+			},
+		},
+		{
 			name:    "确认 inherited constraints",
 			query:   "确认 inherited constraints",
 			wantIDs: []string{"int_ack_constraints"},
