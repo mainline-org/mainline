@@ -114,6 +114,77 @@ func TestContextRetrieval_QueryModeMatchesKeywords(t *testing.T) {
 	}
 }
 
+func TestContextRetrieval_QueryModeScoresOnlyOpenRisks(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	sealedAt := time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		RebuiltAt:     time.Now().UTC().Format(time.RFC3339),
+		Intents: []domain.IntentView{
+			{
+				IntentID:      "int_resolved_risk",
+				Status:        domain.StatusMerged,
+				ActorID:       "agent",
+				SealedAt:      sealedAt,
+				ViewRebuiltAt: time.Now().UTC().Format(time.RFC3339),
+				Summary: &domain.IntentSummary{
+					Title: "Unrelated resolved work",
+					What:  "No matching content here.",
+					Risks: []string{"rollback corruption on old clients"},
+				},
+				Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"src/old.go"}},
+			},
+			{
+				IntentID:      "int_open_risk",
+				Status:        domain.StatusMerged,
+				ActorID:       "agent",
+				SealedAt:      sealedAt,
+				ViewRebuiltAt: time.Now().UTC().Format(time.RFC3339),
+				Summary: &domain.IntentSummary{
+					Title: "Unrelated open work",
+					What:  "No matching content here either.",
+					Risks: []string{"rollback corruption on new clients"},
+				},
+				Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"src/new.go"}},
+			},
+		},
+		RiskResolutions: map[string][]domain.RiskResolution{
+			"int_resolved_risk#0": {{IntentID: "int_fix", Rationale: "fixed"}},
+		},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+
+	res, err := svc.RetrieveContext(ContextRetrievalRequest{
+		Mode:  "query",
+		Query: "rollback corruption",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	seen := map[string]ContextRelevant{}
+	for _, ri := range res.RelevantIntents {
+		seen[ri.IntentID] = ri
+	}
+	if _, ok := seen["int_resolved_risk"]; ok {
+		t.Fatalf("resolved risk text should not make an intent relevant: %+v", res.RelevantIntents)
+	}
+	open, ok := seen["int_open_risk"]
+	if !ok {
+		t.Fatalf("open risk text should still make the intent relevant: %+v", res.RelevantIntents)
+	}
+	if open.Relevance.Breakdown == nil || open.Relevance.Breakdown.Risk == 0 {
+		t.Fatalf("open risk should carry risk relevance breakdown, got %+v", open.Relevance)
+	}
+}
+
 func TestContextRetrieval_OutputCompactWithLimits(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
