@@ -301,9 +301,9 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		if iv.Status == domain.StatusDrafting {
 			continue
 		}
-		score, reasons, breakdown := scoreIntentRelevance(iv, files, query, branch)
+		score, reasons, breakdown := scoreIntentRelevanceWithRiskLifecycle(iv, files, keywordsFromText(query), branch, view.RiskResolutions)
 		if req.Mode == "query" {
-			score, reasons, breakdown = scoreIntentRelevanceWithKeywords(iv, files, queryKeywords, branch)
+			score, reasons, breakdown = scoreIntentRelevanceWithRiskLifecycle(iv, files, queryKeywords, branch, view.RiskResolutions)
 		}
 		if req.Mode == "current" && branch != "" && iv.Thread == branch {
 			score += 0.15
@@ -593,9 +593,9 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 				if _, exists := byID[iv.IntentID]; exists {
 					continue
 				}
-				score, reasons, breakdown := scoreIntentRelevance(iv, files, query, branch)
+				score, reasons, breakdown := scoreIntentRelevanceWithRiskLifecycle(iv, files, keywordsFromText(query), branch, view.RiskResolutions)
 				if queryKeywords != nil {
-					score, reasons, breakdown = scoreIntentRelevanceWithKeywords(iv, files, queryKeywords, branch)
+					score, reasons, breakdown = scoreIntentRelevanceWithRiskLifecycle(iv, files, queryKeywords, branch, view.RiskResolutions)
 				}
 				parentScore := parent.Relevance.Score
 				if score < parentScore {
@@ -692,6 +692,10 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 }
 
 func scoreIntentRelevanceWithKeywords(iv domain.IntentView, files []string, keywords []string, currentBranch string) (float64, []string, ContextRelevanceBreakdown) {
+	return scoreIntentRelevanceWithRiskLifecycle(iv, files, keywords, currentBranch, nil)
+}
+
+func scoreIntentRelevanceWithRiskLifecycle(iv domain.IntentView, files []string, keywords []string, currentBranch string, riskResolutions map[string][]domain.RiskResolution) (float64, []string, ContextRelevanceBreakdown) {
 	var score float64
 	var reasons []string
 	var breakdown ContextRelevanceBreakdown
@@ -762,7 +766,11 @@ func scoreIntentRelevanceWithKeywords(iv domain.IntentView, files []string, keyw
 					break
 				}
 			}
-			for _, r := range iv.Summary.Risks {
+			// Risk lifecycle: query/current scoring should use the
+			// effective open-risk surface, not raw historical risks
+			// that were already resolved or expired with the source
+			// intent.
+			for _, r := range filterOpenRisks(iv.IntentID, iv.Summary.Risks, riskResolutions, iv.Status) {
 				if countKeywordHits(keywords, r) > 0 {
 					score += 0.10
 					breakdown.Risk += 0.10
@@ -896,22 +904,7 @@ func packRelevant(
 // filterOpenRisks returns only risks that are still open (not resolved
 // and not from an expired source intent).
 func filterOpenRisks(intentID string, risks []string, resolutions map[string][]domain.RiskResolution, sourceStatus domain.IntentStatus) []string {
-	// If source intent is expired, all risks are moot — return none.
-	if riskExpiredStatuses[sourceStatus] {
-		return nil
-	}
-	if len(resolutions) == 0 {
-		return risks
-	}
-	var open []string
-	for i, text := range risks {
-		rid := RiskID(intentID, i)
-		if rr, ok := resolutions[rid]; ok && len(rr) > 0 {
-			continue // resolved
-		}
-		open = append(open, text)
-	}
-	return open
+	return domain.OpenRiskTexts(intentID, risks, resolutions, sourceStatus)
 }
 
 // guidanceFor returns the single-line advisory for a retrieval

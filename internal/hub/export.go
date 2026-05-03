@@ -98,6 +98,7 @@ func buildHubModel(view *domain.MainlineView) *HubModel {
 	for i := range view.Intents {
 		m.Intents = append(m.Intents, hubIntentFromView(&view.Intents[i]))
 	}
+	annotateOpenRisks(m, view)
 	// Inherited-constraint propagation: for each intent, surface
 	// anti_patterns from prior sealed intents whose files/subsystems
 	// overlap. Done after the flatten loop so we can reuse the
@@ -172,6 +173,28 @@ func buildOpenIntents(store *storage.Store, view *domain.MainlineView) []HubOpen
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+func annotateOpenRisks(m *HubModel, view *domain.MainlineView) {
+	if view == nil {
+		return
+	}
+	bySource := map[string][]domain.Risk{}
+	for _, r := range domain.MaterializeRisks(view, "") {
+		if r.Status != "open" {
+			continue
+		}
+		bySource[r.SourceIntent] = append(bySource[r.SourceIntent], r)
+	}
+	for i := range m.Intents {
+		if risks := bySource[m.Intents[i].ID]; len(risks) > 0 {
+			m.Intents[i].OpenRisks = append([]domain.Risk(nil), risks...)
+		}
+	}
+}
+
+func isEffectiveRiskBearing(in HubIntent) bool {
+	return len(in.OpenRisks) > 0 || len(in.AntiPatterns) > 0
 }
 
 // enrichIntentsWithTurns loads turn descriptions from the local store
@@ -269,13 +292,15 @@ func buildActorIndex(intents []HubIntent) []HubActorEntry {
 	return out
 }
 
-// buildRiskList returns the subset of intent IDs whose summary has
-// at least one risk string. Order matches the input order, which is
-// already newest-first.
+// buildRiskList returns the subset of intent IDs with effective open
+// soft risks. Order matches the input order, which is already
+// newest-first. Hard constraints have their own lifecycle work; the
+// risk page must not grow just because an old intent had an
+// anti_pattern.
 func buildRiskList(intents []HubIntent) []string {
 	out := make([]string, 0)
 	for _, in := range intents {
-		if len(in.Risks) > 0 {
+		if len(in.OpenRisks) > 0 {
 			out = append(out, in.ID)
 		}
 	}
@@ -329,7 +354,7 @@ func buildDashboard(m *HubModel) HubDashboard {
 	intentRisky := map[string]bool{}
 	intentRecent := map[string]bool{}
 	for _, in := range m.Intents {
-		if len(in.Risks) > 0 {
+		if len(in.OpenRisks) > 0 {
 			intentRisky[in.ID] = true
 		}
 		if t, err := time.Parse(time.RFC3339, in.SealedAt); err == nil && !t.Before(cutoff) {
@@ -803,9 +828,9 @@ func buildFocusList(m *HubModel, now time.Time) []HubFocusIntent {
 			Status:    in.Status,
 			Reason:    reason,
 			AgeHours:  hours,
-			RiskCount: len(in.Risks),
+			RiskCount: len(in.OpenRisks),
 			FileCount: len(in.FilesTouched),
-			HighRisk:  hasHighSeverityInherited(in) || len(in.Risks) > 0,
+			HighRisk:  hasHighSeverityInherited(in) || isEffectiveRiskBearing(in),
 		})
 	}
 

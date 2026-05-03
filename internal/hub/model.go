@@ -99,13 +99,13 @@ type HubFocusIntent struct {
 	// in whole hours. 0 when timestamps aren't available; renderer
 	// hides the column then. Drives the review-queue aging buckets.
 	AgeHours int `json:"age_hours,omitempty"`
-	// RiskCount + FileCount let the dashboard show "1 high-risk
-	// proposed" / "touches 3 files" without a second lookup.
+	// RiskCount + FileCount let the dashboard show "1 open risk"
+	// / "touches 3 files" without a second lookup.
 	RiskCount int `json:"risk_count,omitempty"`
 	FileCount int `json:"file_count,omitempty"`
-	// HighRisk is true when the intent has at least one anti-pattern
-	// or any risk text — used to pin high-risk items above same-age
-	// peers in the review queue.
+	// HighRisk is true when the intent has at least one effective
+	// open risk or anti-pattern — used to pin high-risk items above
+	// same-age peers in the review queue.
 	HighRisk bool `json:"high_risk,omitempty"`
 	// ActorID/ActorName carry authorship so the dashboard and digest
 	// can render "who proposed this" without a second lookup. Same
@@ -296,6 +296,7 @@ type HubIntent struct {
 	Decisions    []HubDecision        `json:"decisions,omitempty"`
 	Rejected     []HubAlternative     `json:"rejected,omitempty"`
 	Risks        []string             `json:"risks,omitempty"`
+	OpenRisks    []domain.Risk        `json:"open_risks,omitempty"`
 	AntiPatterns []domain.AntiPattern `json:"anti_patterns,omitempty"`
 	Followups    []string             `json:"followups,omitempty"`
 
