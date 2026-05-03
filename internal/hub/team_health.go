@@ -551,10 +551,6 @@ func parseTime(s string) (time.Time, bool) {
 	return t, true
 }
 
-func hasAnyAntiPattern(in HubIntent) bool {
-	return len(in.AntiPatterns) > 0
-}
-
 func focusFromIntent(in HubIntent, reason string, now time.Time) HubFocusIntent {
 	hours := ageHours(in.SealedAt, now)
 	highRisk := isEffectiveRiskBearing(in)
