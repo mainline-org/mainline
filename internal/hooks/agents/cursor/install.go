@@ -39,7 +39,8 @@ const managedMarker = "hooks cursor "
 //   - Round-trip preserves any unknown hook event keys (e.g. the
 //     user's preToolUse) and any unknown top-level fields.
 func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallReport, error) {
-	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true}
+	opts = hooks.ResolveInstallOptions(repoRoot, opts)
+	report := hooks.InstallReport{Scope: "repo-local", RestartRequired: true, CommandMode: hooks.InstallCommandMode(opts)}
 	hooksPath := filepath.Join(repoRoot, ".cursor", hooksFileName)
 
 	rawTop, rawHooks, fileExisted, err := loadHooksJSON(hooksPath)
@@ -202,6 +203,7 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 		for _, e := range decodeEntries(raw) {
 			if isManagedEntry(e, prefixes) {
 				managedForKey++
+				st.CommandMode = hooks.MergeCommandMode(st.CommandMode, hooks.WrapperCommandMode(e.Command))
 			}
 		}
 		if managedForKey == 0 {
@@ -223,6 +225,9 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 	st.RestartRequired = st.Installed
 	if !st.Installed {
 		st.RepairReasons = nil
+	}
+	if reason := hooks.RuntimeRepairReason(st.CommandMode); reason != "" {
+		st.RepairReasons = append(st.RepairReasons, reason)
 	}
 	st.NeedsRepair = len(st.RepairReasons) > 0
 	return st, nil
@@ -319,7 +324,7 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 		return fmt.Sprintf(`sh -c 'test -x %q && exec %q hooks cursor %s || exit 0'`,
 			opts.BinPath, opts.BinPath, hookID)
 	case opts.LocalDev:
-		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && exec go run . hooks cursor %s || exit 0'`, hookID)
+		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/mainline-go-build}" && exec go run . hooks cursor %s || exit 0'`, hookID)
 	default:
 		return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks cursor %s || exit 0'`, hookID)
 	}
