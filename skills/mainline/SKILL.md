@@ -155,6 +155,9 @@ one using the user's actual goal:
 mainline start "<user goal>" --json
 ```
 
+If `mainline start` returns an existing draft for the branch, verify it matches
+the user's task before appending. If it does not, stop and isolate the work.
+
 If a sealed or proposed intent already exists for the same branch and the user
 is asking for follow-up changes, start a new intent for the follow-up rather
 than trying to mutate the sealed one.
@@ -215,6 +218,16 @@ Overlap convergence tree:
 - The two intents are semantically mutually exclusive → run `mainline check`
   or ask for human judgment before continuing.
 
+## Worktree And Intent Ownership
+
+Reuse the current worktree when it is clean or clearly owned by the current
+task.
+
+Before `git switch`, `mainline append`, or `mainline seal`, confirm the branch,
+active intent, and dirty/untracked files still point to the same task. If not,
+stop and isolate the work; prefer a separate Git worktree for parallel active
+intents.
+
 ## Editing Workflow
 
 After the Mainline context pass, inspect code normally and make the requested
@@ -232,6 +245,10 @@ approach. Do not append a minute-by-minute activity log.
 Never revert unrelated user changes to satisfy Mainline. If the worktree has
 unrelated files, leave them alone and keep your intent evidence scoped to your
 own changes.
+
+Keep the intent drafting while exploring, proving an idea, or while the branch
+is likely to be rebased, amended, or rescoped. A local commit is useful evidence,
+but it does not by itself mean the work is ready to submit as team memory.
 
 ## Commit Workflow
 
@@ -260,7 +277,12 @@ repository policy marks it skipped.
 
 ## Seal Workflow
 
-After the repository has a commit for this work, prepare the seal:
+Only seal when the work is ready for handoff, review, PR, push, or another
+team-visible memory boundary. Do not seal merely because a local experiment or
+intermediate commit exists.
+
+When the repository has the intended commit and the work is ready for that
+handoff boundary, prepare the seal:
 
 ```bash
 mainline seal --prepare --json > .ml-cache/seal.json
@@ -310,6 +332,11 @@ retry later:
 ```bash
 mainline publish --intent <intent_id> --json
 ```
+
+Do not use `mainline abandon` as a routine repair path for seal wording, lint
+warnings, or commit-hash drift after rebase/amend. Use abandon for cancellation
+or rejection of the work; if a submitted seal looks wrong, report the problem
+and choose an explicit repair/replacement path with the user.
 
 ## Publishing, Pushes, And PRs
 
