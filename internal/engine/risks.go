@@ -157,17 +157,17 @@ func (s *Service) ResolveRisk(riskID string, byIntent string, rationale string) 
 	}
 
 	for _, r := range materializeAllRisks(view, "") {
-		if r.ID == riskID && r.Status != "open" {
+		if r.ID != riskID {
+			continue
+		}
+		if r.Status != "open" {
 			return domain.NewRecoverableError(
 				domain.ErrInvalidInput,
 				fmt.Sprintf("risk %q is already %s", riskID, r.Status),
 				"run `mainline risks --all` to see resolved or expired explicit risks",
 			)
 		}
-		if r.ID == riskID {
-			found = true
-			break
-		}
+		break
 	}
 
 	// Check it's not already resolved

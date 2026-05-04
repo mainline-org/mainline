@@ -135,7 +135,6 @@ func TestContextRetrieval_QueryModeScoresOnlyOpenRisks(t *testing.T) {
 				Summary: &domain.IntentSummary{
 					Title: "Unrelated resolved work",
 					What:  "No matching content here.",
-					Risks: []string{"rollback corruption on old clients"},
 				},
 				Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"src/old.go"}},
 			},
@@ -148,13 +147,26 @@ func TestContextRetrieval_QueryModeScoresOnlyOpenRisks(t *testing.T) {
 				Summary: &domain.IntentSummary{
 					Title: "Unrelated open work",
 					What:  "No matching content here either.",
-					Risks: []string{"rollback corruption on new clients"},
 				},
 				Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"src/new.go"}},
 			},
 		},
+		Risks: []domain.Risk{
+			{
+				ID:           "risk_aaa",
+				Text:         "rollback corruption on old clients",
+				SourceIntent: "int_resolved_risk",
+				OpenedAt:     sealedAt,
+			},
+			{
+				ID:           "risk_bbb",
+				Text:         "rollback corruption on new clients",
+				SourceIntent: "int_open_risk",
+				OpenedAt:     sealedAt,
+			},
+		},
 		RiskResolutions: map[string][]domain.RiskResolution{
-			"int_resolved_risk#0": {{IntentID: "int_fix", Rationale: "fixed"}},
+			"risk_aaa": {{IntentID: "int_fix", Rationale: "fixed"}},
 		},
 	}
 	if err := svc.Store.WriteMainlineView(view); err != nil {
