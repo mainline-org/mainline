@@ -5,6 +5,11 @@
 [![PBT](https://img.shields.io/badge/PBT-property--based%20testing-blueviolet)](#property-based-testing)
 [![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/License-PolyForm%20Shield%201.0.0-blue.svg)](./LICENSE)
 
+- 官网：https://mainline.sh
+- 文档：https://mainline.sh/docs/
+- 规范：https://mainline.sh/spec/
+- 文章：https://mainline.sh/blog/why-coding-agents-need-repo-memory/
+
 **阻止 AI coding agent 重复旧工程错误。**
 
 Mainline 不是 Git 替代品、PR 系统或 session recorder。它是一个
