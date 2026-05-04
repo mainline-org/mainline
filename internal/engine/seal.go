@@ -255,11 +255,11 @@ Default structure:
 
 Default rule:
 - Mainline records decisions by default. It does not let agents create repo-wide
-  constraints, risks, or follow-up queues unless a human explicitly promotes
-  that note into a structured signal.
-- Do not add summary.risks, summary.anti_patterns, or summary.followups just
-  because the old schema supports them. If you did not receive explicit user or
-  reviewer approval for such a signal, omit the field entirely.
+  constraints, risks, or follow-up queues just because a seal feels incomplete.
+- Do not add summary.risks or summary.followups just because the schema supports
+  them. Only include them when they satisfy the structured rules below.
+- Do not add summary.anti_patterns from seal at all. Constraints are
+  human-promoted rules and require an interactive guard path.
 - If a reviewer needs temporary context for this PR, put it in review_notes.
 - If you accepted a trade-off or scope limit, record it as a decision with
   rationale.
@@ -279,16 +279,19 @@ Acknowledged constraints:
 - "intentionally_changed" signals reviewer attention needed.
 
 Explicit structured signals:
-- A constraint is a future behavior rule. Default seals cannot create one. Only
-  include summary.anti_patterns when the user or reviewer explicitly approved
-  promoting that rule, and submit with --allow-structured-signals.
+- A constraint is a future behavior rule. Seals cannot create one. Do not
+  include summary.anti_patterns in SealResult.
 - A risk is a present-review warning with a concrete failure mode plus a
-  mitigation, validation, or owner. Only include summary.risks after explicit
-  approval, and submit with --allow-structured-signals.
-- A follow-up is deferred work the user explicitly asked to track, an external
-  issue/ticket, or scope deliberately cut from this change. Only include
-  summary.followups after explicit approval, and submit with
-  --allow-structured-signals.
+  trigger or impact, and at least one of mitigation, validation, or owner.
+  Use object form:
+    {"failure_mode":"...", "trigger":"...", "impact":"...", "mitigation":"...", "validation":"...", "owner":"..."}
+- A follow-up is deferred work the user explicitly asked to track, an existing
+  issue/ticket/PR reference, or scope deliberately cut from this PR. Use object
+  form with source="explicit_defer" plus source_note, source="external_reference"
+  plus reference, or source="cut_scope" plus source_note:
+    {"task":"...", "source":"explicit_defer", "source_note":"user asked to defer ..."}
+    {"task":"...", "source":"external_reference", "reference":"https://..."}
+    {"task":"...", "source":"cut_scope", "source_note":"cut from this PR because ..."}
 - Agent-invented "maybe later", "consider", "nice to have", dogfood, or
   telemetry ideas must not become structured signals.
 
@@ -331,13 +334,17 @@ type SealSubmitResult struct {
 //	           IntentSealedEvent permanently records the worktree state
 //	           so reviewers see the audit trail.
 //	RejectStructuredSignals rejects seal-time creation of summary.risks,
-//	           summary.anti_patterns, and summary.followups. The CLI enables
-//	           this by default so these long-lived action signals require an
-//	           explicit opt-in flag.
+//	           summary.anti_patterns, and summary.followups. Kept for
+//	           compatibility with older tests and low-level callers.
+//	EnforceSignalWriteRules applies the alpha write policy used by the CLI:
+//	           constraints cannot be created by seal, risks must be structured
+//	           present-review warnings, and follow-ups must carry an auditable
+//	           explicit-defer, external-reference, or cut-scope source.
 type SealSubmitOptions struct {
 	Offline                 bool
 	AllowDirty              bool
 	RejectStructuredSignals bool
+	EnforceSignalWriteRules bool
 }
 
 // SealSubmit retains the original signature and runs with default
@@ -396,6 +403,39 @@ func structuredSignalSummary(summary domain.IntentSummary) string {
 	return strings.Join(parts, ", ")
 }
 
+func validateSignalWriteRules(summary domain.IntentSummary) error {
+	if len(summary.AntiPatterns) > 0 {
+		return domain.NewRecoverableError(
+			domain.ErrSealFailed,
+			"constraints cannot be created from seal: summary.anti_patterns is interactive-only",
+			"remove summary.anti_patterns from the seal payload",
+			"ask a human to promote the rule through an interactive guard command instead",
+		)
+	}
+	for i, risk := range summary.Risks {
+		if err := domain.ValidateRiskStatement(risk); err != nil {
+			return domain.NewRecoverableError(
+				domain.ErrSealFailed,
+				fmt.Sprintf("summary.risks[%d] is not a structured risk: %v", i, err),
+				"use object form with failure_mode, trigger or impact, and mitigation, validation, or owner",
+				"move vague review guidance to summary.review_notes instead",
+			)
+		}
+	}
+	for i, followup := range summary.Followups {
+		if err := domain.ValidateFollowupStatement(followup); err != nil {
+			return domain.NewRecoverableError(
+				domain.ErrSealFailed,
+				fmt.Sprintf("summary.followups[%d] is not an allowed follow-up: %v", i, err),
+				"use source=explicit_defer with source_note when the user explicitly asked to defer it",
+				"use source=external_reference with reference for an existing issue, ticket, or PR",
+				"use source=cut_scope with source_note when this PR deliberately cut real scope",
+			)
+		}
+	}
+	return nil
+}
+
 func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitOptions) (*SealSubmitResult, error) {
 	// All validation (identity, JSON, draft state, snapshot contract)
 	// MUST run before any draft mutation. Pre-this-fix the code wrote
@@ -427,8 +467,13 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 				domain.ErrSealFailed,
 				"structured signals are explicit-only in default seal submit: "+summary,
 				"remove summary.risks, summary.anti_patterns, and summary.followups unless the user or reviewer explicitly approved creating them",
-				"if they were explicitly approved, re-run `mainline seal --submit --allow-structured-signals`",
+				"if they were explicitly approved, use a caller that applies the structured signal write rules",
 			)
+		}
+	}
+	if opts != nil && opts.EnforceSignalWriteRules {
+		if err := validateSignalWriteRules(sr.Summary); err != nil {
+			return nil, err
 		}
 	}
 

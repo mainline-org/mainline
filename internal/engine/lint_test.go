@@ -49,7 +49,7 @@ func TestLintIntent_RealisticWhatPasses(t *testing.T) {
 		Decisions: []domain.Decision{
 			{Point: "auth shape", Chose: "JWT", Rationale: "stateless"},
 		},
-		Risks: []string{"old mobile clients still send session cookie"},
+		Risks: domain.LegacyRiskStatements("old mobile clients still send session cookie"),
 	}, nonEmptyFP(), "", nil)
 	if !r.Pass {
 		t.Errorf("realistic seal should pass: %+v", r)
@@ -141,7 +141,7 @@ func TestLintIntent_SupersedesKnownIsSilent(t *testing.T) {
 	known := map[string]bool{"int_a": true, "int_b": true}
 	r := LintIntent("int_x", &domain.IntentSummary{
 		What: "real work", Why: "y", Decisions: nonEmptyDecisions(),
-		Risks: []string{"r"},
+		Risks: domain.LegacyRiskStatements("r"),
 	}, nonEmptyFP(), "int_a", known)
 	if hasCode(r.Issues, "supersedes_unknown") {
 		t.Errorf("known supersedes should be silent: %+v", r.Issues)
@@ -184,7 +184,7 @@ func TestLintIntent_GenericRiskWarns(t *testing.T) {
 		r := LintIntent("int_x", &domain.IntentSummary{
 			What: "real work", Why: "y",
 			Decisions: nonEmptyDecisions(),
-			Risks:     []string{tc.risk},
+			Risks:     domain.LegacyRiskStatements(tc.risk),
 		}, nonEmptyFP(), "", nil)
 		got := hasCode(r.Issues, "generic_risk")
 		if got != tc.warn {
@@ -233,7 +233,7 @@ func TestLintIntent_RiskSelfAcceptable(t *testing.T) {
 			r := LintIntent("int_x", &domain.IntentSummary{
 				What: "real work", Why: "y",
 				Decisions: nonEmptyDecisions(),
-				Risks:     []string{tc.risk},
+				Risks:     domain.LegacyRiskStatements(tc.risk),
 			}, nonEmptyFP(), "", nil)
 			got := hasCode(r.Issues, "risk_self_acceptable")
 			if got != tc.warn {
@@ -262,7 +262,7 @@ func TestLintIntent_RiskIsFollowup(t *testing.T) {
 			r := LintIntent("int_x", &domain.IntentSummary{
 				What: "real work", Why: "y",
 				Decisions: nonEmptyDecisions(),
-				Risks:     []string{tc.risk},
+				Risks:     domain.LegacyRiskStatements(tc.risk),
 			}, nonEmptyFP(), "", nil)
 			got := hasCode(r.Issues, "risk_is_followup")
 			if got != tc.warn {
@@ -289,7 +289,7 @@ func TestLintIntent_RiskReviewGuidance(t *testing.T) {
 			r := LintIntent("int_x", &domain.IntentSummary{
 				What: "real work", Why: "y",
 				Decisions: nonEmptyDecisions(),
-				Risks:     []string{tc.risk},
+				Risks:     domain.LegacyRiskStatements(tc.risk),
 			}, nonEmptyFP(), "", nil)
 			got := hasCode(r.Issues, "risk_review_guidance")
 			if got != tc.warn {
@@ -317,7 +317,7 @@ func TestLintIntent_RiskLooksLikeAntipattern(t *testing.T) {
 			r := LintIntent("int_x", &domain.IntentSummary{
 				What: "real work", Why: "y",
 				Decisions: nonEmptyDecisions(),
-				Risks:     []string{tc.risk},
+				Risks:     domain.LegacyRiskStatements(tc.risk),
 			}, nonEmptyFP(), "", nil)
 			got := hasCode(r.Issues, "risk_looks_like_antipattern")
 			if got != tc.warn {

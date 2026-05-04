@@ -12,7 +12,7 @@ import (
 // Risk lifecycle view helpers
 // -----------------------------------------------------------
 //
-// Risks are stored immutably as []string on IntentSummary. These helpers
+// Risks are stored immutably on IntentSummary. These helpers
 // derive the effective lifecycle view used by CLI, context, seal prepare,
 // and Hub so consumers don't accidentally treat raw historical prose as
 // current state.
@@ -71,7 +71,7 @@ func MaterializeRisks(view *MainlineView, fileFilter string) []Risk {
 			}
 		}
 
-		for i, text := range iv.Summary.Risks {
+		for i, risk := range iv.Summary.Risks {
 			rid := RiskID(iv.IntentID, i)
 
 			status := "open"
@@ -88,7 +88,7 @@ func MaterializeRisks(view *MainlineView, fileFilter string) []Risk {
 
 			risks = append(risks, Risk{
 				ID:           rid,
-				Text:         text,
+				Text:         risk.Text(),
 				Status:       status,
 				SourceIntent: iv.IntentID,
 				OpenedAt:     iv.SealedAt,
@@ -135,20 +135,20 @@ func MaterializeOpenRisks(view *MainlineView, files []string) []Risk {
 
 // OpenRiskTexts filters a raw summary.risks slice down to the effective
 // open texts for one source intent.
-func OpenRiskTexts(intentID string, risks []string, resolutions map[string][]RiskResolution, sourceStatus IntentStatus) []string {
+func OpenRiskTexts(intentID string, risks []RiskStatement, resolutions map[string][]RiskResolution, sourceStatus IntentStatus) []string {
 	if RiskSourceExpired(sourceStatus) {
 		return nil
 	}
 	if len(resolutions) == 0 {
-		return risks
+		return RiskTextList(risks)
 	}
 	var open []string
-	for i, text := range risks {
+	for i, risk := range risks {
 		rid := RiskID(intentID, i)
 		if rr, ok := resolutions[rid]; ok && len(rr) > 0 {
 			continue
 		}
-		open = append(open, text)
+		open = append(open, risk.Text())
 	}
 	return open
 }

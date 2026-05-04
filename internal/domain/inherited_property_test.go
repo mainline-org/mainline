@@ -334,7 +334,7 @@ func TestPropertyAcknowledgementOf_EmptyCasesReturnNone(t *testing.T) {
 		}
 		summary := &IntentSummary{
 			Decisions: []Decision{{Point: "p", Chose: "c", Rationale: "r"}},
-			Risks:     []string{"a risk", "another"},
+			Risks:     LegacyRiskStatements("a risk", "another"),
 		}
 		if got := AcknowledgementOf(ic, summary); got != AckNone {
 			rt.Fatalf("empty/blank What expected AckNone, got %q", got)
@@ -365,10 +365,10 @@ func TestPropertyAcknowledgementOf_Deterministic(t *testing.T) {
 					"completely unrelated rationale",
 				}).Draw(rt, "chose"),
 			}},
-			Risks: []string{rapid.SampledFrom([]string{
+			Risks: LegacyRiskStatements(rapid.SampledFrom([]string{
 				"legacy session middleware concerns under load",
 				"no relevance",
-			}).Draw(rt, "risk")},
+			}).Draw(rt, "risk")),
 		}
 		first := AcknowledgementOf(ic, summary)
 		for i := 0; i < 3; i++ {
@@ -420,7 +420,7 @@ func TestPropertyAcknowledgementOf_DecisionDominatesRisk(t *testing.T) {
 				Point: "session",
 				Chose: what,
 			}},
-			Risks: []string{what},
+			Risks: LegacyRiskStatements(what),
 		}
 		if got := AcknowledgementOf(ic, summary); got != AckDecision {
 			rt.Fatalf("decision must dominate risk, got %q", got)
@@ -575,10 +575,10 @@ func drawSummaryWithMaybeAck(rt *rapid.T, label string) *IntentSummary {
 		}}
 	}
 	if rapid.Bool().Draw(rt, label+".hasRisk") {
-		out.Risks = []string{rapid.SampledFrom([]string{
+		out.Risks = LegacyRiskStatements(rapid.SampledFrom([]string{
 			"unrelated risk",
 			"token rotation under load is brittle",
-		}).Draw(rt, label+".risk")}
+		}).Draw(rt, label+".risk"))
 	}
 	return out
 }

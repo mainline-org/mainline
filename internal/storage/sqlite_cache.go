@@ -496,12 +496,12 @@ func writeMainlineIndex(tx *sql.Tx, store *Store, view *domain.MainlineView) err
 				}
 			}
 			for i, risk := range iv.Summary.Risks {
-				if _, err := insertRisk.Exec(iv.IntentID, i, risk); err != nil {
+				if _, err := insertRisk.Exec(iv.IntentID, i, risk.Text()); err != nil {
 					return err
 				}
 			}
 			for i, followup := range iv.Summary.Followups {
-				if _, err := insertFollowup.Exec(iv.IntentID, i, followup); err != nil {
+				if _, err := insertFollowup.Exec(iv.IntentID, i, followup.Text()); err != nil {
 					return err
 				}
 			}

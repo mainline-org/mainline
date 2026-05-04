@@ -208,7 +208,7 @@ func drawSummaryForLint(rt *rapid.T, label string) *domain.IntentSummary {
 		out.Decisions = append(out.Decisions, domain.Decision{Point: "p", Chose: chose, Rationale: rationale})
 	}
 	if rapid.Bool().Draw(rt, label+".hasRisks") {
-		out.Risks = []string{"a risk"}
+		out.Risks = domain.LegacyRiskStatements("a risk")
 	}
 	if rapid.Bool().Draw(rt, label+".hasAPs") {
 		out.AntiPatterns = []domain.AntiPattern{{What: "do not", Why: "load-bearing"}}

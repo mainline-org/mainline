@@ -71,7 +71,7 @@ func mkFollowupIntent(id string, status domain.IntentStatus, followups []string,
 		Status:   status,
 		SealedAt: "2025-01-01T00:00:00Z",
 		Summary: &domain.IntentSummary{
-			Followups: followups,
+			Followups: domain.LegacyFollowupStatements(followups...),
 		},
 		Fingerprint: fp,
 	}
@@ -179,7 +179,7 @@ func TestMaterializeOpenFollowups(t *testing.T) {
 }
 
 func TestFilterOpenFollowups_Resolved(t *testing.T) {
-	followups := []string{"follow-up one", "follow-up two"}
+	followups := domain.LegacyFollowupStatements("follow-up one", "follow-up two")
 	resolutions := map[string][]domain.FollowupResolution{
 		"int_aaa#0": {{Rationale: "done"}},
 	}
@@ -193,7 +193,7 @@ func TestFilterOpenFollowups_Resolved(t *testing.T) {
 }
 
 func TestFilterOpenFollowups_Expired(t *testing.T) {
-	followups := []string{"follow-up one"}
+	followups := domain.LegacyFollowupStatements("follow-up one")
 	result := filterOpenFollowups("int_aaa", followups, nil, domain.StatusAbandoned)
 	if len(result) != 0 {
 		t.Errorf("expired source should return nil, got %d", len(result))

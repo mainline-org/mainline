@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 10 -->
+<!-- mainline-agents-md-version: 11 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -34,9 +34,12 @@ Chinese out; English in, English out. The seal is the team's memory
 it is. Code identifiers, command names, and file paths stay in their
 original form.
 
-Default seals record decisions. Do not add `risks`, `anti_patterns`,
-or `followups` unless the user or reviewer explicitly promoted that
-note into a structured signal.
+Default seals record decisions. Do not create constraints from seal.
+Only write `risks` as structured present-review warnings
+(`failure_mode`, trigger/impact, and mitigation/validation/owner).
+Only write `followups` when the user explicitly deferred the work or
+an external issue/ticket/PR already owns it, or this PR deliberately
+cut a real follow-up task.
 
 ### If `mainline hooks` is installed for your agent
 

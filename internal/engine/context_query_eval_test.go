@@ -559,7 +559,7 @@ func queryGoldenIntent(id, sealedAt, title, what, why string, decisions []domain
 			What:         what,
 			Why:          why,
 			Decisions:    decisions,
-			Risks:        risks,
+			Risks:        domain.LegacyRiskStatements(risks...),
 			AntiPatterns: antiPatterns,
 		},
 		Fingerprint: &domain.SemanticFingerprint{

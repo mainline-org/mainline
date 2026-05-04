@@ -78,7 +78,7 @@ func mkIntent(id string, status domain.IntentStatus, risks []string, files []str
 		Status:   status,
 		SealedAt: "2025-01-01T00:00:00Z",
 		Summary: &domain.IntentSummary{
-			Risks: risks,
+			Risks: domain.LegacyRiskStatements(risks...),
 		},
 		Fingerprint: fp,
 	}
@@ -309,7 +309,7 @@ func TestFilesOverlap(t *testing.T) {
 }
 
 func TestFilterOpenRisks_AllOpen(t *testing.T) {
-	risks := []string{"risk one", "risk two"}
+	risks := domain.LegacyRiskStatements("risk one", "risk two")
 	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusMerged)
 	if len(result) != 2 {
 		t.Errorf("all open: expected 2, got %d", len(result))
@@ -317,7 +317,7 @@ func TestFilterOpenRisks_AllOpen(t *testing.T) {
 }
 
 func TestFilterOpenRisks_Resolved(t *testing.T) {
-	risks := []string{"risk one", "risk two"}
+	risks := domain.LegacyRiskStatements("risk one", "risk two")
 	resolutions := map[string][]domain.RiskResolution{
 		"int_aaa#0": {{Rationale: "fixed"}},
 	}
@@ -331,7 +331,7 @@ func TestFilterOpenRisks_Resolved(t *testing.T) {
 }
 
 func TestFilterOpenRisks_Expired(t *testing.T) {
-	risks := []string{"risk one"}
+	risks := domain.LegacyRiskStatements("risk one")
 	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusSuperseded)
 	if len(result) != 0 {
 		t.Errorf("expired source should return nil, got %d", len(result))
@@ -339,7 +339,7 @@ func TestFilterOpenRisks_Expired(t *testing.T) {
 }
 
 func TestFilterOpenRisks_ExpiredAbandoned(t *testing.T) {
-	risks := []string{"risk one"}
+	risks := domain.LegacyRiskStatements("risk one")
 	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusAbandoned)
 	if len(result) != 0 {
 		t.Errorf("abandoned source should return nil, got %d", len(result))
@@ -347,7 +347,7 @@ func TestFilterOpenRisks_ExpiredAbandoned(t *testing.T) {
 }
 
 func TestFilterOpenRisks_ExpiredReverted(t *testing.T) {
-	risks := []string{"risk one"}
+	risks := domain.LegacyRiskStatements("risk one")
 	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusReverted)
 	if len(result) != 0 {
 		t.Errorf("reverted source should return nil, got %d", len(result))

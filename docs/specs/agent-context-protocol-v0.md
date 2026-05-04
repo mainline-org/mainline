@@ -199,15 +199,18 @@ When sealing, agents SHOULD:
 - Resolve applicable open risks when the current work addresses
   them (via `resolves_risks` on the seal result).
 - Omit `risks`, `anti_patterns`, and `followups` by default. These
-  fields create long-lived action signals and require explicit user or
-  reviewer promotion.
-- Use `risks` only for approved present-review warnings with a concrete
-  failure mode and mitigation, validation, or owner.
-- Use `anti_patterns` only for approved future behavior rules; they are
-  constraints, not agent-authored summaries.
-- Use `followups` only for approved deferred work, external issues, or
-  scope deliberately cut from the current task. Do not invent speculative
-  "consider later" items.
+  fields create long-lived action signals and must satisfy their
+  authority-specific write rules.
+- Never create `anti_patterns` from seal. Constraints are future behavior
+  rules and require an interactive human-promoted path.
+- Use `risks` only for structured present-review warnings with a concrete
+  `failure_mode`, `trigger` or `impact`, and at least one of
+  `mitigation`, `validation`, or `owner`.
+- Use `followups` only for deferred work with
+  `source="explicit_defer"` plus `source_note`, an existing issue/ticket/PR
+  with `source="external_reference"` plus `reference`, or real scope cut from
+  this PR with `source="cut_scope"` plus `source_note`. Do not invent
+  speculative "consider later" items.
 
 ### 6.8 Writing seals (MUST)
 
@@ -219,8 +222,8 @@ A well-formed seal:
 - Has at least one `decision` with a choice point and what was chosen.
 - Has `fingerprint.subsystems` and `fingerprint.files_touched` populated.
 - Has `tags` populated generously (synonyms, parent concepts).
-- Omits `risks`, `anti_patterns`, and `followups` unless a human
-  explicitly promoted those notes into structured signals.
+- Omits `risks`, `anti_patterns`, and `followups` unless the entry
+  satisfies the authority-specific write rules above.
 
 ## 7. Task priority matrix
 

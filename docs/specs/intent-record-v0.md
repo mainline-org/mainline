@@ -107,7 +107,7 @@ A sealed intent record contains these fields:
 | `code_tree` | string | ✓ | Git tree hash of `code_commit`. Used for commit-pin matching after squash merges. |
 | `sealed_at` | string | ✓ | ISO 8601 timestamp of sealing. |
 | `summary` | IntentSummary | ✓ | Structured summary (see §6.2). |
-| `fingerprint` | SemanticFingerprint | ✓ | Structured change fingerprint (see §6.3). |
+| `fingerprint` | SemanticFingerprint | ✓ | Structured change fingerprint (see §6.7). |
 | `references` | Reference[] | | Links to external materials. |
 | `backfill_commits` | string[] | | Explicit commit list for retroactive coverage. |
 
@@ -124,9 +124,9 @@ intent.
 | `user_goal` | string | | The original user request, if different from `what`. |
 | `decisions` | Decision[] | ✓ | At least one decision. Each records a choice point, what was chosen, and optionally the rationale and rejected alternatives. |
 | `rejected` | RejectedAlternative[] | | Top-level rejected alternatives (beyond per-decision rejects). |
-| `risks` | string[] | | Explicit concrete soft warnings. Omitted by default; see §7. |
-| `anti_patterns` | AntiPattern[] | | Explicit hard constraints. Omitted by default; see §7. |
-| `followups` | string[] | | Explicit later work the user wants or this task deliberately cut out. Omitted by default. |
+| `risks` | RiskStatement[] | | Explicit concrete soft warnings with failure mode, trigger/impact, and mitigation/validation/owner. Omitted by default; see §7. |
+| `anti_patterns` | AntiPattern[] | | Explicit hard constraints. Cannot be created from seal; see §7. |
+| `followups` | FollowupStatement[] | | Explicit later work from a user deferral or external reference. Omitted by default. |
 | `review_notes` | string[] | | Ephemeral notes for the PR reviewer. Not inherited, not surfaced in context retrieval. |
 
 ### 6.3 Decision
@@ -146,7 +146,29 @@ intent.
 | `why` | string | ✓ | Why this constraint exists. Must not be empty. Without a reason, future agents will ignore it. |
 | `severity` | string | | `"high"` / `"medium"` / `"low"`. Defaults to medium if omitted. |
 
-### 6.5 SemanticFingerprint
+### 6.5 RiskStatement
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `failure_mode` | string | ✓ | Concrete way this change can fail. |
+| `trigger` | string | | Condition that triggers the failure. Required unless `impact` is present. |
+| `impact` | string | | Scope or blast radius. Required unless `trigger` is present. |
+| `mitigation` | string | | How the risk is reduced. One of mitigation / validation / owner is required. |
+| `validation` | string | | Test, check, rollout proof, or review step. One of mitigation / validation / owner is required. |
+| `owner` | string | | Person/team/system responsible for watching it. One of mitigation / validation / owner is required. |
+
+### 6.6 FollowupStatement
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `task` | string | ✓ | Deferred work item. |
+| `source` | string | ✓ | `"explicit_defer"`, `"external_reference"`, or `"cut_scope"`. |
+| `source_note` | string | conditional | Required when `source="explicit_defer"` or `source="cut_scope"`; quote/summarize the human deferral or cut-scope rationale. |
+| `reference` | string | conditional | Required when `source="external_reference"`; issue, ticket, PR, or URL. |
+| `owner` | string | | Optional owner. |
+| `due` | string | | Optional due date or milestone. |
+
+### 6.7 SemanticFingerprint
 
 The fingerprint enables conflict detection and retrieval scoring
 without reading the full diff.
@@ -163,7 +185,7 @@ without reading the full diff.
 | `security_implications` | string[] | | Security-relevant notes. |
 | `migration_notes` | string[] | | Migration or rollback guidance. |
 
-### 6.6 APIChange
+### 6.8 APIChange
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -172,7 +194,7 @@ without reading the full diff.
 | `signature` | string | ✓ | The API signature or endpoint. |
 | `compatibility` | string | ✓ | `"breaking"` / `"compatible"` / `"unknown"`. |
 
-### 6.7 DataModelChange
+### 6.9 DataModelChange
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -183,7 +205,7 @@ without reading the full diff.
 | `migration_required` | boolean | ✓ | Whether a data migration is needed. |
 | `migration_notes` | string | | Migration guidance. |
 
-### 6.8 Reference
+### 6.10 Reference
 
 References are links to supporting material. Mainline stores only the
 metadata — it never reads, parses, or indexes the referenced content.
@@ -198,11 +220,13 @@ metadata — it never reads, parses, or indexes the referenced content.
 
 At least one of `ref` or `url` must be non-empty.
 
-### 6.9 Risk lifecycle (v0.4)
+### 6.11 Risk lifecycle (v0.4)
 
-Risks are explicit soft warnings stored as `string[]` on IntentSummary.
-Default seals omit them; seal-time creation requires explicit opt-in because
-risks otherwise become a noisy long-lived review queue.
+Risks are explicit soft warnings stored as structured objects on
+IntentSummary. Default seals omit them; seal-time creation is allowed only
+when each risk has a concrete `failure_mode`, either `trigger` or `impact`,
+and at least one of `mitigation`, `validation`, or `owner`. Legacy ledgers
+that stored risks as `string[]` still read as risk entries for compatibility.
 Starting with v0.4, risks have a lifecycle:
 
 **Risk IDs** are deterministic: `{intent_id}#{array_index}`. Safe
@@ -234,8 +258,8 @@ materialized at query time, not stored directly.
 ## 7. Constraints and risk taxonomy
 
 Mainline distinguishes five types of constraint information. The default seal
-contract records decisions; risks, anti-patterns, and follow-ups are promoted
-signals, not fields an agent fills for completeness.
+contract records decisions; risks, anti-patterns, and follow-ups have separate
+write authority instead of one generic opt-in.
 
 | Type | Nature | Lifetime | Inherited? | Truncated in retrieval? |
 |---|---|---|---|---|
@@ -244,6 +268,18 @@ signals, not fields an agent fills for completeness.
 | **Inherited constraint** | Propagated anti-pattern | Until source intent is abandoned/reverted | N/A (is propagation) | **Never** |
 | **Conflict** | Detected overlap | Per-pair | N/A | N/A |
 | **Coverage gap** | Missing intent | Until covered or skipped | N/A | N/A |
+
+Write rules:
+
+- **Constraint / anti-pattern:** cannot be created by seal; it requires an
+  interactive human-promoted guard path.
+- **Risk:** agent-authored seal entry is valid only with concrete failure mode,
+  trigger or impact, and mitigation / validation / owner.
+- **Follow-up:** agent-authored seal entry is valid only when the user
+  explicitly deferred the work (`source="explicit_defer"` with `source_note`)
+  an external issue/ticket/PR already owns it (`source="external_reference"`
+  with `reference`), or this PR deliberately cut a real follow-up task
+  (`source="cut_scope"` with `source_note`).
 
 **The distinction matters:**
 

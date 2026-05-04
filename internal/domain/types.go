@@ -204,7 +204,9 @@ type Thread struct {
 //
 // Mainline keeps these fields for historical compatibility and explicit
 // workflows, but the default agent seal should omit them rather than fill them
-// for completeness.
+// for completeness. When a seal does include risks or follow-ups, the CLI
+// enforces the structured write rules in RiskStatement and FollowupStatement;
+// anti-pattern creation is reserved for an interactive human-promoted path.
 type IntentSummary struct {
 	Title        string                `json:"title"`
 	What         string                `json:"what"`
@@ -212,9 +214,9 @@ type IntentSummary struct {
 	UserGoal     string                `json:"user_goal"`
 	Decisions    []Decision            `json:"decisions"`
 	Rejected     []RejectedAlternative `json:"rejected"`
-	Risks        []string              `json:"risks,omitempty"`
+	Risks        []RiskStatement       `json:"risks,omitempty"`
 	AntiPatterns []AntiPattern         `json:"anti_patterns,omitempty"`
-	Followups    []string              `json:"followups,omitempty"`
+	Followups    []FollowupStatement   `json:"followups,omitempty"`
 
 	// AcknowledgedConstraints records how the agent handled each
 	// inherited high-severity constraint it saw during this seal.
@@ -307,6 +309,32 @@ type Decision struct {
 type RejectedAlternative struct {
 	Alternative string `json:"alternative"`
 	Reason      string `json:"reason,omitempty"`
+}
+
+// RiskStatement is an explicit present-review warning. It is not a
+// future-agent rule; constraints live in AntiPattern and must be
+// human-promoted through a separate interactive path.
+type RiskStatement struct {
+	FailureMode string `json:"failure_mode"`
+	Trigger     string `json:"trigger,omitempty"`
+	Impact      string `json:"impact,omitempty"`
+	Mitigation  string `json:"mitigation,omitempty"`
+	Validation  string `json:"validation,omitempty"`
+	Owner       string `json:"owner,omitempty"`
+	LegacyText  string `json:"-"`
+}
+
+// FollowupStatement is explicit deferred work. New agent-authored
+// follow-ups must carry an auditable source instead of free-form
+// "maybe later" speculation.
+type FollowupStatement struct {
+	Task       string `json:"task"`
+	Source     string `json:"source"`
+	Reference  string `json:"reference,omitempty"`
+	SourceNote string `json:"source_note,omitempty"`
+	Owner      string `json:"owner,omitempty"`
+	Due        string `json:"due,omitempty"`
+	LegacyText string `json:"-"`
 }
 
 // SemanticFingerprint is a structured summary for fast conflict pre-screening.

@@ -14,8 +14,8 @@ import (
 // Follow-up lifecycle engine
 // -----------------------------------------------------------
 //
-// Follow-ups are soft future-work items written as []string on
-// IntentSummary. Like risks, sealed summaries stay immutable; later
+// Follow-ups are soft future-work items written on IntentSummary.
+// Like risks, sealed summaries stay immutable; later
 // events materialise an effective queue with open/resolved/expired state.
 
 var followupIDPattern = regexp.MustCompile(`^int_[0-9a-f]+#\d+$`)
@@ -64,7 +64,7 @@ func materializeFollowups(view *domain.MainlineView, fileFilter string) []domain
 			}
 		}
 
-		for i, text := range iv.Summary.Followups {
+		for i, followup := range iv.Summary.Followups {
 			fid := FollowupID(iv.IntentID, i)
 
 			status := "open"
@@ -79,7 +79,7 @@ func materializeFollowups(view *domain.MainlineView, fileFilter string) []domain
 
 			followups = append(followups, domain.Followup{
 				ID:           fid,
-				Text:         text,
+				Text:         followup.Text(),
 				Status:       status,
 				SourceIntent: iv.IntentID,
 				OpenedAt:     iv.SealedAt,
@@ -220,20 +220,20 @@ func (s *Service) ResolveFollowup(followupID string, byIntent string, rationale 
 
 // filterOpenFollowups returns only follow-ups that are still open (not
 // resolved and not from an expired source intent).
-func filterOpenFollowups(intentID string, followups []string, resolutions map[string][]domain.FollowupResolution, sourceStatus domain.IntentStatus) []string {
+func filterOpenFollowups(intentID string, followups []domain.FollowupStatement, resolutions map[string][]domain.FollowupResolution, sourceStatus domain.IntentStatus) []string {
 	if riskExpiredStatuses[sourceStatus] {
 		return nil
 	}
 	if len(resolutions) == 0 {
-		return followups
+		return domain.FollowupTextList(followups)
 	}
 	var open []string
-	for i, text := range followups {
+	for i, followup := range followups {
 		fid := FollowupID(intentID, i)
 		if rr, ok := resolutions[fid]; ok && len(rr) > 0 {
 			continue
 		}
-		open = append(open, text)
+		open = append(open, followup.Text())
 	}
 	return open
 }
