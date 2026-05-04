@@ -467,6 +467,13 @@ type StatusResult struct {
 	// from the rest of StatusResult. The CLI prints them as a
 	// "Suggestions:" block under the main rollup.
 	Suggestions []string `json:"suggestions,omitempty"`
+
+	// ActionableItems is the ranked inbox behind `mainline status
+	// --actionable`. It groups the highest-value follow-up commands
+	// across status, gaps, proposal doctor, risks, and followups so
+	// callers do not need to jump across commands just to decide what
+	// to inspect first.
+	ActionableItems []StatusActionItem `json:"actionable_items,omitempty"`
 }
 
 // StatusUnsealedDraft is the per-draft summary surfaced under
@@ -509,11 +516,24 @@ type StatusCoverageSummary struct {
 	Uncovered      []CommitCoverage `json:"uncovered,omitempty"`
 }
 
+// StatusActionItem is one row in the `status --actionable` inbox.
+// It deliberately stores a single command per item: the command opens
+// the detailed surface (gaps, doctor, risks, followups, etc.) where
+// the user can inspect and decide.
+type StatusActionItem struct {
+	Kind               string `json:"kind"`
+	Title              string `json:"title"`
+	Why                string `json:"why"`
+	Risk               string `json:"risk"`
+	RecommendedCommand string `json:"recommended_command"`
+}
+
 func (s *Service) Status() (*StatusResult, error) {
 	result := &StatusResult{
 		Initialized: s.Store.IsInitialized(),
 	}
 	if !result.Initialized {
+		result.ActionableItems = buildStatusActionItems(result, nil)
 		return result, nil
 	}
 
@@ -605,6 +625,7 @@ func (s *Service) Status() (*StatusResult, error) {
 	result.RecentSealed = collectRecentSealed(view, statusRecentSealedLimit)
 	result.ProposalHealth = collectStatusProposalHealth(view, DefaultStaleProposedAfter)
 	result.Suggestions = buildStatusSuggestions(result)
+	result.ActionableItems = buildStatusActionItems(result, view)
 
 	return result, nil
 }
@@ -829,6 +850,206 @@ func buildStatusSuggestions(r *StatusResult) []string {
 		}
 	}
 	return out
+}
+
+const statusActionableLimit = 5
+
+// buildStatusActionItems derives the compact "what needs attention"
+// inbox from the same read models that power the existing status,
+// gaps, doctor, risks, and followups commands. It must stay read-only:
+// every recommendation points at a command that lets the user inspect
+// and decide rather than auto-applying a lifecycle event.
+func buildStatusActionItems(r *StatusResult, view *domain.MainlineView) []StatusActionItem {
+	if r == nil {
+		return nil
+	}
+	if !r.Initialized {
+		return []StatusActionItem{{
+			Kind:               "setup",
+			Title:              "Mainline is not initialized in this repo",
+			Why:                "Mainline cannot record intent history until repository state exists.",
+			Risk:               "Work can land without durable intent context for future agents.",
+			RecommendedCommand: "mainline init --actor-name \"<your name>\"",
+		}}
+	}
+	if !r.IdentityConfigured {
+		return []StatusActionItem{{
+			Kind:               "setup",
+			Title:              "This clone has no Mainline actor identity",
+			Why:                "Writes need a stable actor identity before intents, turns, or resolutions can be recorded.",
+			Risk:               "Local work cannot be safely attributed or published to the team log.",
+			RecommendedCommand: "mainline init --actor-name \"<your name>\"",
+		}}
+	}
+
+	items := make([]StatusActionItem, 0, statusActionableLimit)
+	add := func(item StatusActionItem) {
+		if len(items) < statusActionableLimit {
+			items = append(items, item)
+		}
+	}
+
+	if r.ActiveIntent != nil {
+		switch r.ActiveIntent.Status {
+		case domain.StatusDrafting:
+			add(StatusActionItem{
+				Kind:               "active_intent",
+				Title:              fmt.Sprintf("Continue active intent %s", r.ActiveIntent.IntentID),
+				Why:                "This branch already has a drafting intent, so new edits should stay attached to it.",
+				Risk:               "Skipping context or append can leave the next agent without the latest why.",
+				RecommendedCommand: "mainline context --current --json",
+			})
+		case domain.StatusSealedLocal:
+			add(StatusActionItem{
+				Kind:               "active_intent",
+				Title:              fmt.Sprintf("Publish sealed intent %s", r.ActiveIntent.IntentID),
+				Why:                "The intent is sealed locally but not yet visible to the team.",
+				Risk:               "Reviewers and other agents may miss this work's intent until the actor log is published.",
+				RecommendedCommand: fmt.Sprintf("mainline publish --intent %s", r.ActiveIntent.IntentID),
+			})
+		}
+	}
+
+	if r.Coverage != nil && r.Coverage.UncoveredCount > 0 {
+		add(StatusActionItem{
+			Kind:               "coverage",
+			Title:              fmt.Sprintf("%d uncovered commit(s) on main", r.Coverage.UncoveredCount),
+			Why:                "Main has commits that are not covered by a sealed intent or an explicit skip.",
+			Risk:               "Future agents cannot recover why those commits happened or whether they were routine.",
+			RecommendedCommand: "mainline gaps",
+		})
+	}
+
+	if r.ProposalHealth != nil && r.ProposalHealth.SuspiciousCount > 0 {
+		add(StatusActionItem{
+			Kind:               "proposal",
+			Title:              fmt.Sprintf("%d proposed intent(s) older than %dh", r.ProposalHealth.SuspiciousCount, r.ProposalHealth.StaleAfterHours),
+			Why:                "Proposed intents past the cleanup threshold need a human review decision.",
+			Risk:               "Stale proposed work can clog review, duplicate later work, or hide an intent that should be pinned.",
+			RecommendedCommand: "mainline doctor --proposals",
+		})
+	}
+
+	if len(r.UnsealedDrafts) > 0 {
+		d := oldestUnsealedDraft(r.UnsealedDrafts)
+		add(StatusActionItem{
+			Kind:               "draft",
+			Title:              fmt.Sprintf("%d unsealed intent(s) on other branches", len(r.UnsealedDrafts)),
+			Why:                fmt.Sprintf("%s is %s on %s and %s old.", d.IntentID, d.Status, d.GitBranch, formatStatusActionAge(d.AgeSeconds)),
+			Risk:               "Forgotten local work can keep polluting status or be duplicated by a later intent.",
+			RecommendedCommand: fmt.Sprintf("git checkout %s && mainline status", d.GitBranch),
+		})
+	}
+
+	if g := r.AgentsGuidance; g != nil {
+		switch g.State {
+		case AgentsBlockStateUpdateAvailable:
+			add(StatusActionItem{
+				Kind:               "agent_guidance",
+				Title:              "Agent guidance update is available",
+				Why:                "AGENTS.md carries an older Mainline policy block than this binary knows how to generate.",
+				Risk:               "Agents may follow stale workflow instructions until the diff is reviewed and applied.",
+				RecommendedCommand: "mainline agents diff",
+			})
+		case AgentsBlockStateLocallyModified:
+			add(StatusActionItem{
+				Kind:               "agent_guidance",
+				Title:              "Agent guidance has local edits",
+				Why:                "Mainline detected edits inside the managed guidance block.",
+				Risk:               "Updating blindly could overwrite team policy edits.",
+				RecommendedCommand: "mainline agents check",
+			})
+		case AgentsBlockStateLegacy:
+			add(StatusActionItem{
+				Kind:               "agent_guidance",
+				Title:              "Agent guidance uses the legacy format",
+				Why:                "The repo has pre-v0.4 guidance that should be migrated before future updates.",
+				Risk:               "Legacy guidance can drift from the current skill workflow.",
+				RecommendedCommand: "mainline agents update",
+			})
+		}
+	}
+
+	if view != nil {
+		if n := openRiskCount(view); n > 0 {
+			add(StatusActionItem{
+				Kind:               "risks",
+				Title:              fmt.Sprintf("%d open risk(s) in sealed intents", n),
+				Why:                "Sealed intents recorded reviewer-facing risks that are not resolved or expired.",
+				Risk:               "Known hazards can become background noise instead of being reviewed or explicitly resolved.",
+				RecommendedCommand: "mainline risks",
+			})
+		}
+		if n := openFollowupCount(view); n > 0 {
+			add(StatusActionItem{
+				Kind:               "followups",
+				Title:              fmt.Sprintf("%d open follow-up(s) in sealed intents", n),
+				Why:                "Prior work left explicit future tasks that are still open.",
+				Risk:               "Important cleanup or polish can be rediscovered repeatedly instead of triaged once.",
+				RecommendedCommand: "mainline followups",
+			})
+		}
+	}
+
+	if r.SyncStale {
+		add(StatusActionItem{
+			Kind:               "sync",
+			Title:              "Team view is stale",
+			Why:                "The local materialized view is older than the configured freshness threshold or has never synced.",
+			Risk:               "Status can miss recently published intents, pins, or conflict signals.",
+			RecommendedCommand: "mainline sync",
+		})
+	}
+
+	return items
+}
+
+func oldestUnsealedDraft(in []StatusUnsealedDraft) StatusUnsealedDraft {
+	if len(in) == 0 {
+		return StatusUnsealedDraft{}
+	}
+	oldest := in[0]
+	for _, d := range in[1:] {
+		if d.AgeSeconds > oldest.AgeSeconds {
+			oldest = d
+		}
+	}
+	return oldest
+}
+
+func formatStatusActionAge(seconds int64) string {
+	switch {
+	case seconds <= 0:
+		return "0s"
+	case seconds < 60:
+		return fmt.Sprintf("%ds", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%dm", seconds/60)
+	case seconds < 86400:
+		return fmt.Sprintf("%dh", seconds/3600)
+	default:
+		return fmt.Sprintf("%dd", seconds/86400)
+	}
+}
+
+func openRiskCount(view *domain.MainlineView) int {
+	count := 0
+	for _, r := range materializeRisks(view, "") {
+		if r.Status == "open" {
+			count++
+		}
+	}
+	return count
+}
+
+func openFollowupCount(view *domain.MainlineView) int {
+	count := 0
+	for _, f := range materializeFollowups(view, "") {
+		if f.Status == "open" {
+			count++
+		}
+	}
+	return count
 }
 
 // CoverageWindowSize controls how many recent commits on main `mainline

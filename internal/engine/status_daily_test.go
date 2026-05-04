@@ -213,3 +213,79 @@ func TestStatus_SuggestionsResumeOrphanBranchWhenIdle(t *testing.T) {
 		t.Errorf("suggestion should reference the orphan intent id %s, got: %v", orphan.IntentID, res.Suggestions)
 	}
 }
+
+func TestStatus_ActionableItemsBuildsTopInbox(t *testing.T) {
+	view := &domain.MainlineView{
+		Intents: []domain.IntentView{
+			{
+				IntentID: "int_risk",
+				Status:   domain.StatusMerged,
+				SealedAt: "2026-05-01T00:00:00Z",
+				Summary: &domain.IntentSummary{
+					Risks:     []string{"known risk"},
+					Followups: []string{"known follow-up"},
+				},
+			},
+		},
+	}
+	status := &StatusResult{
+		Initialized:        true,
+		IdentityConfigured: true,
+		Coverage: &StatusCoverageSummary{
+			UncoveredCount: 3,
+		},
+		ProposalHealth: &StatusProposalHealth{
+			StaleAfterHours: 72,
+			SuspiciousCount: 1,
+		},
+		UnsealedDrafts: []StatusUnsealedDraft{
+			{
+				IntentID:   "int_old",
+				GitBranch:  "feature/old",
+				Status:     string(domain.StatusDrafting),
+				AgeSeconds: 6 * 24 * 3600,
+			},
+		},
+	}
+
+	items := buildStatusActionItems(status, view)
+	if len(items) != statusActionableLimit {
+		t.Fatalf("expected %d actionable items, got %d: %#v", statusActionableLimit, len(items), items)
+	}
+	wantKinds := []string{"coverage", "proposal", "draft", "risks", "followups"}
+	for i, want := range wantKinds {
+		if items[i].Kind != want {
+			t.Fatalf("item %d kind = %q, want %q; items=%#v", i, items[i].Kind, want, items)
+		}
+		if items[i].Why == "" || items[i].Risk == "" || items[i].RecommendedCommand == "" {
+			t.Fatalf("item %d should carry why/risk/command, got %#v", i, items[i])
+		}
+	}
+}
+
+func TestStatus_ActionableItemsKeepSetupExclusive(t *testing.T) {
+	items := buildStatusActionItems(&StatusResult{Initialized: false}, nil)
+	if len(items) != 1 {
+		t.Fatalf("expected one setup item, got %#v", items)
+	}
+	if items[0].Kind != "setup" || !strings.Contains(items[0].RecommendedCommand, "mainline init") {
+		t.Fatalf("expected setup init action, got %#v", items[0])
+	}
+}
+
+func TestStatus_ActionableItemsPopulateBeforeInit(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if len(res.ActionableItems) != 1 {
+		t.Fatalf("expected one actionable setup item before init, got %#v", res.ActionableItems)
+	}
+	if res.ActionableItems[0].Kind != "setup" {
+		t.Fatalf("expected setup item before init, got %#v", res.ActionableItems[0])
+	}
+}
