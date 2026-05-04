@@ -164,6 +164,7 @@ Humans should not have to learn the agent JSON protocol. The human main line is:
 ```bash
 mainline init                            # one-time repo setup
 mainline hub open                        # open the human reading surface
+mainline status --actionable             # top items needing attention now
 mainline log                             # what changed recently
 mainline show <intent_id>                # why one decision exists
 mainline gaps                            # commits on main with no intent
@@ -633,6 +634,7 @@ Core human set:
 |---|---|
 | `mainline init` | Initialise mainline in this repository |
 | `mainline hub open` | Build + open a static HTML site over the local intent view |
+| `mainline status --actionable` | Top 5 actionable items with why, risk, and next command |
 | `mainline log` | Intent history with author, time, and `[check:?\|~\|ok\|!\|human?]` |
 | `mainline show <id>` | Full intent detail (decisions, risks, follow-ups, fingerprint) |
 | `mainline gaps` | List uncovered commits on main with reversibility-ranked rescue options |

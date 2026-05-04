@@ -4,7 +4,11 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mainline-org/mainline/internal/engine"
 )
+
+var statusActionable bool
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
@@ -23,8 +27,16 @@ var statusCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			outputJSON(result)
+			if statusActionable {
+				outputJSON(map[string]interface{}{"items": result.ActionableItems})
+			} else {
+				outputJSON(result)
+			}
 		} else {
+			if statusActionable {
+				renderStatusActionable(result)
+				return
+			}
 			if !result.Initialized {
 				fmt.Println("Mainline not initialized in this repo.")
 				fmt.Println()
@@ -128,6 +140,30 @@ var statusCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+func init() {
+	statusCmd.Flags().BoolVar(&statusActionable, "actionable", false, "show top actionable items instead of the full status rollup")
+}
+
+func renderStatusActionable(result *engine.StatusResult) {
+	if len(result.ActionableItems) == 0 {
+		fmt.Println("Attention — no actionable items.")
+		if result.Initialized && result.IdentityConfigured {
+			fmt.Println("  Next: mainline start \"<the user's goal>\"")
+		}
+		return
+	}
+	fmt.Printf("Attention — %d item(s)\n\n", len(result.ActionableItems))
+	for i, item := range result.ActionableItems {
+		fmt.Printf("%d. [%s] %s\n", i+1, item.Kind, item.Title)
+		fmt.Printf("   why: %s\n", item.Why)
+		fmt.Printf("   risk: %s\n", item.Risk)
+		fmt.Printf("   next: %s\n", item.RecommendedCommand)
+		if i < len(result.ActionableItems)-1 {
+			fmt.Println()
+		}
+	}
 }
 
 func shortHash(hash string) string {

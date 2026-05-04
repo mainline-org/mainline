@@ -159,6 +159,7 @@ Mainline 在同一个仓库里有两层：
 ```bash
 mainline init                            # 一次性 repo setup
 mainline hub open                        # 打开给人看的阅读界面
+mainline status --actionable             # 现在最该处理的 Top items
 mainline log                             # 最近发生了什么
 mainline show <intent_id>                # 一个 decision 为什么存在
 mainline gaps                            # main 上哪些 commit 没有 intent
