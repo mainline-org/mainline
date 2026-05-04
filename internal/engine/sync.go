@@ -253,6 +253,12 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				// Legacy event: field absent → assume complete.
 				evidenceComplete = true
 			}
+			summary := evt.Summary
+			// summary.user_goal is a denormalized mirror for renderers and
+			// legacy JSON consumers. The event's top-level Goal is the
+			// lifecycle source of truth, so view rebuild repairs missing or
+			// agent-misfilled mirrors from older seals.
+			summary.UserGoal = evt.Goal
 			iv := &domain.IntentView{
 				IntentID:        evt.IntentID,
 				SchemaVersion:   1,
@@ -267,7 +273,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				CodeCommit:      evt.CodeCommit,
 				BackfillCommits: evt.BackfillCommits,
 				References:      evt.References,
-				Summary:         &evt.Summary,
+				Summary:         &summary,
 				Fingerprint:     &evt.Fingerprint,
 				ViewRebuiltAt:   core.Now(),
 				StatusEvidence: domain.StatusEvidence{
