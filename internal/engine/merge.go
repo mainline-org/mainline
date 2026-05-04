@@ -323,9 +323,25 @@ func (s *Service) Pin() (*PinResult, error) {
 
 	entries, _ := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
 
+	hashSeen := map[string]bool{}
 	hashes := make([]string, 0, len(entries))
+	appendHash := func(hash string) {
+		if hash == "" || hashSeen[hash] {
+			return
+		}
+		hashSeen[hash] = true
+		hashes = append(hashes, hash)
+	}
 	for _, e := range entries {
-		hashes = append(hashes, e.Hash)
+		appendHash(e.Hash)
+	}
+	for _, iv := range view.Intents {
+		if iv.Status != domain.StatusProposed && iv.Status != domain.StatusMerged {
+			continue
+		}
+		for _, target := range iv.BackfillCommits {
+			appendHash(s.resolvePinCommit(target))
+		}
 	}
 
 	// Collect all unique CodeCommit values from proposed/merged intents.
@@ -398,16 +414,7 @@ func (s *Service) Pin() (*PinResult, error) {
 		if len(iv.BackfillCommits) > 0 {
 			pinnedAny := false
 			for _, target := range iv.BackfillCommits {
-				// Resolve short hashes to full SHA for noteCache lookup.
-				// BackfillCommits persisted before the normalization fix
-				// may contain abbreviated hashes that miss the full-hash
-				// keyed cache.
-				resolved := target
-				if len(target) < 40 {
-					if full, err := s.Git.Run("rev-parse", "--verify", target+"^{commit}"); err == nil {
-						resolved = strings.TrimSpace(full)
-					}
-				}
+				resolved := s.resolvePinCommit(target)
 				if alreadyHasIntentCached(pinCtx.noteCache, resolved, iv.IntentID) {
 					continue
 				}
@@ -688,6 +695,23 @@ func alreadyHasIntentCached(noteCache map[string]string, commit, intentID string
 		}
 	}
 	return false
+}
+
+func (s *Service) resolvePinCommit(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return ""
+	}
+	// BackfillCommits persisted before the normalization fix may contain
+	// abbreviated hashes. Resolve them before any full-hash keyed cache lookup.
+	if len(target) < 40 {
+		if full, err := s.Git.Run("rev-parse", "--verify", target+"^{commit}"); err == nil {
+			if resolved := strings.TrimSpace(full); resolved != "" {
+				return resolved
+			}
+		}
+	}
+	return target
 }
 
 // mergeHeaderRE matches the canonical GitHub merge commit first line:

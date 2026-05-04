@@ -160,3 +160,67 @@ func TestBackfill_PinIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// TestBackfill_PinIdempotentPastLookback verifies that explicit backfill pins
+// remain idempotent even when the claimed commit is older than Check.Lookback.
+// This is the dogfood path where sync kept reporting the same
+// backfill_explicit links: the note existed, but Pin's note cache only covered
+// recent main commits.
+func TestBackfill_PinIdempotentPastLookback(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	gitCmd(t, dir, "checkout", "main")
+
+	cfg, err := svc.Store.ReadTeamConfig()
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	cfg.Check.Lookback = 2
+	if err := svc.Store.WriteTeamConfig(cfg); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	writeFile(t, dir, "past-lookback.go", "package main\n")
+	gitCmd(t, dir, "add", "past-lookback.go")
+	gitCmd(t, dir, "commit", "-m", "manual edit past lookback")
+	manualCommit, _ := svc.Git.HeadCommit()
+
+	for i := 0; i < 3; i++ {
+		writeFile(t, dir, "filler-"+string(rune('a'+i))+".go", "package main\n")
+		gitCmd(t, dir, "add", ".")
+		gitCmd(t, dir, "commit", "-m", "filler commit")
+	}
+
+	startResult, err := svc.StartWithOptions("past lookback backfill test", "", &StartOptions{
+		BackfillCommits: []string{manualCommit},
+	})
+	if err != nil {
+		t.Fatalf("start --commits: %v", err)
+	}
+	if _, err := svc.Append("turn description"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	sr := validSealResult(startResult.IntentID)
+	data, _ := json.Marshal(sr)
+	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
+		t.Fatalf("seal submit: %v", err)
+	}
+
+	if raw, _ := svc.Git.NotesShow(manualCommit); raw == "" {
+		t.Fatalf("backfill note should exist after seal submit")
+	}
+
+	syncResult, err := svc.Sync()
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	for _, link := range syncResult.AutoPinned {
+		if link.IntentID == startResult.IntentID {
+			t.Fatalf("sync re-pinned past-lookback intent %s", startResult.IntentID)
+		}
+	}
+}
