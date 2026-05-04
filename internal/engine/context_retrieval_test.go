@@ -344,28 +344,47 @@ func mustStart(t *testing.T, svc *Service, goal string) string {
 }
 
 // -----------------------------------------------------------
-// Step 2: anti_patterns + retrieval status + guidance + ranking
+// Step 2: legacy signals + retrieval status + guidance + ranking
 // -----------------------------------------------------------
 
-// AntiPatterns must reach the agent verbatim — they're the load-
-// bearing safety surface and must never be truncated by the top-N
-// caps that apply to decisions/risks. Property 5.
-func TestContextRetrieval_AntiPatternsPropagateAndAreNeverTruncated(t *testing.T) {
+func TestContextRetrieval_LegacyAntiPatternsDoNotPropagateInDefaultContext(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	id := sealedIntentTouchingWithAntiPatterns(t, dir, svc, "ap-test",
-		[]string{"src/auth/middleware.go"},
-		"Auth migration with constraints",
-		[]domain.AntiPattern{
-			{What: "Removing legacy session middleware on /oauth path", Why: "OAuth callback handler still requires session state", Severity: "high"},
-			{What: "Bypassing JWT validation in dev mode", Why: "Same code path runs in CI; bypass leaks", Severity: "medium"},
-			{What: "Calling internal token issuer from request handlers", Why: "Couples HTTP layer to crypto subsystem", Severity: "low"},
-			{What: "Storing session tokens in localStorage", Why: "XSS risk; we standardised on httpOnly cookies", Severity: "high"},
-			{What: "Using sync ops in the auth callback", Why: "Blocks event loop; we already had one outage", Severity: "medium"},
-		})
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		RebuiltAt:     "2026-04-29T00:00:00Z",
+		Intents: []domain.IntentView{{
+			IntentID:      "int_legacy_ap",
+			Status:        domain.StatusMerged,
+			ActorID:       "agent",
+			Thread:        "feature/auth",
+			GitBranch:     "feature/auth",
+			Goal:          "legacy anti-pattern context test",
+			SealedAt:      "2026-04-28T00:00:00Z",
+			ViewRebuiltAt: "2026-04-29T00:00:00Z",
+			Summary: &domain.IntentSummary{
+				Title: "Auth migration with legacy anti-patterns",
+				What:  "Changed auth middleware.",
+				Why:   "OAuth callback needed compatibility.",
+				AntiPatterns: []domain.AntiPattern{{
+					What:     "Removing legacy session middleware on /oauth path",
+					Why:      "OAuth callback handler still requires session state",
+					Severity: "high",
+				}},
+			},
+			Fingerprint: &domain.SemanticFingerprint{
+				FilesTouched: []string{"src/auth/middleware.go"},
+				Subsystems:   []string{"auth"},
+			},
+		}},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
 
 	res, err := svc.RetrieveContext(ContextRetrievalRequest{
 		Mode:  "files",
@@ -376,25 +395,23 @@ func TestContextRetrieval_AntiPatternsPropagateAndAreNeverTruncated(t *testing.T
 	}
 	var found *ContextRelevant
 	for i := range res.RelevantIntents {
-		if res.RelevantIntents[i].IntentID == id {
+		if res.RelevantIntents[i].IntentID == "int_legacy_ap" {
 			found = &res.RelevantIntents[i]
 			break
 		}
 	}
 	if found == nil {
-		t.Fatalf("expected intent %s in retrieval", id)
+		t.Fatalf("expected legacy intent in retrieval")
 	}
-	if len(found.AntiPatterns) != 5 {
-		t.Fatalf("anti_patterns must NOT be truncated; want 5, got %d", len(found.AntiPatterns))
+	if len(found.AntiPatterns) != 0 {
+		t.Fatalf("legacy anti_patterns must not be promoted into default context, got %+v", found.AntiPatterns)
 	}
-	for i, ap := range found.AntiPatterns {
-		if ap.What == "" || ap.Why == "" {
-			t.Errorf("anti_pattern[%d] missing what/why: %+v", i, ap)
-		}
+	if len(res.InheritedConstraints) != 0 {
+		t.Fatalf("legacy anti_patterns must not become inherited constraints, got %+v", res.InheritedConstraints)
 	}
 }
 
-func TestContextRetrieval_QueryModeScoresAntiPatterns(t *testing.T) {
+func TestContextRetrieval_QueryModeDoesNotScoreLegacyAntiPatterns(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
@@ -439,21 +456,14 @@ func TestContextRetrieval_QueryModeScoresAntiPatterns(t *testing.T) {
 
 	res, err := svc.RetrieveContext(ContextRetrievalRequest{
 		Mode:  "query",
-		Query: "write a new section in AGENTS.md describing the seal workflow",
+		Query: "managed block Mainline template",
 		Limit: 10,
 	})
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	if len(res.RelevantIntents) == 0 || res.RelevantIntents[0].IntentID != "int_terminology" {
-		t.Fatalf("expected anti_pattern-only docs intent to surface, got %+v", res.RelevantIntents)
-	}
-	if len(res.RelevantIntents[0].AntiPatterns) != 1 {
-		t.Fatalf("expected anti_pattern to be preserved, got %+v", res.RelevantIntents[0].AntiPatterns)
-	}
-	reasons := strings.Join(res.RelevantIntents[0].Relevance.Reasons, " ")
-	if !strings.Contains(reasons, "anti_pattern") {
-		t.Fatalf("expected anti_pattern relevance reason, got %v", res.RelevantIntents[0].Relevance.Reasons)
+	if len(res.RelevantIntents) != 0 {
+		t.Fatalf("legacy anti_pattern-only matches should not drive default context, got %+v", res.RelevantIntents)
 	}
 }
 
@@ -725,10 +735,9 @@ func TestContextRetrieval_IncludesSupersededLineageWhenSupersederMatches(t *test
 	}
 }
 
-// Property 1: an anti_pattern with empty why is rejected at seal
-// time. This is what keeps the load-bearing safety property
-// honest — agents that paste anti_patterns without reasons get a
-// clear failure rather than silent acceptance.
+// Property 1: a legacy anti_pattern with empty why is rejected by the
+// low-level schema validator. SealSubmit rejects the whole field for
+// new action-signal writes, but old records still need coherent shape.
 func TestValidateSealResult_RejectsAntiPatternWithEmptyWhy(t *testing.T) {
 	sr := &domain.SealResult{
 		IntentID: "int_x12345678",
@@ -809,25 +818,33 @@ func sealedIntentSupersedingWith(t *testing.T, dir string, svc *Service, branchS
 	return start.IntentID
 }
 
-// Helper: seal an intent with a populated AntiPatterns slice.
 // TestContextRetrieval_SurfacesInheritedConstraints verifies that
-// when --files names a file with prior anti_patterns from another
-// sealed intent, those anti_patterns appear in the top-level
-// inherited_constraints field — even if the source intent itself
-// is the only candidate.
+// when --files names a file with an explicit human-promoted
+// constraint, it appears in the top-level inherited_constraints
+// field even if no intent is otherwise relevant.
 func TestContextRetrieval_SurfacesInheritedConstraints(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	_ = sealedIntentTouchingWithAntiPatterns(t, dir, svc, "auth-old",
-		[]string{"src/auth/middleware.go"},
-		"Earlier auth migration",
-		[]domain.AntiPattern{
-			{What: "Removing legacy session middleware on /oauth path", Why: "OAuth callback needs session", Severity: "high"},
-			{What: "Bypassing JWT validation in dev mode", Why: "leaks", Severity: "medium"},
-		})
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		RebuiltAt:     "2026-04-29T00:00:00Z",
+		Constraints: []domain.Constraint{{
+			ID:           "guard_auth",
+			SourceIntent: "int_auth_old",
+			Files:        []string{"src/auth/middleware.go"},
+			What:         "Do not remove legacy session middleware on /oauth path",
+			Why:          "OAuth callback needs session",
+			Severity:     "high",
+			OpenedAt:     "2026-04-28T00:00:00Z",
+		}},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
 
 	res, err := svc.RetrieveContext(ContextRetrievalRequest{
 		Mode:  "files",
@@ -860,20 +877,31 @@ func TestContextRetrieval_SurfacesInheritedConstraints(t *testing.T) {
 }
 
 // TestContextRetrieval_NoInheritedWhenNoOverlap is the negative case
-// — no constraints surfaced when the queried files don't overlap
-// any prior intent's touched files.
+// — no constraints surfaced when the queried files don't overlap any
+// explicit constraint scope.
 func TestContextRetrieval_NoInheritedWhenNoOverlap(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	_ = sealedIntentTouchingWithAntiPatterns(t, dir, svc, "auth-old",
-		[]string{"internal/auth/middleware.go"},
-		"Auth migration",
-		[]domain.AntiPattern{
-			{What: "Removing legacy session middleware", Why: "breaks sso", Severity: "high"},
-		})
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		RebuiltAt:     "2026-04-29T00:00:00Z",
+		Constraints: []domain.Constraint{{
+			ID:           "guard_auth",
+			SourceIntent: "int_auth_old",
+			Files:        []string{"internal/auth/middleware.go"},
+			What:         "Do not remove legacy session middleware",
+			Why:          "breaks sso",
+			Severity:     "high",
+			OpenedAt:     "2026-04-28T00:00:00Z",
+		}},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
 
 	res, err := svc.RetrieveContext(ContextRetrievalRequest{
 		Mode:  "files",
@@ -885,36 +913,4 @@ func TestContextRetrieval_NoInheritedWhenNoOverlap(t *testing.T) {
 	if len(res.InheritedConstraints) != 0 {
 		t.Errorf("expected zero inherited constraints for non-overlapping path, got %v", res.InheritedConstraints)
 	}
-}
-
-func sealedIntentTouchingWithAntiPatterns(t *testing.T, dir string, svc *Service, branchSuffix string,
-	files []string, summaryTitle string, antiPatterns []domain.AntiPattern) string {
-	t.Helper()
-	gitCmd(t, dir, "checkout", "main")
-	gitCmd(t, dir, "checkout", "-b", "feature/"+branchSuffix)
-	start, err := svc.Start("ctx test "+branchSuffix, "")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	for _, f := range files {
-		writeFile(t, dir, f, "// "+f+"\n")
-	}
-	gitCmd(t, dir, "add", ".")
-	gitCmd(t, dir, "commit", "-m", "ctx test "+branchSuffix)
-	if _, err := svc.Append("did the work"); err != nil {
-		t.Fatalf("append: %v", err)
-	}
-	sr := validSealResult(start.IntentID)
-	sr.Summary.Title = summaryTitle
-	sr.Summary.AntiPatterns = antiPatterns
-	sr.Fingerprint.FilesTouched = files
-	sr.Fingerprint.Subsystems = subsystemsFromFiles(files)
-	data, _ := json.Marshal(sr)
-	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
-		t.Fatalf("seal: %v", err)
-	}
-	if _, err := svc.Sync(); err != nil {
-		t.Fatalf("sync: %v", err)
-	}
-	return start.IntentID
 }

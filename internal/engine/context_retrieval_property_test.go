@@ -61,12 +61,10 @@ func TestPropertyClassifyRetrievalStatusDeterministic(t *testing.T) {
 	})
 }
 
-// Property 5: AntiPatterns conservation. Across any synthetic
-// MainlineView, every intent that appears in the retrieval result
-// carries exactly the same number of anti-patterns it had in the
-// view. Truncation breaks the load-bearing safety property; this
-// property is what enforces that no top-N path drops them.
-func TestPropertyAntiPatternsConservation(t *testing.T) {
+// Property 5: Legacy AntiPatterns omission. Across any synthetic
+// MainlineView, default pre-edit retrieval must not promote legacy
+// seal anti_patterns into the agent's immediate work context.
+func TestPropertyLegacyAntiPatternsOmittedFromDefaultContext(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		dir, cleanup := testRepo(rt)
 		defer cleanup()
@@ -77,13 +75,9 @@ func TestPropertyAntiPatternsConservation(t *testing.T) {
 
 		nIntents := rapid.IntRange(1, 6).Draw(rt, "n")
 		view := &domain.MainlineView{SchemaVersion: 1, MainBranch: "main"}
-		expectedAPs := map[string]int{}
 		for i := 0; i < nIntents; i++ {
 			iv := drawSealedIntent(rt, fmt.Sprintf("iv-%d", i))
 			view.Intents = append(view.Intents, iv)
-			if iv.Summary != nil {
-				expectedAPs[iv.IntentID] = len(iv.Summary.AntiPatterns)
-			}
 		}
 		if err := svc.Store.WriteMainlineView(view); err != nil {
 			rt.Fatalf("write view: %v", err)
@@ -102,15 +96,15 @@ func TestPropertyAntiPatternsConservation(t *testing.T) {
 			rt.Fatalf("retrieve: %v", err)
 		}
 
-		// For every intent that appears in the result, anti-pattern
-		// count must equal the seal-time count. Truncation here
-		// would break Property 5.
+		// For every intent that appears in the result, legacy
+		// anti-patterns must stay out of the default context. They
+		// remain readable through `mainline show`, but they no longer
+		// become pre-edit action signals.
 		for _, ri := range res.RelevantIntents {
-			want := expectedAPs[ri.IntentID]
 			got := len(ri.AntiPatterns)
-			if got != want {
-				rt.Fatalf("intent %s: anti-patterns truncated: want %d, got %d (status=%s)",
-					ri.IntentID, want, got, ri.Status)
+			if got != 0 {
+				rt.Fatalf("intent %s: legacy anti-patterns leaked into context: got %d (status=%s)",
+					ri.IntentID, got, ri.Status)
 			}
 		}
 	})
@@ -306,9 +300,8 @@ func drawNow(rt *rapid.T, label string) time.Time {
 }
 
 // drawSealedIntent produces an intent suitable for retrieval-level
-// PBTs (Properties 3 and 5). Summary + Fingerprint are populated;
-// AntiPatterns count is randomised so the conservation property
-// has signal across runs.
+// PBTs. Summary + Fingerprint are populated; AntiPatterns count is
+// randomised so the legacy-omission property has signal across runs.
 func drawSealedIntent(rt *rapid.T, label string) domain.IntentView {
 	id := "int_" + label + "_" + randomTestString(4)
 	nAPs := rapid.IntRange(0, 4).Draw(rt, label+".nAPs")

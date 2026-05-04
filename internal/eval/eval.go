@@ -13,7 +13,7 @@
 //
 //   - A precondition Scorer that answers "given the fixture's
 //     task description, does mainline context return the
-//     constraining intents + their anti_patterns?". This is a
+//     constraining intents + explicit constraints?". This is a
 //     deterministic test of retrieval, but it is *load-bearing*:
 //     a constraint retrieval cannot surface is one no agent can
 //     respect regardless of prompt.
@@ -64,7 +64,7 @@ type Fixture struct {
 	// many of these are met.
 	Expected []ExpectedItem
 
-	// Forbidden lists anti-patterns the agent must NOT repeat. In v1
+	// Forbidden lists constraints the agent must NOT violate. In v1
 	// these are descriptive — the LLM-runner layer will compare
 	// agent output against them.
 	Forbidden []string
@@ -120,11 +120,11 @@ type ExpectedItem struct {
 
 // ScoreResult is the per-fixture rollup the harness emits.
 type ScoreResult struct {
-	Fixture     string                `json:"fixture"`
-	Description string                `json:"description"`
-	Pass        bool                  `json:"pass"`
-	Items       []ScoreItem           `json:"items"`
-	Forbidden   []string              `json:"forbidden_summary,omitempty"`
+	Fixture     string      `json:"fixture"`
+	Description string      `json:"description"`
+	Pass        bool        `json:"pass"`
+	Items       []ScoreItem `json:"items"`
+	Forbidden   []string    `json:"forbidden_summary,omitempty"`
 }
 
 // ScoreItem is one Expected check's outcome.

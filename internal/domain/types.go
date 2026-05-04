@@ -207,7 +207,7 @@ type IntentSummary struct {
 
 	// AcknowledgedConstraints records how the agent handled each
 	// inherited high-severity constraint it saw during this seal.
-	// Keyed by stable ConstraintID ("int_xxx#N"). Persists through
+	// Keyed by stable ConstraintID ("guard_xxx"). Persists through
 	// seal → event → view so lint, Hub, and heatmap can audit.
 	AcknowledgedConstraints []AcknowledgedConstraint `json:"acknowledged_constraints,omitempty"`
 
@@ -220,11 +220,10 @@ type IntentSummary struct {
 }
 
 // AcknowledgedConstraint records how the agent handled a specific
-// inherited constraint. The ConstraintID is stable ("int_xxx#N"
-// where N is the anti_pattern array index in the source intent) so
+// inherited constraint. The ConstraintID is stable ("guard_xxx") so
 // matching is exact rather than text-guessing.
 type AcknowledgedConstraint struct {
-	ConstraintID string `json:"constraint_id"` // "int_xxx#N"
+	ConstraintID string `json:"constraint_id"` // "guard_xxx"
 	Disposition  string `json:"disposition"`   // preserved | mitigated | not_applicable | intentionally_changed
 	Note         string `json:"note,omitempty"`
 }
@@ -238,19 +237,17 @@ type AntiPattern struct {
 	Severity string `json:"severity,omitempty"` // "high" | "medium" | "low"
 }
 
-// InheritedConstraintHotspot is the per-file roll-up of inherited
-// anti_patterns. The Hub dashboard renders the top files sorted by
-// HighSeverityCount (desc) then UnacknowledgedRecentTouches (desc),
-// so reviewers land on the surfaces where unack'd hard constraints
-// pile up. This is the load-bearing answer to "which file should
-// the reviewer look at first?".
+// InheritedConstraintHotspot is the per-file roll-up of inherited explicit
+// constraints. The Hub dashboard renders the top files sorted by
+// HighSeverityCount (desc) then UnacknowledgedRecentTouches (desc), so
+// reviewers land on the surfaces where unack'd hard constraints pile up. This
+// is the load-bearing answer to "which file should the reviewer look at first?".
 //
 // HighSeverityCount counts distinct (source_intent, what) pairs —
-// duplicate anti_patterns from the same intent that match by both
-// file and subsystem collapse to one. UnacknowledgedRecentTouches
-// counts intents sealed within the digest window that touched this
-// file AND failed to acknowledge at least one applicable
-// high-severity inherited constraint.
+// duplicate constraints from the same source that match by multiple files
+// collapse to one. UnacknowledgedRecentTouches counts intents sealed within the
+// digest window that touched this file AND failed to acknowledge at least one
+// applicable high-severity inherited constraint.
 type InheritedConstraintHotspot struct {
 	FilePath                    string                `json:"file_path"`
 	ConstraintCount             int                   `json:"constraint_count"`
@@ -260,23 +257,20 @@ type InheritedConstraintHotspot struct {
 	Constraints                 []InheritedConstraint `json:"constraints,omitempty"`
 }
 
-// InheritedConstraint is an anti_pattern from a *prior* sealed intent
-// that the current change is at risk of touching, surfaced to the
-// agent during context retrieval and to the linter / Hub / PR
-// description as "this constraint pre-dates your work, you must at
-// least acknowledge it".
+// InheritedConstraint is a human-promoted guard that the current change is at
+// risk of touching, surfaced to the agent during context retrieval and to the
+// linter / Hub / PR description as "this constraint pre-dates your work, you
+// must at least acknowledge it".
 //
-// SourceIntent is the intent that sealed the original anti_pattern.
-// MatchedBy lists the reasons this constraint propagated to the
-// current context — typically `file:<path>` for a touched-file match
-// or `subsystem:<name>` for a subsystem match. A single anti_pattern
-// can match by multiple files; we keep the full list so the linter
-// and the Hub can show "matched 3 files" without re-scanning.
+// SourceIntent is the intent associated with the original guard. MatchedBy
+// lists the file reasons this constraint propagated to the current context. A
+// single constraint can match by multiple files; we keep the full list so the
+// linter and the Hub can show "matched 3 files" without re-scanning.
 //
-// What/Why/Severity mirror AntiPattern verbatim — same shape, just
-// annotated with provenance and match reasons.
+// What/Why/Severity mirror the explicit Constraint fields, annotated with
+// provenance and match reasons.
 type InheritedConstraint struct {
-	ConstraintID string   `json:"constraint_id"` // "int_xxx#N" — stable ID for acknowledgement
+	ConstraintID string   `json:"constraint_id"` // "guard_xxx" — stable ID for acknowledgement
 	SourceIntent string   `json:"source_intent"`
 	What         string   `json:"what"`
 	Why          string   `json:"why"`

@@ -1,14 +1,12 @@
 package domain
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
-// Inherited-constraint propagation. Human-promoted constraints, plus
-// legacy high-severity AntiPatterns from older seals, become
+// Inherited-constraint propagation. Human-promoted constraints become
 // "inherited constraints" for any future change that touches the same
 // files. Surfaced to the agent via `mainline context`, to the reviewer
 // via Hub + PR description, and to the linter as a warning when not
@@ -19,7 +17,7 @@ import (
 //   - Only FILE overlap triggers inheritance — subsystem matching was
 //     too coarse and generated noise that trained users to ignore it.
 //   - Acknowledgement is EXPLICIT: the seal carries acknowledged_constraints[]
-//     keyed by stable constraint_id ("int_xxx#N"), not guessed via
+//     keyed by stable constraint_id ("guard_xxx"), not guessed via
 //     token overlap.
 //   - Legacy fallback: old seals without acknowledged_constraints still
 //     get the v1 token-overlap heuristic in lint for backward compat.
@@ -27,25 +25,23 @@ import (
 // Violation detection remains out of scope — awareness + explicit
 // acknowledgement is the load-bearing contract.
 
-// BuildInheritedConstraints aggregates explicit constraints and
-// legacy high-severity AntiPatterns whose FilesTouched overlap with
-// the supplied files of the change in progress.
+// BuildInheritedConstraints aggregates explicit constraints whose
+// files overlap with the supplied files of the change in progress.
 //
-// v2 design: only HIGH severity anti_patterns propagate (the
-// checklist must be short and hard), and matching is FILE-ONLY
-// (subsystem matching was too coarse and generated noise). This
-// means the function no longer uses the `subsystems` parameter —
-// it is kept in the signature for API stability but ignored.
+// v2 design: only HIGH severity explicit constraints propagate (the
+// checklist must be short and hard), and matching is FILE-ONLY (subsystem
+// matching was too coarse and generated noise). This means the function no
+// longer uses the `subsystems` parameter — it is kept in the signature for API
+// stability but ignored.
 //
 // excludeID is the intent currently being sealed/edited (its own
-// anti_patterns are not "inherited" — they're the intent's own
-// constraints). When excludeID corresponds to a sealed intent in
-// the view, this function ALSO filters out source intents that
-// were sealed AFTER excludeID — a future constraint cannot have
-// been acknowledged by the current intent because it did not yet
-// exist. For in-flight retrieval (excludeID = "" or matches an
-// active draft), no temporal filter is applied; the agent is the
-// future relative to every sealed intent.
+// explicit constraints are not "inherited" — they're the intent's own
+// constraints). When excludeID corresponds to a sealed intent in the view, this
+// function ALSO filters out constraints opened AFTER excludeID — a future
+// constraint cannot have been acknowledged by the current intent because it did
+// not yet exist. For in-flight retrieval (excludeID = "" or matches an active
+// draft), no temporal filter is applied; the agent is the future relative to
+// every sealed intent.
 //
 // Output ordering: by SourceIntent ID for determinism. Never truncated.
 //
@@ -129,57 +125,6 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 		}
 	}
 
-	for i := range view.Intents {
-		iv := &view.Intents[i]
-		if iv.IntentID == excludeID {
-			continue
-		}
-		if iv.Status == StatusAbandoned || iv.Status == StatusReverted {
-			continue
-		}
-		if iv.Summary == nil || len(iv.Summary.AntiPatterns) == 0 {
-			continue
-		}
-		if !cutoff.IsZero() && iv.SealedAt != "" {
-			if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil && t.After(cutoff) {
-				continue
-			}
-		}
-		// File-only matching: check if this intent touched any of our files
-		matchedFiles := matchedFileReasons(iv, fileSet)
-		if len(matchedFiles) == 0 {
-			continue
-		}
-		// Only inherit HIGH severity anti_patterns
-		for apIdx, ap := range iv.Summary.AntiPatterns {
-			if strings.TrimSpace(ap.What) == "" {
-				continue
-			}
-			if !strings.EqualFold(strings.TrimSpace(ap.Severity), "high") {
-				continue
-			}
-			constraintID := fmt.Sprintf("%s#%d", iv.IntentID, apIdx)
-			key := constraintID
-			b, ok := merged[key]
-			if !ok {
-				b = &bucket{
-					ic: InheritedConstraint{
-						ConstraintID: constraintID,
-						SourceIntent: iv.IntentID,
-						What:         ap.What,
-						Why:          ap.Why,
-						Severity:     ap.Severity,
-					},
-					reasons: map[string]bool{},
-				}
-				merged[key] = b
-			}
-			for _, r := range matchedFiles {
-				b.reasons[r] = true
-			}
-		}
-	}
-
 	out := make([]InheritedConstraint, 0, len(merged))
 	for _, b := range merged {
 		reasons := make([]string, 0, len(b.reasons))
@@ -196,13 +141,10 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 	return out
 }
 
-// BuildInheritedHeatmap returns the per-file hotspot roll-up over
-// the catalog. For each file in the FileIndex, it collects the
-// inherited anti_patterns whose source intent's FilesTouched
-// contains that file (subsystem-only matches don't make the heatmap
-// because they don't pin to a single path) and counts how many
-// recent (within `recentWindow`) intents touched the file without
-// acknowledging at least one applicable high-severity constraint.
+// BuildInheritedHeatmap returns the per-file hotspot roll-up over the catalog.
+// It collects explicit inherited constraints by file and counts how many recent
+// (within `recentWindow`) intents touched the file without acknowledging at
+// least one applicable high-severity constraint.
 //
 // recentWindow is the cutoff time: intents sealed at or after it are
 // "recent". Pass time.Now().AddDate(0, 0, -7) for the dashboard's
@@ -269,34 +211,6 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 		if iv.SealedAt != "" {
 			if t, err := time.Parse(time.RFC3339, iv.SealedAt); err == nil && !t.Before(recentWindow) {
 				isRecent = true
-			}
-		}
-		// Source role: this intent contributes high-severity
-		// anti_patterns to every file it touched.
-		if iv.Summary != nil {
-			for apIdx, ap := range iv.Summary.AntiPatterns {
-				if strings.TrimSpace(ap.What) == "" {
-					continue
-				}
-				if !strings.EqualFold(strings.TrimSpace(ap.Severity), "high") {
-					continue
-				}
-				constraintID := fmt.Sprintf("%s#%d", iv.IntentID, apIdx)
-				for _, f := range iv.Fingerprint.FilesTouched {
-					m, ok := perFile[f]
-					if !ok {
-						m = map[cKey]InheritedConstraint{}
-						perFile[f] = m
-					}
-					m[cKey{iv.IntentID, ap.What}] = InheritedConstraint{
-						ConstraintID: constraintID,
-						SourceIntent: iv.IntentID,
-						What:         ap.What,
-						Why:          ap.Why,
-						Severity:     ap.Severity,
-						MatchedBy:    []string{"file:" + f},
-					}
-				}
 			}
 		}
 		// Recent-touch role: every recent intent contributes to
@@ -373,22 +287,6 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 	return out
 }
 
-// matchedFileReasons returns the list of "file:<path>" strings
-// describing why the source intent's anti_patterns propagate to the
-// current context. v2: file-only matching (subsystem removed).
-func matchedFileReasons(iv *IntentView, files map[string]bool) []string {
-	if iv.Fingerprint == nil {
-		return nil
-	}
-	out := make([]string, 0, 4)
-	for _, f := range iv.Fingerprint.FilesTouched {
-		if files[f] {
-			out = append(out, "file:"+f)
-		}
-	}
-	return out
-}
-
 // hasExplicitAck checks whether the acknowledged_constraints list
 // contains an entry for the given constraint ID. Exact match only.
 func hasExplicitAck(acks []AcknowledgedConstraint, constraintID string) bool {
@@ -400,7 +298,7 @@ func hasExplicitAck(acks []AcknowledgedConstraint, constraintID string) bool {
 	return false
 }
 
-// severityRank maps anti_pattern severity to a sort key. Lower rank
+// severityRank maps constraint severity to a sort key. Lower rank
 // sorts first ("high" before "medium" before "low"). Empty / unknown
 // severity sorts last so reviewers see the explicit signals first.
 func severityRank(sev string) int {

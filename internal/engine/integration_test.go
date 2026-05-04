@@ -897,14 +897,19 @@ func TestSealSubmitSurfacesInheritedLintWarningsWithoutBlocking(t *testing.T) {
 		t.Fatalf("append seed: %v", err)
 	}
 	seedSeal := validSealResult(seedStart.IntentID)
-	seedSeal.Summary.AntiPatterns = []domain.AntiPattern{{
-		What:     "Do not remove the OAuth session path",
-		Why:      "callback state still depends on the legacy session middleware",
-		Severity: "high",
-	}}
 	seedData, _ := json.Marshal(seedSeal)
 	if _, err := svc.SealSubmit(json.RawMessage(seedData)); err != nil {
 		t.Fatalf("seed seal: %v", err)
+	}
+	if _, err := svc.AddConstraint(AddConstraintInput{
+		IntentID: seedStart.IntentID,
+		Files:    []string{"test.go"},
+		What:     "Do not remove the OAuth session path",
+		Why:      "callback state still depends on the legacy session middleware",
+		Severity: "high",
+		Source:   domain.SignalSourceExplicitUser,
+	}); err != nil {
+		t.Fatalf("add constraint: %v", err)
 	}
 	if _, err := svc.Merge(seedStart.IntentID); err != nil {
 		t.Fatalf("seed merge: %v", err)
@@ -934,7 +939,7 @@ func TestSealSubmitSurfacesInheritedLintWarningsWithoutBlocking(t *testing.T) {
 	}
 	found := false
 	for _, issue := range result.LintIssues {
-		if issue.Code == "inherited_anti_pattern_not_acknowledged" && issue.Severity == "warning" {
+		if issue.Code == "inherited_constraint_not_acknowledged" && issue.Severity == "warning" {
 			found = true
 			break
 		}
