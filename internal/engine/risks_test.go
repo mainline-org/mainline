@@ -352,7 +352,7 @@ func TestFilesOverlap(t *testing.T) {
 
 func TestFilterOpenRisks_AllOpen(t *testing.T) {
 	risks := []string{"risk one", "risk two"}
-	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusMerged)
+	result := domain.OpenRiskTexts("int_aaa", risks, nil, domain.StatusMerged)
 	if len(result) != 2 {
 		t.Errorf("all open: expected 2, got %d", len(result))
 	}
@@ -363,7 +363,7 @@ func TestFilterOpenRisks_Resolved(t *testing.T) {
 	resolutions := map[string][]domain.RiskResolution{
 		"int_aaa#0": {{Rationale: "fixed"}},
 	}
-	result := filterOpenRisks("int_aaa", risks, resolutions, domain.StatusMerged)
+	result := domain.OpenRiskTexts("int_aaa", risks, resolutions, domain.StatusMerged)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 open after resolution, got %d", len(result))
 	}
@@ -374,7 +374,7 @@ func TestFilterOpenRisks_Resolved(t *testing.T) {
 
 func TestFilterOpenRisks_Expired(t *testing.T) {
 	risks := []string{"risk one"}
-	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusSuperseded)
+	result := domain.OpenRiskTexts("int_aaa", risks, nil, domain.StatusSuperseded)
 	if len(result) != 0 {
 		t.Errorf("expired source should return nil, got %d", len(result))
 	}
@@ -382,7 +382,7 @@ func TestFilterOpenRisks_Expired(t *testing.T) {
 
 func TestFilterOpenRisks_ExpiredAbandoned(t *testing.T) {
 	risks := []string{"risk one"}
-	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusAbandoned)
+	result := domain.OpenRiskTexts("int_aaa", risks, nil, domain.StatusAbandoned)
 	if len(result) != 0 {
 		t.Errorf("abandoned source should return nil, got %d", len(result))
 	}
@@ -390,7 +390,7 @@ func TestFilterOpenRisks_ExpiredAbandoned(t *testing.T) {
 
 func TestFilterOpenRisks_ExpiredReverted(t *testing.T) {
 	risks := []string{"risk one"}
-	result := filterOpenRisks("int_aaa", risks, nil, domain.StatusReverted)
+	result := domain.OpenRiskTexts("int_aaa", risks, nil, domain.StatusReverted)
 	if len(result) != 0 {
 		t.Errorf("reverted source should return nil, got %d", len(result))
 	}

@@ -242,17 +242,17 @@ func (s *Service) ResolveFollowup(followupID string, byIntent string, rationale 
 		)
 	}
 	for _, f := range materializeAllFollowups(view, "") {
-		if f.ID == followupID && f.Status != "open" {
+		if f.ID != followupID {
+			continue
+		}
+		if f.Status != "open" {
 			return domain.NewRecoverableError(
 				domain.ErrInvalidInput,
 				fmt.Sprintf("follow-up %q is already %s", followupID, f.Status),
 				"run `mainline followups --all` to see resolved or expired explicit follow-ups",
 			)
 		}
-		if f.ID == followupID {
-			found = true
-			break
-		}
+		break
 	}
 
 	if rr, ok := view.FollowupResolutions[followupID]; ok && len(rr) > 0 {

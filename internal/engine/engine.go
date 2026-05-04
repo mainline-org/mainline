@@ -533,7 +533,7 @@ func (s *Service) Status() (*StatusResult, error) {
 		Initialized: s.Store.IsInitialized(),
 	}
 	if !result.Initialized {
-		result.ActionableItems = buildStatusActionItems(result, nil)
+		result.ActionableItems = buildStatusActionItems(result)
 		return result, nil
 	}
 
@@ -625,7 +625,7 @@ func (s *Service) Status() (*StatusResult, error) {
 	result.RecentSealed = collectRecentSealed(view, statusRecentSealedLimit)
 	result.ProposalHealth = collectStatusProposalHealth(view, DefaultStaleProposedAfter)
 	result.Suggestions = buildStatusSuggestions(result)
-	result.ActionableItems = buildStatusActionItems(result, view)
+	result.ActionableItems = buildStatusActionItems(result)
 
 	return result, nil
 }
@@ -859,7 +859,7 @@ const statusActionableLimit = 5
 // gaps, and doctor commands. It must stay read-only:
 // every recommendation points at a command that lets the user inspect
 // and decide rather than auto-applying a lifecycle event.
-func buildStatusActionItems(r *StatusResult, view *domain.MainlineView) []StatusActionItem {
+func buildStatusActionItems(r *StatusResult) []StatusActionItem {
 	if r == nil {
 		return nil
 	}
@@ -1009,26 +1009,6 @@ func formatStatusActionAge(seconds int64) string {
 	default:
 		return fmt.Sprintf("%dd", seconds/86400)
 	}
-}
-
-func openRiskCount(view *domain.MainlineView) int {
-	count := 0
-	for _, r := range materializeRisks(view, "") {
-		if r.Status == "open" {
-			count++
-		}
-	}
-	return count
-}
-
-func openFollowupCount(view *domain.MainlineView) int {
-	count := 0
-	for _, f := range materializeFollowups(view, "") {
-		if f.Status == "open" {
-			count++
-		}
-	}
-	return count
 }
 
 // CoverageWindowSize controls how many recent commits on main `mainline

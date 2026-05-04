@@ -34,7 +34,7 @@ import (
 // (when the user names a file, retrieve intents that touched it).
 // `mainline context --query <text>` is the keyword variant
 // (when the user names a feature area, retrieve intents that
-// decided / risked / fingerprinted that area).
+// decided it or carry explicit open action signals about it).
 //
 // What this command is NOT (per the v1 scope):
 //   - embedding / vector search — deterministic only
@@ -118,8 +118,8 @@ type ContextDroppedTerm struct {
 // Decisions are top-N truncated. Explicit constraints are surfaced
 // through InheritedConstraints. Legacy risks / followups /
 // anti_patterns remain on the struct for wire compatibility but
-// default retrieval does not populate them; use `mainline show` or
-// the dedicated signal commands for those surfaces. Followups are
+// default retrieval does not populate them; explicit open risks and
+// follow-ups may contribute to relevance scoring. Followups are
 // command suggestions the agent can copy-paste to drill into the full
 // record. Guidance is the single-line advisory derived from Status.
 type ContextRelevant struct {
@@ -161,8 +161,9 @@ type ContextRelevance struct {
 }
 
 // ContextRelevanceBreakdown mirrors the scorer's additive signals.
-// Risk / Followup / AntiPattern are retained for older JSON consumers
-// but no longer contribute to default pre-edit retrieval.
+// Risk / Followup are active only for explicit open signals.
+// AntiPattern is retained for older JSON consumers but no longer
+// contributes to default pre-edit retrieval.
 // Final score is the additive fields plus lineage/same_thread boosts,
 // minus status_penalty, rounded to two decimals for output.
 type ContextRelevanceBreakdown struct {
@@ -282,7 +283,8 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		queryKeywords = qTerms.scoringKeywords()
 	}
 
-	candidates := candidateSetForRetrieval(s.Store, req.Mode, files, query, qTerms, view)
+	signalIndex := newContextSignalIndex(view)
+	candidates := candidateSetForRetrieval(s.Store, req.Mode, files, query, qTerms, view, signalIndex)
 	var queryDebug *ContextQueryDebug
 	if req.Mode == "query" {
 		queryDebug = buildContextQueryDebugFromTerms(query, qTerms, len(candidates))
@@ -302,9 +304,9 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		if iv.Status == domain.StatusDrafting {
 			continue
 		}
-		score, reasons, breakdown := scoreIntentRelevanceWithRiskLifecycle(iv, files, keywordsFromText(query), branch, view.RiskResolutions)
+		score, reasons, breakdown := scoreIntentRelevanceWithSignals(iv, files, keywordsFromText(query), branch, signalIndex)
 		if req.Mode == "query" {
-			score, reasons, breakdown = scoreIntentRelevanceWithRiskLifecycle(iv, files, queryKeywords, branch, view.RiskResolutions)
+			score, reasons, breakdown = scoreIntentRelevanceWithSignals(iv, files, queryKeywords, branch, signalIndex)
 		}
 		if req.Mode == "current" && branch != "" && iv.Thread == branch {
 			score += 0.15
@@ -318,14 +320,14 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 			continue
 		}
 		retrStatus := classifyRetrievalStatus(iv, churn, now)
-		scored = append(scored, packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions))
+		scored = append(scored, packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus))
 	}
 
 	// Explicit supersession links are lineage, not independent
 	// relevance matches. If a superseder is relevant, include the
 	// intents it replaced even when a SQLite candidate prefilter or
 	// relevance threshold would otherwise drop them.
-	scored = includeSupersededLineage(scored, view, churn, now, files, query, queryKeywords, branch, includeBreakdown)
+	scored = includeSupersededLineage(scored, view, churn, now, files, query, queryKeywords, branch, includeBreakdown, signalIndex)
 
 	sort.SliceStable(scored, func(i, j int) bool {
 		return scored[i].Relevance.Score > scored[j].Relevance.Score
@@ -385,7 +387,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 func candidateSetForRetrieval(store interface {
 	ReadIntentViewsByFiles(paths []string) ([]domain.IntentView, error)
 	ReadIntentViewsByQuery(keyword string) ([]domain.IntentView, error)
-}, mode string, files []string, query string, qTerms queryTerms, view *domain.MainlineView) []domain.IntentView {
+}, mode string, files []string, query string, qTerms queryTerms, view *domain.MainlineView, signals contextSignalIndex) []domain.IntentView {
 	switch mode {
 	case "files":
 		if len(files) == 0 {
@@ -424,6 +426,7 @@ func candidateSetForRetrieval(store interface {
 				out = append(out, iv)
 			}
 		}
+		out = appendExplicitSignalQueryCandidates(out, seen, view, keywords, signals)
 		if len(out) == 0 {
 			return view.Intents
 		}
@@ -431,6 +434,24 @@ func candidateSetForRetrieval(store interface {
 		return out
 	}
 	return view.Intents
+}
+
+func appendExplicitSignalQueryCandidates(out []domain.IntentView, seen map[string]bool, view *domain.MainlineView, keywords []string, signals contextSignalIndex) []domain.IntentView {
+	if view == nil || len(keywords) == 0 {
+		return out
+	}
+	matching := signals.intentIDsMatching(keywords)
+	if len(matching) == 0 {
+		return out
+	}
+	for _, iv := range view.Intents {
+		if !matching[iv.IntentID] || seen[iv.IntentID] {
+			continue
+		}
+		seen[iv.IntentID] = true
+		out = append(out, iv)
+	}
+	return out
 }
 
 func appendRecentQueryCandidates(out []domain.IntentView, seen map[string]bool, view *domain.MainlineView, now time.Time) []domain.IntentView {
@@ -456,6 +477,85 @@ func hasQueryRecencySignal(iv domain.IntentView, now time.Time) bool {
 		return false
 	}
 	return now.Sub(t) < 30*24*time.Hour
+}
+
+type contextSignalIndex struct {
+	risksByIntent     map[string][]string
+	followupsByIntent map[string][]string
+}
+
+func newContextSignalIndex(view *domain.MainlineView) contextSignalIndex {
+	idx := contextSignalIndex{}
+	for _, r := range materializeRisks(view, "") {
+		if r.Status != "open" || r.SourceIntent == "" {
+			continue
+		}
+		text := signalRiskText(r)
+		if text == "" {
+			continue
+		}
+		if idx.risksByIntent == nil {
+			idx.risksByIntent = map[string][]string{}
+		}
+		idx.risksByIntent[r.SourceIntent] = append(idx.risksByIntent[r.SourceIntent], text)
+	}
+	for _, f := range materializeFollowups(view, "") {
+		if f.Status != "open" || f.SourceIntent == "" {
+			continue
+		}
+		text := signalFollowupText(f)
+		if text == "" {
+			continue
+		}
+		if idx.followupsByIntent == nil {
+			idx.followupsByIntent = map[string][]string{}
+		}
+		idx.followupsByIntent[f.SourceIntent] = append(idx.followupsByIntent[f.SourceIntent], text)
+	}
+	return idx
+}
+
+func (idx contextSignalIndex) openRisks(intentID string) []string {
+	return idx.risksByIntent[intentID]
+}
+
+func (idx contextSignalIndex) openFollowups(intentID string) []string {
+	return idx.followupsByIntent[intentID]
+}
+
+func (idx contextSignalIndex) intentIDsMatching(keywords []string) map[string]bool {
+	matching := map[string]bool{}
+	for intentID, texts := range idx.risksByIntent {
+		if hits, _ := countSignalKeywordHits(keywords, texts); hits > 0 {
+			matching[intentID] = true
+		}
+	}
+	for intentID, texts := range idx.followupsByIntent {
+		if hits, _ := countSignalKeywordHits(keywords, texts); hits > 0 {
+			matching[intentID] = true
+		}
+	}
+	return matching
+}
+
+func signalRiskText(r domain.Risk) string {
+	if strings.TrimSpace(r.Text) != "" {
+		return r.Text
+	}
+	if r.Statement != nil {
+		return r.Statement.Text()
+	}
+	return ""
+}
+
+func signalFollowupText(f domain.Followup) string {
+	if strings.TrimSpace(f.Text) != "" {
+		return f.Text
+	}
+	if f.Statement != nil {
+		return f.Statement.Text()
+	}
+	return ""
 }
 
 // classifyRetrievalStatus maps a domain IntentView to one of four
@@ -560,7 +660,7 @@ func idForFile(intentID, file string) string {
 // supersession links. Relevance thresholding should filter unrelated
 // history, not hide the replaced half of a decision lineage whose
 // replacement already matched the user's task.
-func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query string, queryKeywords []string, branch string, includeBreakdown bool) []ContextRelevant {
+func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineView, churn map[string]int, now time.Time, files []string, query string, queryKeywords []string, branch string, includeBreakdown bool, signals contextSignalIndex) []ContextRelevant {
 	if view == nil || len(scored) == 0 {
 		return scored
 	}
@@ -591,9 +691,9 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 				if _, exists := byID[iv.IntentID]; exists {
 					continue
 				}
-				score, reasons, breakdown := scoreIntentRelevanceWithRiskLifecycle(iv, files, keywordsFromText(query), branch, view.RiskResolutions)
+				score, reasons, breakdown := scoreIntentRelevanceWithSignals(iv, files, keywordsFromText(query), branch, signals)
 				if queryKeywords != nil {
-					score, reasons, breakdown = scoreIntentRelevanceWithRiskLifecycle(iv, files, queryKeywords, branch, view.RiskResolutions)
+					score, reasons, breakdown = scoreIntentRelevanceWithSignals(iv, files, queryKeywords, branch, signals)
 				}
 				parentScore := parent.Relevance.Score
 				if score < parentScore {
@@ -606,7 +706,7 @@ func includeSupersededLineage(scored []ContextRelevant, view *domain.MainlineVie
 				}
 				reasons = append(reasons, "superseded by returned intent "+supersederID)
 				retrStatus := classifyRetrievalStatus(iv, churn, now)
-				added := packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus, view.RiskResolutions, view.FollowupResolutions)
+				added := packRelevant(iv, score, optionalRelevanceBreakdown(includeBreakdown, breakdown), reasons, retrStatus)
 				scored = append(scored, added)
 				byID[iv.IntentID] = added
 				changed = true
@@ -687,10 +787,10 @@ func scoreIntentRelevance(iv domain.IntentView, files []string, query, currentBr
 }
 
 func scoreIntentRelevanceWithKeywords(iv domain.IntentView, files []string, keywords []string, currentBranch string) (float64, []string, ContextRelevanceBreakdown) {
-	return scoreIntentRelevanceWithRiskLifecycle(iv, files, keywords, currentBranch, nil)
+	return scoreIntentRelevanceWithSignals(iv, files, keywords, currentBranch, contextSignalIndex{})
 }
 
-func scoreIntentRelevanceWithRiskLifecycle(iv domain.IntentView, files []string, keywords []string, currentBranch string, riskResolutions map[string][]domain.RiskResolution) (float64, []string, ContextRelevanceBreakdown) {
+func scoreIntentRelevanceWithSignals(iv domain.IntentView, files []string, keywords []string, currentBranch string, signals contextSignalIndex) (float64, []string, ContextRelevanceBreakdown) {
 	var score float64
 	var reasons []string
 	var breakdown ContextRelevanceBreakdown
@@ -762,6 +862,18 @@ func scoreIntentRelevanceWithRiskLifecycle(iv domain.IntentView, files []string,
 				}
 			}
 		}
+		if hits, matched := countSignalKeywordHits(keywords, signals.openRisks(iv.IntentID)); hits > 0 {
+			contrib := signalKeywordContribution(hits)
+			score += contrib
+			breakdown.Risk += contrib
+			reasons = append(reasons, "open risk mentions "+strings.Join(matched, ", "))
+		}
+		if hits, matched := countSignalKeywordHits(keywords, signals.openFollowups(iv.IntentID)); hits > 0 {
+			contrib := signalKeywordContribution(hits)
+			score += contrib
+			breakdown.Followup += contrib
+			reasons = append(reasons, "open follow-up mentions "+strings.Join(matched, ", "))
+		}
 	}
 
 	// Recency boost — agents usually care about *recent* prior work.
@@ -809,7 +921,9 @@ func scoreIntentRelevanceWithRiskLifecycle(iv domain.IntentView, files []string,
 func hasQueryContentSignal(b ContextRelevanceBreakdown) bool {
 	return b.Title > 0 ||
 		b.Summary > 0 ||
-		b.Decision > 0
+		b.Decision > 0 ||
+		b.Risk > 0 ||
+		b.Followup > 0
 }
 
 func packRelevant(
@@ -818,8 +932,6 @@ func packRelevant(
 	breakdown *ContextRelevanceBreakdown,
 	reasons []string,
 	retrStatus string,
-	riskResolutions map[string][]domain.RiskResolution,
-	followupResolutions map[string][]domain.FollowupResolution,
 ) ContextRelevant {
 	r := ContextRelevant{
 		IntentID: iv.IntentID,
@@ -847,16 +959,10 @@ func packRelevant(
 	return r
 }
 
-// filterOpenRisks returns only risks that are still open (not resolved
-// and not from an expired source intent).
-func filterOpenRisks(intentID string, risks []string, resolutions map[string][]domain.RiskResolution, sourceStatus domain.IntentStatus) []string {
-	return domain.OpenRiskTexts(intentID, risks, resolutions, sourceStatus)
-}
-
 // guidanceFor returns the single-line advisory for a retrieval
-// status. Property 6: deterministic mapping. Anti-patterns and
-// risks are still surfaced as their own fields; this is the
-// orienting reminder.
+// status. Property 6: deterministic mapping. Signal details stay
+// behind `mainline show` / dedicated commands; this is the orienting
+// reminder.
 func guidanceFor(status, supersededBy string) string {
 	switch status {
 	case RetrievalStatusSuperseded:
@@ -982,6 +1088,20 @@ func countKeywordHits(keywords []string, text string) int {
 	return n
 }
 
+func countSignalKeywordHits(keywords []string, texts []string) (int, []string) {
+	joined := strings.Join(texts, " ")
+	matched := matchedKeywords(keywords, joined)
+	return len(matched), matched
+}
+
+func signalKeywordContribution(hits int) float64 {
+	contrib := 0.05 * float64(hits)
+	if contrib > 0.15 {
+		return 0.15
+	}
+	return contrib
+}
+
 func matchedKeywords(keywords []string, text string) []string {
 	low := strings.ToLower(text)
 	out := []string{}
@@ -1029,13 +1149,6 @@ func topDecisions(in []domain.Decision, n int) []string {
 		out = append(out, entry)
 	}
 	return out
-}
-
-func topItems(in []string, n int) []string {
-	if len(in) <= n {
-		return in
-	}
-	return in[:n]
 }
 
 func truncateForReason(s string, n int) string {

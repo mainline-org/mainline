@@ -92,8 +92,7 @@ func AuthMiddleware() {}
 			Decisions: []domain.Decision{
 				{Point: "Token format", Chose: "JWT", Rationale: "Industry standard"},
 			},
-			Risks:     []string{"Token expiry handling needs attention"},
-			Followups: []string{"Add refresh token support"},
+			ReviewNotes: []string{"Refresh token support is outside this lifecycle test."},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:          []string{"auth", "middleware"},

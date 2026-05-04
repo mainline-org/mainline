@@ -926,14 +926,32 @@ func TestBuildInheritedHotspots_PopulatesPerFile(t *testing.T) {
 		SealedAt: now.Add(-3 * 24 * time.Hour).UTC().Format(time.RFC3339),
 		Summary: &domain.IntentSummary{
 			Title: "old",
-			AntiPatterns: []domain.AntiPattern{
-				{What: "Don't drop session middleware", Why: "oauth needs it", Severity: "high"},
-				{What: "Skip rotation", Why: "replay risk", Severity: "medium"},
-			},
 		},
 		Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"a.go"}},
 	}
-	v := &domain.MainlineView{Intents: []domain.IntentView{old}}
+	v := &domain.MainlineView{
+		Intents: []domain.IntentView{old},
+		Constraints: []domain.Constraint{
+			{
+				ID:           "guard_high",
+				What:         "Don't drop session middleware",
+				Why:          "oauth needs it",
+				Severity:     "high",
+				Files:        []string{"a.go"},
+				SourceIntent: "int_old",
+				OpenedAt:     old.SealedAt,
+			},
+			{
+				ID:           "guard_medium",
+				What:         "Skip rotation",
+				Why:          "replay risk",
+				Severity:     "medium",
+				Files:        []string{"a.go"},
+				SourceIntent: "int_old",
+				OpenedAt:     old.SealedAt,
+			},
+		},
+	}
 	m := buildHubModel(v)
 	if len(m.InheritedHotspots) != 1 {
 		t.Fatalf("want 1 hotspot for a.go, got %d (%+v)", len(m.InheritedHotspots), m.InheritedHotspots)

@@ -215,19 +215,6 @@ func TestStatus_SuggestionsResumeOrphanBranchWhenIdle(t *testing.T) {
 }
 
 func TestStatus_ActionableItemsBuildsTopInboxWithoutSignalNoise(t *testing.T) {
-	view := &domain.MainlineView{
-		Intents: []domain.IntentView{
-			{
-				IntentID: "int_risk",
-				Status:   domain.StatusMerged,
-				SealedAt: "2026-05-01T00:00:00Z",
-				Summary: &domain.IntentSummary{
-					Risks:     []string{"known risk"},
-					Followups: []string{"known follow-up"},
-				},
-			},
-		},
-	}
 	status := &StatusResult{
 		Initialized:        true,
 		IdentityConfigured: true,
@@ -248,7 +235,7 @@ func TestStatus_ActionableItemsBuildsTopInboxWithoutSignalNoise(t *testing.T) {
 		},
 	}
 
-	items := buildStatusActionItems(status, view)
+	items := buildStatusActionItems(status)
 	if len(items) != 3 {
 		t.Fatalf("expected 3 actionable items, got %d: %#v", len(items), items)
 	}
@@ -264,7 +251,7 @@ func TestStatus_ActionableItemsBuildsTopInboxWithoutSignalNoise(t *testing.T) {
 }
 
 func TestStatus_ActionableItemsKeepSetupExclusive(t *testing.T) {
-	items := buildStatusActionItems(&StatusResult{Initialized: false}, nil)
+	items := buildStatusActionItems(&StatusResult{Initialized: false})
 	if len(items) != 1 {
 		t.Fatalf("expected one setup item, got %#v", items)
 	}
