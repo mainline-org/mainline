@@ -45,11 +45,11 @@ An intent record is the structured answer to:
 
 | Term | Definition |
 |---|---|
-| **Intent** | A unit of engineering work with a declared goal, summary, decisions, risks, constraints, and lifecycle. |
+| **Intent** | A unit of engineering work with a declared goal, summary, decisions, optional explicit signals, and lifecycle. |
 | **Sealed intent** | An intent whose summary and fingerprint are frozen. Immutable after seal. |
 | **Decision** | A recorded choice: what was chosen, why, and what was rejected. |
-| **Soft risk** | A warning about something that could go wrong. Advisory; may become irrelevant over time. |
-| **Anti-pattern** | A hard constraint: something a future agent or developer MUST NOT do in this area. Carries a mandatory `why`. |
+| **Soft risk** | An explicit present-review warning about something that could go wrong. Advisory; may become irrelevant over time. |
+| **Anti-pattern** | An explicit hard constraint: something a future agent or developer MUST NOT do in this area. Carries a mandatory `why`. |
 | **Inherited constraint** | An anti-pattern from a prior sealed intent that applies to the current change because of file or subsystem overlap. |
 | **Reference** | A link to external material (session, issue, PR, doc, CI run). Metadata only — Mainline never reads the referenced content. |
 | **Commit pin** | The association between a sealed intent and one or more commits on the main branch. |
@@ -124,9 +124,9 @@ intent.
 | `user_goal` | string | | The original user request, if different from `what`. |
 | `decisions` | Decision[] | ✓ | At least one decision. Each records a choice point, what was chosen, and optionally the rationale and rejected alternatives. |
 | `rejected` | RejectedAlternative[] | | Top-level rejected alternatives (beyond per-decision rejects). |
-| `risks` | string[] | | Concrete soft warnings. Default empty; see §7. |
-| `anti_patterns` | AntiPattern[] | | Hard constraints. Default empty; see §7. |
-| `followups` | string[] | | Explicit later work the user wants or this task deliberately cut out. Default empty. |
+| `risks` | string[] | | Explicit concrete soft warnings. Omitted by default; see §7. |
+| `anti_patterns` | AntiPattern[] | | Explicit hard constraints. Omitted by default; see §7. |
+| `followups` | string[] | | Explicit later work the user wants or this task deliberately cut out. Omitted by default. |
 | `review_notes` | string[] | | Ephemeral notes for the PR reviewer. Not inherited, not surfaced in context retrieval. |
 
 ### 6.3 Decision
@@ -200,7 +200,9 @@ At least one of `ref` or `url` must be non-empty.
 
 ### 6.9 Risk lifecycle (v0.4)
 
-Risks are soft warnings stored as `string[]` on IntentSummary.
+Risks are explicit soft warnings stored as `string[]` on IntentSummary.
+Default seals omit them; seal-time creation requires explicit opt-in because
+risks otherwise become a noisy long-lived review queue.
 Starting with v0.4, risks have a lifecycle:
 
 **Risk IDs** are deterministic: `{intent_id}#{array_index}`. Safe
@@ -231,23 +233,25 @@ materialized at query time, not stored directly.
 
 ## 7. Constraints and risk taxonomy
 
-Mainline distinguishes five types of constraint information:
+Mainline distinguishes five types of constraint information. The default seal
+contract records decisions; risks, anti-patterns, and follow-ups are promoted
+signals, not fields an agent fills for completeness.
 
 | Type | Nature | Lifetime | Inherited? | Truncated in retrieval? |
 |---|---|---|---|---|
-| **Soft risk** | Advisory warning | Open → resolved / expired | No | Yes (top-N per intent) |
-| **Anti-pattern** | Hard constraint | Permanent (with source intent) | Yes | **Never** |
+| **Soft risk** | Explicit advisory warning | Open → resolved / expired | No | Yes (top-N per intent) |
+| **Anti-pattern** | Explicit hard constraint | Permanent (with source intent) | Yes | **Never** |
 | **Inherited constraint** | Propagated anti-pattern | Until source intent is abandoned/reverted | N/A (is propagation) | **Never** |
 | **Conflict** | Detected overlap | Per-pair | N/A | N/A |
 | **Coverage gap** | Missing intent | Until covered or skipped | N/A | N/A |
 
 **The distinction matters:**
 
-- A **risk** says "this might break old clients" — it is a warning to
-  consider, and it may become irrelevant when code evolves.
+- A **risk** says "this might break old clients" — it is a present-review
+  warning to consider, and it may become irrelevant when code evolves.
 - An **anti-pattern** says "do not delete the legacy session middleware
   on /oauth — the OAuth callback handler still requires session state"
-  — it is a hard constraint that future agents must respect.
+  — it is a human-promoted hard constraint that future agents must respect.
 - An **inherited constraint** is an anti-pattern from a *prior* intent
   that applies to the *current* change because of file or subsystem
   overlap.

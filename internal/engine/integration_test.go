@@ -627,6 +627,47 @@ func validSealResult(intentID string) domain.SealResult {
 	}
 }
 
+func TestSealSubmitRejectsStructuredSignalsWhenNotExplicit(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent-alpha"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	gitCmd(t, dir, "checkout", "-b", "feature/explicit-signals")
+	start, err := svc.Start("ship explicit structured signal gate", "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	writeFile(t, dir, "signal.go", "package main\n")
+	gitCmd(t, dir, "add", "signal.go")
+	gitCmd(t, dir, "commit", "-m", "add signal")
+
+	sr := validSealResult(start.IntentID)
+	sr.Summary.Risks = []string{"Changing auth middleware may break OAuth callback sessions"}
+	data, _ := json.Marshal(sr)
+
+	_, err = svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{
+		RejectStructuredSignals: true,
+	})
+	if err == nil {
+		t.Fatal("expected default submit gate to reject seal-time structured signals")
+	}
+
+	draft, readErr := svc.Store.ReadDraft(start.IntentID)
+	if readErr != nil {
+		t.Fatalf("read draft: %v", readErr)
+	}
+	if draft.Status != domain.StatusDrafting {
+		t.Fatalf("rejecting structured signals must not mutate draft status, got %s", draft.Status)
+	}
+
+	if _, err := svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{}); err != nil {
+		t.Fatalf("explicit opt-in path should still accept structured signals: %v", err)
+	}
+}
+
 func randomTestString(n int) string {
 	b := make([]byte, n)
 	crypto_rand.Read(b)

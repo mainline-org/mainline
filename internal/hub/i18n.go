@@ -278,7 +278,8 @@ var translations = map[string]map[string]string{
 	"hotfile.with_risk_singular": {LangEN: "with constraint", LangZH: "带约束"},
 	"hotfile.with_risk_plural":   {LangEN: "with constraints", LangZH: "带约束"},
 
-	// Open work, Review, Files, Risks, Graph — minimal chrome only.
+	// Open work, Review, Files, Graph — minimal chrome only. The risks
+	// page still renders for deep links, but is no longer primary nav.
 	"open.heading":   {LangEN: "Open work", LangZH: "进行中工作"},
 	"open.empty":     {LangEN: "No open intents on disk.", LangZH: "本地无进行中 intent。"},
 	"review.heading": {LangEN: "Review queue", LangZH: "待审队列"},

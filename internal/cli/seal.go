@@ -18,6 +18,7 @@ var sealSubmit bool
 var sealIntentID string
 var sealOffline bool
 var sealAllowDirty bool
+var sealAllowStructuredSignals bool
 var sealRefs []string
 
 var sealCmd = &cobra.Command{
@@ -60,7 +61,11 @@ var sealCmd = &cobra.Command{
 			}
 
 			result, err := svc.SealSubmitWithOptions(json.RawMessage(data),
-				&engine.SealSubmitOptions{Offline: sealOffline, AllowDirty: sealAllowDirty})
+				&engine.SealSubmitOptions{
+					Offline:                 sealOffline,
+					AllowDirty:              sealAllowDirty,
+					RejectStructuredSignals: !sealAllowStructuredSignals,
+				})
 			if err != nil {
 				outputError(err)
 				return
@@ -154,6 +159,7 @@ func init() {
 	sealCmd.Flags().StringVar(&sealIntentID, "intent", "", "intent ID (default: active intent on current branch)")
 	sealCmd.Flags().BoolVar(&sealOffline, "offline", false, "skip the auto sync+check inside --submit (sealed_local only)")
 	sealCmd.Flags().BoolVar(&sealAllowDirty, "allow-dirty", false, "submit even when worktree is dirty/untracked (records dirty status in audit trail)")
+	sealCmd.Flags().BoolVar(&sealAllowStructuredSignals, "allow-structured-signals", false, "allow explicit creation of summary.risks, summary.anti_patterns, or summary.followups during submit")
 	sealCmd.Flags().StringArrayVar(&sealRefs, "ref", nil, "attach reference (format: kind:client:ref, e.g. session:claude-code:sess_abc123)")
 }
 

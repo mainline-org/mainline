@@ -328,6 +328,17 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 		t.Errorf("starter user_goal should mirror start goal: got %q",
 			pkg.Starter.Summary.UserGoal)
 	}
+	var starterSummaryFields map[string]any
+	starterSummaryJSON, _ := json.Marshal(pkg.Starter.Summary)
+	if err := json.Unmarshal(starterSummaryJSON, &starterSummaryFields); err != nil {
+		t.Fatalf("starter summary should marshal as JSON: %v", err)
+	}
+	for _, field := range []string{"risks", "anti_patterns", "followups", "acknowledged_constraints"} {
+		if _, ok := starterSummaryFields[field]; ok {
+			t.Errorf("starter should omit explicit-only field %q from default seal contract: %s",
+				field, starterSummaryJSON)
+		}
+	}
 	// FilesTouched mirrors DiffSummary.FilesChanged so the starter
 	// is consistent with what the package already documents.
 	if len(pkg.Starter.Fingerprint.FilesTouched) != len(pkg.DiffSummary.FilesChanged) {
