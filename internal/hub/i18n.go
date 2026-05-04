@@ -206,8 +206,8 @@ var translations = map[string]map[string]string{
 
 	"heatmap.heading": {LangEN: "Inherited constraints heatmap", LangZH: "继承约束热点"},
 	"heatmap.lead": {
-		LangEN: "Files with anti_patterns from prior intents that future work must acknowledge. These are not automatic violation judgments — they flag files where reviewers should check whether inherited constraints were considered.",
-		LangZH: "这些文件带有历史 intent 留下的硬约束。「未确认约束触碰」表示最近有 intent 改到该文件，但没有明确说明已考虑这些约束。这不是自动判定违规，而是提醒 reviewer 重点检查。",
+		LangEN: "Files with human-promoted constraints that future work must acknowledge. These are not automatic violation judgments — they flag files where reviewers should check whether inherited constraints were considered.",
+		LangZH: "这些文件带有人明确提升的硬约束。「未确认约束触碰」表示最近有 intent 改到该文件，但没有明确说明已考虑这些约束。这不是自动判定违规，而是提醒 reviewer 重点检查。",
 	},
 	"heatmap.constraints":   {LangEN: "constraints", LangZH: "条约束"},
 	"heatmap.high_severity": {LangEN: "high-severity", LangZH: "高严重度"},
@@ -234,8 +234,8 @@ var translations = map[string]map[string]string{
 
 	"file.inherited_heading": {LangEN: "Inherited constraints for this file", LangZH: "本文件的继承约束"},
 	"file.inherited_lead": {
-		LangEN: "Anti_patterns recorded by prior intents that touched this file. Read these before editing.",
-		LangZH: "历史 intent 在该文件上留下的硬约束。改这个文件前先看一遍。",
+		LangEN: "Human-promoted constraints that apply to this file. Read these before editing.",
+		LangZH: "适用于该文件的人为提升约束。改这个文件前先看一遍。",
 	},
 	"file.inherited_empty": {LangEN: "No inherited constraints recorded for this file.", LangZH: "本文件暂无继承约束。"},
 
@@ -255,8 +255,8 @@ var translations = map[string]map[string]string{
 
 	"inherited.heading": {LangEN: "Inherited constraints considered", LangZH: "继承的硬约束"},
 	"inherited.lead": {
-		LangEN: "Anti-patterns from prior intents whose touched files or subsystems overlap with this intent. High-severity items must be acknowledged in decisions, rejected_alternatives, risks, or your own anti_patterns.",
-		LangZH: "来自历史 intent 的硬约束，因为修改的文件或子系统与本 intent 重叠而被继承下来。高风险项必须在 decisions / rejected_alternatives / risks / 自己的 anti_patterns 之一里被确认。",
+		LangEN: "Human-promoted constraints whose files overlap with this intent. High-severity items must be acknowledged with acknowledged_constraints and explained in decisions, rejected_alternatives, or review_notes.",
+		LangZH: "与本 intent 修改文件重叠的人为提升约束。高严重度项必须通过 acknowledged_constraints 确认，并在 decisions / rejected_alternatives / review_notes 中解释。",
 	},
 	"inherited.severity_unspecified": {LangEN: "unspecified", LangZH: "未标注"},
 	"inherited.from":                 {LangEN: "from", LangZH: "来自"},

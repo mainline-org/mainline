@@ -48,8 +48,8 @@ type HubModel struct {
 	// coverage input was provided.
 	CoverageDetail HubCoverageDetail `json:"coverage_detail,omitempty"`
 
-	// InheritedHotspots is the per-file roll-up of inherited
-	// anti_patterns. Drives the Inherited constraints heatmap on
+	// InheritedHotspots is the per-file roll-up of inherited explicit
+	// constraints. Drives the Inherited constraints heatmap on
 	// /index.html and the per-file inherited section on
 	// /files/<path>.html. Sorted by HighSeverityCount desc then
 	// UnacknowledgedRecentTouches desc.
@@ -321,12 +321,11 @@ type HubIntent struct {
 	// `mainline check --submit` against this intent yet.
 	LastCheck *HubCheckSummary `json:"last_check,omitempty"`
 
-	// InheritedConstraints surfaces anti_patterns from prior intents
-	// whose touched files / subsystems overlap with this intent.
-	// Each entry carries an Acknowledgement (decision /
-	// rejected_alternative / anti_pattern / risk / "" for none) so
-	// reviewers see "did the agent acknowledge the prior constraint"
-	// without re-walking the seal text.
+	// InheritedConstraints surfaces human-promoted constraints whose
+	// files overlap with this intent. Each entry carries an
+	// Acknowledgement (decision / rejected_alternative / anti_pattern /
+	// risk / "" for none) so reviewers see "did the agent acknowledge
+	// the prior constraint" without re-walking the seal text.
 	InheritedConstraints []HubInheritedConstraint `json:"inherited_constraints,omitempty"`
 }
 

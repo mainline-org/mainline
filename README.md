@@ -40,9 +40,9 @@ JWT-based auth and treats the leftover middleware as dead code.
 
 Without Mainline, the agent removes `/oauth`, normal login still looks fine,
 and the break shows up later in production. With Mainline, the agent sees the
-anti-pattern first: **do not remove the legacy `/oauth` middleware; OAuth
-callbacks still require session state**. It stops before the diff and chooses a
-safe change instead.
+human-promoted constraint first: **do not remove the legacy `/oauth`
+middleware; OAuth callbacks still require session state**. It stops before the
+diff and chooses a safe change instead.
 
 That is the core product: **repo-local engineering memory that prevents future
 agents from repeating old mistakes.**
@@ -63,9 +63,10 @@ Stop your AI agent from silently undoing yesterday's decision, repeating an
 abandoned approach, missing a reviewer constraint, or stepping on a teammate's
 in-flight work.
 
-Mainline records *why* each engineering change was made — decisions, risks,
-anti-patterns, references, and lifecycle — then surfaces that record to the
-next agent or human at the moment they need it.
+Mainline records *why* each engineering change was made — decisions,
+validation notes, references, and lifecycle — then surfaces that record to the
+next agent or human at the moment they need it. Constraints, risks, and
+follow-ups become durable action signals only through explicit commands.
 
 ## Who is Mainline for?
 
@@ -825,7 +826,7 @@ No. RAG retrieves semantically similar code. Grep verifies what code exists righ
 
 **Q: How is Mainline different from session-memory tools?**
 
-Session-memory tools record prompts, responses, snapshots, tool calls, or code diffs from AI coding sessions. They help you replay, rollback, or inspect how a change happened. Mainline records the engineering intent that should guide future work: why the change exists, what decisions were made, what risks were accepted, which anti-patterns future agents must avoid, and whether the intent was merged, abandoned, superseded, or reverted. Session history is useful evidence. Mainline intent is durable working memory for future agents and reviewers.
+Session-memory tools record prompts, responses, snapshots, tool calls, or code diffs from AI coding sessions. They help you replay, rollback, or inspect how a change happened. Mainline records the engineering intent that should guide future work: why the change exists, what decisions were made, which human-promoted constraints future agents must obey, and whether the intent was merged, abandoned, superseded, or reverted. Session history is useful evidence. Mainline intent is durable working memory for future agents and reviewers.
 
 **Q: Does Mainline record AI sessions?**
 

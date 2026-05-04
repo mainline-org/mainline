@@ -236,7 +236,7 @@ Before editing code, an intent-aware agent should answer:
 - [ ] Did I run `mainline status`?
 - [ ] Did I run `mainline context --current --json`?
 - [ ] If the task names files, did I run `mainline context --files ... --json`?
-- [ ] Did I read the relevant prior decisions and risks?
+- [ ] Did I read the relevant prior decisions and inherited constraints?
 - [ ] Did I verify those intents against the current code?
 - [ ] Am I about to repeat an abandoned or superseded approach?
 - [ ] Are there high-severity inherited constraints I must acknowledge?

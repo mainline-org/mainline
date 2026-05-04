@@ -179,18 +179,18 @@ Three modes — pick one:
   --current               retrieve intents relevant to the current
                           repo state (active draft goal + diff vs main)
   --files <path>...       retrieve intents that touched these files
-  --query "<text>"        retrieve intents whose decisions / risks /
-                          summary match these keywords
+  --query "<text>"        retrieve intents whose decisions / summary /
+                          fingerprint match these keywords
 
 Output is compact and ranked. Each intent comes with its top
-decisions / risks / fingerprint plus copy-paste follow-ups
+decisions / fingerprint plus copy-paste follow-ups
 (` + "`mainline show`" + ` / ` + "`trace`" + `) for full detail.
 
 Default workflow for agents:
 
   1. mainline status                       (overall state)
   2. mainline context --current --json     (relevant prior intents)
-  3. read decisions / risks of those intents
+  3. read decisions and explicit inherited constraints
   4. THEN grep / read code to verify against current implementation
   5. THEN edit
 
@@ -432,7 +432,7 @@ func printContextRetrievalText(r *engine.ContextRetrievalResult) {
 				fmt.Printf("    %s\n", ri.Summary)
 			}
 			if len(ri.AntiPatterns) > 0 {
-				fmt.Println("    anti-patterns (do NOT do):")
+				fmt.Println("    legacy anti-patterns (historical only):")
 				for _, ap := range ri.AntiPatterns {
 					sev := ""
 					if ap.Severity != "" {
