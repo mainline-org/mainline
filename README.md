@@ -127,8 +127,9 @@ Mainline is different:
   Cursor, Copilot, and humans.
 - **Git-native:** durable state travels through Git refs and notes, not a
   vendor-specific workspace database.
-- **Auditable:** sealed intents record decisions, risks, rejected approaches,
-  anti-patterns, lifecycle, and commit pins.
+- **Auditable:** sealed intents record decisions, rejected approaches,
+  validation context, lifecycle, and commit pins; explicit signal events
+  record promoted constraints, risks, and follow-ups.
 - **Repo-local:** it records engineering facts about *this repository*, not
   just "my personal context".
 
@@ -140,13 +141,13 @@ engineering facts**.
 Mainline is not just a log of AI work. It is an intent memory layer for the whole engineering loop:
 
 1. **Agent pre-edit memory**
-   Agents read prior decisions, risks, anti-patterns, abandoned approaches, and superseded decisions before editing code.
+   Agents read prior decisions, explicit constraints, abandoned approaches, and superseded decisions before editing code.
 
 2. **Intent governance**
-   Teams can see whether important changes have intent coverage, whether sealed intents are high-quality, and whether risky changes are missing constraints or rationale.
+   Teams can see whether important changes have intent coverage, whether sealed intents are high-quality, and whether explicit risks/constraints have clear provenance.
 
 3. **Human review intent**
-   Reviewers read the why, decisions, risks, and constraints before reviewing the diff — turning review from "guess the author's intent" into "verify the implementation against the intent."
+   Reviewers read the why, decisions, validation notes, and explicit signals before reviewing the diff — turning review from "guess the author's intent" into "verify the implementation against the intent."
 
 4. **Long-term decision memory**
    Future maintainers and new teammates can understand why files are the way they are, which approaches were tried and abandoned, and which decisions are still effective.
@@ -397,14 +398,15 @@ coding agents long-term repo memory.
 The contract is intentionally stricter than "run a command sometimes":
 
 - **Read before writing:** retrieve repo intent before non-trivial edits.
-- **Record meaning, not keystrokes:** append decisions, pivots, risks, and
+- **Record meaning, not keystrokes:** append decisions, pivots, and
   completed slices.
-- **Make constraints visible:** if an anti-pattern applies, state the action
-  the agent will not take.
+- **Promote signals explicitly:** seal records decisions by default; constraints,
+  risks, and follow-ups require dedicated signal commands or human confirmation.
 - **Recover conservatively:** dirty state, stale sync, drift, parse failures,
   and conflict warnings stop silent progress.
 - **Leave reviewable intent:** a human reviewer should be able to compare the
-  implementation against the stated why, decisions, risks, and constraints.
+  implementation against the stated why, decisions, validation notes, and any
+  explicit signals.
 
 ### When agents must call context
 
@@ -414,8 +416,8 @@ Before editing, agents must retrieve Mainline context for non-trivial work:
   model/permissions work, release/CI changes, and cross-file behaviour changes;
 - questions like "can we delete this?", "why is this here?", or "was this tried
   before?";
-- any change touching files with known anti-patterns, inherited constraints, or
-  prior risky decisions.
+- any change touching files with explicit constraints or important prior
+  lifecycle warnings.
 
 Agents may skip Mainline for typo fixes, formatting-only edits, one-line
 obvious syntax fixes, or read-only inspection where the user explicitly asks to
@@ -440,12 +442,12 @@ that will be submitted. `seal --submit` records the final intent and surfaces
 lint or conflict summaries.
 
 Append at the granularity of engineering meaning: a design choice, a completed
-slice, a pivot, a risk discovered, or validation that changes confidence. Do
-not append every shell command.
+slice, a pivot, or validation that changes confidence. Do not append every
+shell command.
 
-If the agent reads a relevant anti-pattern, it should explicitly say what it
-will not do and why, for example: "I will not remove the legacy `/oauth`
-middleware because OAuth callbacks still require session state."
+If the agent reads a relevant explicit constraint, it should explicitly say
+what it will not do and why, for example: "I will not remove the legacy
+`/oauth` middleware because OAuth callbacks still require session state."
 
 ### Recovery rules
 
@@ -459,16 +461,16 @@ middleware because OAuth callbacks still require session state."
   deterministic errors.
 - **Conflict warning:** surface the conflict. Run `mainline check` or ask for
   human judgment before continuing when the overlap is semantically real.
-- **Anti-pattern conflict:** do not proceed silently. State the constraint and
+- **Constraint conflict:** do not proceed silently. State the constraint and
   either preserve it, intentionally change it with reviewer attention, or stop.
 
 ### How reviewers judge intent quality
 
 A trustworthy sealed intent has concrete `what` and `why`, decisions with
 rationale, rejected alternatives when relevant, specific files/subsystems/tags,
-honest risks, validation notes, and explicit acknowledgement of inherited
-constraints. Boilerplate summaries, vague risks, missing fingerprints, and
-unacknowledged anti-patterns are review smells.
+validation notes, and explicit acknowledgement of inherited constraints.
+Boilerplate summaries, seal-embedded action signals, missing fingerprints, and
+unacknowledged constraints are review smells.
 
 The reviewer question is simple: "Could a future agent read this intent before
 editing and avoid the same mistake?" If not, the intent is not good enough yet.
@@ -506,12 +508,17 @@ A sealed Mainline intent contains:
 
 - **Why** — why this engineering work exists.
 - **Decisions** — what the team decided, with rationale and rejected alternatives.
-- **Risks** — soft risks reviewers should be aware of.
-- **Anti-patterns** — hard constraints future agents must avoid.
-- **Inherited constraints** — file-level constraints from prior intents.
+- **Validation and review notes** — what reviewers should know for this PR.
+- **Legacy signals** — old risks, anti-patterns, and follow-ups remain readable.
 - **Lifecycle** — merged, abandoned, superseded, or reverted.
 - **References** — optional links to issues, PRs, docs, CI runs, or external sessions.
 - **Commit pins** — links between intents and the commits that implemented them.
+
+Durable action signals live outside the default seal path:
+
+- `mainline guard add` — interactive human-confirmed constraints future agents must obey.
+- `mainline risk add` — structured reviewer-facing failure modes with trigger/impact and mitigation/validation/owner.
+- `mainline followup add` — explicit deferred work with user/reference/cut-scope provenance.
 
 Mainline does not try to preserve every token of an AI session.
 It preserves the durable decision record future agents and reviewers need.
@@ -641,7 +648,7 @@ Core human set:
 | `mainline hub open` | Build + open a static HTML site over the local intent view |
 | `mainline status --actionable` | Top 5 actionable items with why, risk, and next command |
 | `mainline log` | Intent history with author, time, and `[check:?\|~\|ok\|!\|human?]` |
-| `mainline show <id>` | Full intent detail (decisions, risks, follow-ups, fingerprint) |
+| `mainline show <id>` | Full intent detail (decisions, fingerprint, legacy and explicit signals) |
 | `mainline gaps` | List uncovered commits on main with reversibility-ranked rescue options |
 
 Reviewer and maintainer extras:
@@ -652,6 +659,9 @@ Reviewer and maintainer extras:
 | `mainline sync` | Fetch remote state, rebuild views, **auto-pin merged commits**, surface new conflicts |
 | `mainline trace <id>` | Turn timeline (start/append/seal/abandon/supersede with elapsed time) |
 | `mainline lint [<id>]` | Advisory seal-quality checks (boilerplate, missing decisions, broken refs). Never blocks. |
+| `mainline guard add` | Interactively add a human-promoted constraint |
+| `mainline risk add` | Add a structured explicit risk |
+| `mainline followup add` | Add an explicit deferred work item |
 | `mainline risks` | List open risks; `mainline risks resolve <id>` closes one manually |
 | `mainline followups` | List open follow-ups; `mainline followups resolve <id>` marks one completed manually |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |

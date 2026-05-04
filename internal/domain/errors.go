@@ -68,6 +68,14 @@ type MainlineView struct {
 	MainHead      string       `json:"main_head"`
 	Intents       []IntentView `json:"intents"`
 
+	// ExplicitSignals are long-lived action signals created through
+	// dedicated commands or human promotion, not through the default
+	// seal contract. Legacy summary.risks / summary.followups /
+	// summary.anti_patterns are still read for backward compatibility.
+	Constraints []Constraint `json:"constraints,omitempty"`
+	Risks       []Risk       `json:"risks,omitempty"`
+	Followups   []Followup   `json:"followups,omitempty"`
+
 	// RiskResolutions maps risk IDs ("int_xxx#N") to their resolution
 	// records. Populated during view rebuild from IntentSealedEvent.
 	// ResolvesRisks + RiskResolvedEvent. Missing key = open risk.

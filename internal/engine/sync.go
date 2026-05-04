@@ -225,6 +225,9 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 	intentMap := make(map[string]*domain.IntentView)
 	riskResolutions := make(map[string][]domain.RiskResolution)
 	followupResolutions := make(map[string][]domain.FollowupResolution)
+	var constraints []domain.Constraint
+	var explicitRisks []domain.Risk
+	var explicitFollowups []domain.Followup
 
 	for _, raw := range events {
 		var base domain.BaseEvent
@@ -359,6 +362,42 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				AgainstIntents:   extractAgainstIntents(evt.Judgments, evt.CandidateIntent),
 			}
 
+		case domain.EventConstraintAdded:
+			var evt domain.ConstraintAddedEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			constraints = append(constraints, domain.Constraint{
+				ID:           evt.ConstraintID,
+				What:         evt.What,
+				Why:          evt.Why,
+				Severity:     evt.Severity,
+				Files:        append([]string(nil), evt.Files...),
+				SourceIntent: evt.IntentID,
+				OpenedAt:     evt.Timestamp,
+				OpenedBy:     evt.ActorID,
+				Source:       evt.Source,
+				SourceNote:   evt.SourceNote,
+			})
+
+		case domain.EventRiskAdded:
+			var evt domain.RiskAddedEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			stmt := evt.Statement
+			explicitRisks = append(explicitRisks, domain.Risk{
+				ID:           evt.RiskID,
+				Text:         stmt.Text(),
+				Statement:    &stmt,
+				Status:       "open",
+				SourceIntent: evt.IntentID,
+				Files:        append([]string(nil), evt.Files...),
+				OpenedBy:     evt.ActorID,
+				OpenedAt:     evt.Timestamp,
+				Source:       evt.Source,
+			})
+
 		case domain.EventRiskResolved:
 			// v0.4 manual risk resolution via `mainline risks resolve`.
 			var evt domain.RiskResolvedEvent
@@ -369,6 +408,24 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				IntentID:  evt.ResolvedByIntent,
 				Rationale: evt.Rationale,
 				At:        evt.Timestamp,
+			})
+
+		case domain.EventFollowupAdded:
+			var evt domain.FollowupAddedEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			stmt := evt.Statement
+			explicitFollowups = append(explicitFollowups, domain.Followup{
+				ID:           evt.FollowupID,
+				Text:         stmt.Text(),
+				Statement:    &stmt,
+				Status:       "open",
+				SourceIntent: evt.IntentID,
+				Files:        append([]string(nil), evt.Files...),
+				OpenedBy:     evt.ActorID,
+				OpenedAt:     evt.Timestamp,
+				Source:       evt.Source,
 			})
 
 		case domain.EventFollowupResolved:
@@ -392,6 +449,15 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 	}
 
 	// v0.4 risk lifecycle: persist risk resolutions on the view.
+	if len(constraints) > 0 {
+		view.Constraints = constraints
+	}
+	if len(explicitRisks) > 0 {
+		view.Risks = explicitRisks
+	}
+	if len(explicitFollowups) > 0 {
+		view.Followups = explicitFollowups
+	}
 	if len(riskResolutions) > 0 {
 		view.RiskResolutions = riskResolutions
 	}

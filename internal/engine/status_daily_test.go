@@ -214,7 +214,7 @@ func TestStatus_SuggestionsResumeOrphanBranchWhenIdle(t *testing.T) {
 	}
 }
 
-func TestStatus_ActionableItemsBuildsTopInbox(t *testing.T) {
+func TestStatus_ActionableItemsBuildsTopInboxWithoutSignalNoise(t *testing.T) {
 	view := &domain.MainlineView{
 		Intents: []domain.IntentView{
 			{
@@ -249,10 +249,10 @@ func TestStatus_ActionableItemsBuildsTopInbox(t *testing.T) {
 	}
 
 	items := buildStatusActionItems(status, view)
-	if len(items) != statusActionableLimit {
-		t.Fatalf("expected %d actionable items, got %d: %#v", statusActionableLimit, len(items), items)
+	if len(items) != 3 {
+		t.Fatalf("expected 3 actionable items, got %d: %#v", len(items), items)
 	}
-	wantKinds := []string{"coverage", "proposal", "draft", "risks", "followups"}
+	wantKinds := []string{"coverage", "proposal", "draft"}
 	for i, want := range wantKinds {
 		if items[i].Kind != want {
 			t.Fatalf("item %d kind = %q, want %q; items=%#v", i, items[i].Kind, want, items)

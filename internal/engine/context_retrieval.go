@@ -38,7 +38,8 @@ import (
 // What this command is NOT (per the v1 scope):
 //   - embedding / vector search — deterministic only
 //   - interactive UI — JSON / text only
-//   - hard hook blocking — agent guidance, not enforcement
+//   - hard hook blocking — agent guidance plus explicit CLI gates,
+//     not hidden hook magic
 //   - per-turn diffs — same fingerprint files_touched semantics
 //     the rest of mainline uses
 
@@ -114,8 +115,8 @@ type ContextDroppedTerm struct {
 //     churning or it is old enough that its decisions
 //     may no longer hold; verify before acting.
 //
-// Decisions / Risks / OpenFollowups are top-N truncated; AntiPatterns
-// are NEVER truncated — they are the load-bearing safety surface.
+// Decisions / legacy Risks / OpenFollowups are top-N truncated.
+// Explicit constraints are surfaced through InheritedConstraints.
 // Followups are command suggestions the agent can copy-paste to drill
 // into the full record. Guidance is the single-line advisory derived
 // from Status.
@@ -936,14 +937,13 @@ func guidanceFor(status, supersededBy string) string {
 //  2. "verify against current code before editing" — guard
 //     against the opposite extreme (agent trusting an intent
 //     whose code has been refactored since).
-//  3. "anti_patterns are hard constraints" — surface the hard/soft
-//     distinction at the top of the result so the agent doesn't
-//     treat anti_patterns as more risks-to-weigh.
+//  3. durable constraints are human-promoted signals, while lifecycle
+//     events are warnings.
 func contextNotes() []string {
 	return []string{
 		"Use these intents as historical context, not as a replacement for reading current code.",
 		"Verify decisions against the current working tree before editing.",
-		"anti_patterns are hard constraints — do not violate them. risks are soft warnings to weigh.",
+		"Only human-promoted constraints are hard rules; abandoned/superseded/reverted history is a warning to inspect, not a new constraint.",
 	}
 }
 

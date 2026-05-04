@@ -27,7 +27,7 @@ The default agent workflow is:
 ```
 1. mainline status              → overall state, identity, sync freshness
 2. mainline context --current   → intents relevant to the current branch + diff
-3. Read decisions, risks, anti-patterns, inherited constraints
+3. Read decisions, lifecycle warnings, and explicit inherited constraints
 4. Verify intent context against current code
 5. THEN grep / read code
 6. THEN edit
@@ -71,12 +71,6 @@ The retrieval result contains:
       "relevance": { "score": 0.85, "reasons": ["file match", "subsystem match"] },
       "summary": "...",
       "decisions": ["JWT for /api (stateless)"],
-      "risks": ["old mobile clients still send session cookies"],
-      "anti_patterns": [
-        { "what": "Removing legacy session middleware on /oauth path",
-          "why": "OAuth callback handler still requires session state",
-          "severity": "high" }
-      ],
       "guidance": "current effective decision; verify against current code, then apply",
       "followups": {
         "full_record": "mainline show int_abc123 --json",
@@ -87,6 +81,7 @@ The retrieval result contains:
   "inherited_constraints": [
     {
       "source_intent": "int_abc123",
+      "constraint_id": "guard_1a2b3c4d",
       "what": "Removing legacy session middleware on /oauth path",
       "why": "OAuth callback handler still requires session state",
       "severity": "high",
@@ -95,7 +90,7 @@ The retrieval result contains:
   ],
   "notes": [
     "Verify each intent's decisions against current code before applying.",
-    "Anti-patterns are hard constraints — do not violate without explicit user approval."
+    "Only human-promoted constraints are hard rules; lifecycle warnings are not new constraints."
   ]
 }
 ```
@@ -146,12 +141,12 @@ the decisions described in the intent still match the implementation.
 If they don't, note the discrepancy and proceed with the current
 code as ground truth.
 
-### 6.3 Respecting anti-patterns (MUST)
+### 6.3 Respecting constraints (MUST)
 
-Anti-patterns are hard constraints. Agents MUST NOT violate an
-anti-pattern without explicit user acknowledgment.
+Explicit constraints are hard rules. Agents MUST NOT violate a
+constraint without explicit user acknowledgment.
 
-When an agent's task would conflict with an anti-pattern, the agent
+When an agent's task would conflict with a constraint, the agent
 SHOULD:
 
 1. Surface the constraint to the user.
@@ -160,11 +155,11 @@ SHOULD:
 
 ### 6.4 Respecting inherited constraints (SHOULD)
 
-Inherited constraints are anti-patterns from prior intents that
-apply because of file or subsystem overlap. Agents SHOULD
-acknowledge high-severity inherited constraints in their seal
-result — either in `decisions`, `risks`, `rejected`, or their own
-`anti_patterns`.
+Inherited constraints are explicit constraints, plus legacy
+high-severity anti-patterns, that apply because of file overlap.
+Agents SHOULD acknowledge high-severity inherited constraints in
+their seal result using `acknowledged_constraints` or a decision that
+shows how the rule was handled.
 
 The acknowledgment does not need to be verbatim. It needs to
 demonstrate that the agent saw the constraint and consciously
@@ -190,22 +185,21 @@ agent SHOULD follow the `superseded_by` reference to find the
 current decision. The superseded intent is valuable context
 (what was tried before) but is not the current truth.
 
-### 6.7 Risk awareness in seals (SHOULD)
+### 6.7 Explicit signal writes (MUST NOT use seal)
 
-When sealing, agents SHOULD:
+When sealing, agents MUST NOT create durable action signals by filling
+`summary.risks`, `summary.followups`, or `summary.anti_patterns`.
+Seal records decisions by default.
 
-- Write risks only for genuine hazards with specific failure modes.
-  Do not write risks to satisfy a lint warning; empty risks are the
-  normal default.
+Agents SHOULD:
+
 - Move acceptable trade-offs to `decisions[].chose` with rationale.
-- Move follow-up items to `followups` only when the user explicitly
-  wants later work, or the current task deliberately cut out a known
-  next task. Do not invent speculative "consider later" items.
-- Move reviewer guidance to `review_notes`.
-- Move hard constraints to `anti_patterns`; empty anti-patterns are
-  the normal default when no future rule was established.
-- Resolve applicable open risks when the current work addresses
-  them (via `resolves_risks` on the seal result).
+- Move reviewer-only context to `review_notes`.
+- Use `mainline risk add` only for a concrete failure mode with
+  trigger or impact, plus mitigation / validation / owner.
+- Use `mainline followup add` only for explicit user deferral, an
+  external issue/ticket/PR reference, or a real cut-scope task.
+- Never create constraints; a human must confirm `mainline guard add`.
 
 ### 6.8 Writing seals (MUST)
 
@@ -217,9 +211,8 @@ A well-formed seal:
 - Has at least one `decision` with a choice point and what was chosen.
 - Has `fingerprint.subsystems` and `fingerprint.files_touched` populated.
 - Has `tags` populated generously (synonyms, parent concepts).
-- Records `risks`, `anti_patterns`, and `followups` only when the
-  work establishes concrete items for those fields; otherwise leaves
-  them empty.
+- Does not contain `summary.risks`, `summary.followups`, or
+  `summary.anti_patterns`.
 
 ## 7. Task priority matrix
 

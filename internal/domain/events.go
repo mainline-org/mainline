@@ -9,7 +9,10 @@ const (
 	EventIntentAbandoned         EventType = "intent.abandoned"
 	EventIntentMergeAcknowledged EventType = "intent.merge_acknowledged"
 	EventCheckJudgment           EventType = "check.judgment"
+	EventConstraintAdded         EventType = "constraint.added"
+	EventRiskAdded               EventType = "risk.added"
 	EventRiskResolved            EventType = "risk.resolved"
+	EventFollowupAdded           EventType = "followup.added"
 	EventFollowupResolved        EventType = "followup.resolved"
 )
 
@@ -104,6 +107,31 @@ type CheckJudgmentEvent struct {
 	Overall         CheckOverall       `json:"overall"`
 }
 
+// ConstraintAddedEvent records a human-promoted guard. It is separate
+// from IntentSealedEvent so agents cannot create constraints by filling
+// seal.summary.anti_patterns.
+type ConstraintAddedEvent struct {
+	BaseEvent
+	ConstraintID string   `json:"constraint_id"`
+	IntentID     string   `json:"intent_id,omitempty"`
+	Files        []string `json:"files,omitempty"`
+	What         string   `json:"what"`
+	Why          string   `json:"why"`
+	Severity     string   `json:"severity,omitempty"`
+	Source       string   `json:"source,omitempty"`
+	SourceNote   string   `json:"source_note,omitempty"`
+}
+
+// RiskAddedEvent records an explicit review-facing risk.
+type RiskAddedEvent struct {
+	BaseEvent
+	RiskID    string        `json:"risk_id"`
+	IntentID  string        `json:"intent_id,omitempty"`
+	Files     []string      `json:"files,omitempty"`
+	Statement RiskStatement `json:"statement"`
+	Source    string        `json:"source,omitempty"`
+}
+
 // RiskResolvedEvent records a manual risk resolution via
 // `mainline risks resolve`. Seal-time resolutions are carried on
 // IntentSealedEvent.ResolvesRisks instead (atomic with the seal).
@@ -112,6 +140,16 @@ type RiskResolvedEvent struct {
 	RiskID           string `json:"risk_id"`                      // "int_xxx#0"
 	ResolvedByIntent string `json:"resolved_by_intent,omitempty"` // optional: the intent whose work resolved it
 	Rationale        string `json:"rationale,omitempty"`
+}
+
+// FollowupAddedEvent records an explicit deferred work item.
+type FollowupAddedEvent struct {
+	BaseEvent
+	FollowupID string            `json:"followup_id"`
+	IntentID   string            `json:"intent_id,omitempty"`
+	Files      []string          `json:"files,omitempty"`
+	Statement  FollowupStatement `json:"statement"`
+	Source     string            `json:"source,omitempty"`
 }
 
 // FollowupResolvedEvent records a manual follow-up resolution via

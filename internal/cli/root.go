@@ -247,10 +247,14 @@ func init() {
 	// not at the top of the help.
 	lintCmd.GroupID = groupSetup.ID
 
-	// Risks and followups are daily tools: agents and humans inspect
-	// open items before editing, resolve them during seal, or triage manually.
-	risksCmd.GroupID = groupDaily.ID
-	followupsCmd.GroupID = groupDaily.ID
+	// Signal commands are explicit promotion/triage paths, not part
+	// of the default daily agent loop. Seal records decisions by
+	// default; constraints/risks/follow-ups require these commands.
+	guardCmd.GroupID = groupAdvanced.ID
+	riskCmd.GroupID = groupAdvanced.ID
+	followupCmd.GroupID = groupAdvanced.ID
+	risksCmd.GroupID = groupAdvanced.ID
+	followupsCmd.GroupID = groupAdvanced.ID
 
 	// Eval is the agent-eval harness — meta-tooling, not part of the
 	// daily agent loop. Setup group keeps it visible without
@@ -265,7 +269,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
-		hubCmd, lintCmd, evalCmd, risksCmd, followupsCmd, versionCmd,
+		hubCmd, lintCmd, evalCmd, guardCmd, riskCmd, followupCmd, risksCmd, followupsCmd, versionCmd,
 	)
 }
 
