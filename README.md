@@ -5,6 +5,11 @@
 [![PBT](https://img.shields.io/badge/PBT-property--based%20testing-blueviolet)](#property-based-testing)
 [![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/License-PolyForm%20Shield%201.0.0-blue.svg)](./LICENSE)
 
+- Website: https://mainline.sh
+- Docs: https://mainline.sh/docs/
+- Spec: https://mainline.sh/spec/
+- Essay: https://mainline.sh/blog/why-coding-agents-need-repo-memory/
+
 **Stop AI coding agents from repeating old engineering mistakes.**
 
 Mainline is not a Git replacement, a PR system, or a session recorder. It is
