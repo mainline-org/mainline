@@ -40,14 +40,28 @@ func mkIntent(id string, sealedAt time.Time, files, subs []string, aps []AntiPat
 	return iv
 }
 
+func mkConstraint(id, source string, openedAt time.Time, files []string, what, why, sev string) Constraint {
+	c := Constraint{
+		ID:           id,
+		SourceIntent: source,
+		Files:        files,
+		What:         what,
+		Why:          why,
+		Severity:     sev,
+	}
+	if !openedAt.IsZero() {
+		c.OpenedAt = openedAt.Format(time.RFC3339)
+	}
+	return c
+}
+
 // ------- BuildInheritedConstraints -------
 
 func TestBuildInheritedConstraints_FileOverlap(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	view := &MainlineView{
-		Intents: []IntentView{
-			mkIntent("int_old", t0, []string{"a.go"}, []string{"auth"},
-				[]AntiPattern{mkAP("Don't drop session cookie on /oauth", "Breaks SSO", "high")}),
+		Constraints: []Constraint{
+			mkConstraint("guard_old", "int_old", t0, []string{"a.go"}, "Don't drop session cookie on /oauth", "Breaks SSO", "high"),
 		},
 	}
 	out := BuildInheritedConstraints(view, []string{"a.go"}, nil, "")
@@ -57,8 +71,8 @@ func TestBuildInheritedConstraints_FileOverlap(t *testing.T) {
 	if out[0].SourceIntent != "int_old" || out[0].Severity != "high" {
 		t.Errorf("unexpected: %+v", out[0])
 	}
-	if out[0].ConstraintID != "int_old#0" {
-		t.Errorf("constraint_id: want int_old#0, got %s", out[0].ConstraintID)
+	if out[0].ConstraintID != "guard_old" {
+		t.Errorf("constraint_id: want guard_old, got %s", out[0].ConstraintID)
 	}
 	if len(out[0].MatchedBy) != 1 || out[0].MatchedBy[0] != "file:a.go" {
 		t.Errorf("matched_by: want [file:a.go], got %v", out[0].MatchedBy)
@@ -68,9 +82,8 @@ func TestBuildInheritedConstraints_FileOverlap(t *testing.T) {
 func TestBuildInheritedConstraints_SubsystemOverlapRemoved(t *testing.T) {
 	// v2: subsystem matching is removed. Only file overlap propagates.
 	view := &MainlineView{
-		Intents: []IntentView{
-			mkIntent("int_old", time.Time{}, []string{"a.go"}, []string{"auth"},
-				[]AntiPattern{mkAP("Skip token rotation", "Replay attacks", "high")}),
+		Constraints: []Constraint{
+			mkConstraint("guard_old", "int_old", time.Time{}, []string{"a.go"}, "Skip token rotation", "Replay attacks", "high"),
 		},
 	}
 	// Same subsystem but different file → no match
@@ -82,9 +95,8 @@ func TestBuildInheritedConstraints_SubsystemOverlapRemoved(t *testing.T) {
 
 func TestBuildInheritedConstraints_NoOverlapMisses(t *testing.T) {
 	view := &MainlineView{
-		Intents: []IntentView{
-			mkIntent("int_old", time.Time{}, []string{"x.go"}, []string{"x"},
-				[]AntiPattern{mkAP("Don't X", "Why", "high")}),
+		Constraints: []Constraint{
+			mkConstraint("guard_old", "int_old", time.Time{}, []string{"x.go"}, "Don't X", "Why", "high"),
 		},
 	}
 	out := BuildInheritedConstraints(view, []string{"y.go"}, []string{"y"}, "")
@@ -98,12 +110,11 @@ func TestBuildInheritedConstraints_TemporalFilter(t *testing.T) {
 	t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	view := &MainlineView{
 		Intents: []IntentView{
-			mkIntent("int_old", t1, []string{"a.go"}, nil,
-				[]AntiPattern{mkAP("old AP", "old why", "high")}),
-			mkIntent("int_new", t2, []string{"a.go"}, nil,
-				[]AntiPattern{mkAP("new AP", "new why", "high")}),
-			mkIntent("int_focus", t1.Add(15*24*time.Hour), []string{"a.go"}, nil,
-				[]AntiPattern{mkAP("focus AP", "focus why", "high")}),
+			mkIntent("int_focus", t1.Add(15*24*time.Hour), []string{"a.go"}, nil, nil),
+		},
+		Constraints: []Constraint{
+			mkConstraint("guard_old", "int_old", t1, []string{"a.go"}, "old constraint", "old why", "high"),
+			mkConstraint("guard_new", "int_new", t2, []string{"a.go"}, "new constraint", "new why", "high"),
 		},
 	}
 	// excluding int_focus (sealed mid-Jan) → int_old is inherited,
@@ -112,21 +123,18 @@ func TestBuildInheritedConstraints_TemporalFilter(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("want 1 (only int_old), got %d: %+v", len(out), out)
 	}
-	if out[0].SourceIntent != "int_old" {
-		t.Errorf("want int_old, got %s", out[0].SourceIntent)
+	if out[0].ConstraintID != "guard_old" {
+		t.Errorf("want guard_old, got %s", out[0].ConstraintID)
 	}
 }
 
 func TestBuildInheritedConstraints_OnlyHighSeverity(t *testing.T) {
 	// v2: only high severity propagates.
 	view := &MainlineView{
-		Intents: []IntentView{
-			mkIntent("int_a", time.Time{}, []string{"a.go"}, nil,
-				[]AntiPattern{mkAP("A low", "", "low")}),
-			mkIntent("int_b", time.Time{}, []string{"a.go"}, nil,
-				[]AntiPattern{mkAP("B high", "", "high")}),
-			mkIntent("int_c", time.Time{}, []string{"a.go"}, nil,
-				[]AntiPattern{mkAP("C medium", "", "medium")}),
+		Constraints: []Constraint{
+			mkConstraint("guard_a", "int_a", time.Time{}, []string{"a.go"}, "A low", "", "low"),
+			mkConstraint("guard_b", "int_b", time.Time{}, []string{"a.go"}, "B high", "", "high"),
+			mkConstraint("guard_c", "int_c", time.Time{}, []string{"a.go"}, "C medium", "", "medium"),
 		},
 	}
 	out := BuildInheritedConstraints(view, []string{"a.go"}, nil, "")
@@ -138,12 +146,12 @@ func TestBuildInheritedConstraints_OnlyHighSeverity(t *testing.T) {
 	}
 }
 
-func TestBuildInheritedConstraints_ExcludesAbandoned(t *testing.T) {
+func TestBuildInheritedConstraints_LegacyAntiPatternsDoNotPropagate(t *testing.T) {
 	view := &MainlineView{
 		Intents: []IntentView{
 			{
-				IntentID: "int_aban",
-				Status:   StatusAbandoned,
+				IntentID: "int_legacy",
+				Status:   StatusMerged,
 				Summary:  mkSummary(nil, nil, []AntiPattern{mkAP("AP", "", "high")}, nil),
 				Fingerprint: &SemanticFingerprint{
 					FilesTouched: []string{"a.go"},
@@ -153,22 +161,17 @@ func TestBuildInheritedConstraints_ExcludesAbandoned(t *testing.T) {
 	}
 	out := BuildInheritedConstraints(view, []string{"a.go"}, nil, "")
 	if len(out) != 0 {
-		t.Errorf("abandoned source should not propagate; got %v", out)
+		t.Errorf("legacy anti_patterns should not propagate; got %v", out)
 	}
 }
 
 func TestBuildInheritedConstraints_NeverTruncated(t *testing.T) {
-	intents := make([]IntentView, 50)
+	constraints := make([]Constraint, 50)
 	for i := 0; i < 50; i++ {
-		intents[i] = mkIntent(
-			"int_"+string(rune('a'+i%26))+string(rune('a'+i/26)),
-			time.Time{},
-			[]string{"a.go"},
-			nil,
-			[]AntiPattern{mkAP("AP "+string(rune('a'+i%26)), "why", "high")},
-		)
+		id := "guard_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+		constraints[i] = mkConstraint(id, "int_src", time.Time{}, []string{"a.go"}, "AP "+string(rune('a'+i%26)), "why", "high")
 	}
-	view := &MainlineView{Intents: intents}
+	view := &MainlineView{Constraints: constraints}
 	out := BuildInheritedConstraints(view, []string{"a.go"}, nil, "")
 	if len(out) < 50 {
 		t.Errorf("expected 50+, got %d (truncation regression)", len(out))

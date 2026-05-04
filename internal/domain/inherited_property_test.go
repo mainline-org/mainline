@@ -97,8 +97,9 @@ func TestPropertyBuildInheritedConstraints_RequiresFileOverlap(t *testing.T) {
 }
 
 // No truncation: when excludeID is empty (so the temporal filter is
-// off), the output count equals the number of qualifying high APs
-// in the view. Catches a regression that would silently drop entries.
+// off), the output count equals the number of qualifying explicit
+// constraints in the view. Catches a regression that would silently
+// drop entries.
 func TestPropertyBuildInheritedConstraints_NeverTruncated(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		view := drawInheritedView(rt)
@@ -115,32 +116,18 @@ func TestPropertyBuildInheritedConstraints_NeverTruncated(t *testing.T) {
 		}
 		expected := 0
 		if len(fileSet) > 0 {
-			for i := range view.Intents {
-				iv := &view.Intents[i]
-				if iv.Status == StatusAbandoned || iv.Status == StatusReverted {
+			for _, c := range view.Constraints {
+				if strings.TrimSpace(c.What) == "" {
 					continue
 				}
-				if iv.Summary == nil || iv.Fingerprint == nil {
+				if !strings.EqualFold(strings.TrimSpace(c.Severity), "high") {
 					continue
 				}
-				overlap := false
-				for _, f := range iv.Fingerprint.FilesTouched {
+				for _, f := range c.Files {
 					if fileSet[f] {
-						overlap = true
+						expected++
 						break
 					}
-				}
-				if !overlap {
-					continue
-				}
-				for _, ap := range iv.Summary.AntiPatterns {
-					if strings.TrimSpace(ap.What) == "" {
-						continue
-					}
-					if !strings.EqualFold(strings.TrimSpace(ap.Severity), "high") {
-						continue
-					}
-					expected++
 				}
 			}
 		}
@@ -151,9 +138,8 @@ func TestPropertyBuildInheritedConstraints_NeverTruncated(t *testing.T) {
 	})
 }
 
-// Self-exclusion: when excludeID matches an intent in the view, that
-// intent's anti_patterns never appear in the output (an intent does
-// not inherit from itself).
+// Self-exclusion: when excludeID matches an intent in the view,
+// constraints sourced to that intent never appear in the output.
 func TestPropertyBuildInheritedConstraints_SelfExcluded(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		view := drawInheritedView(rt)
@@ -173,11 +159,15 @@ func TestPropertyBuildInheritedConstraints_SelfExcluded(t *testing.T) {
 	})
 }
 
-// Abandoned / reverted source intents must not propagate constraints.
-func TestPropertyBuildInheritedConstraints_AbandonedAndRevertedFiltered(t *testing.T) {
+// Explicit constraints are human-promoted and do not automatically
+// expire just because the source intent was abandoned or reverted.
+func TestPropertyBuildInheritedConstraints_SourceLifecycleDoesNotExpireExplicitConstraints(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		view := drawInheritedView(rt)
-		// Force every intent to abandoned or reverted.
+		if len(view.Constraints) == 0 {
+			return
+		}
+		// Force every source intent to abandoned or reverted.
 		for i := range view.Intents {
 			if rapid.Bool().Draw(rt, fmt.Sprintf("aban-%d", i)) {
 				view.Intents[i].Status = StatusAbandoned
@@ -187,14 +177,16 @@ func TestPropertyBuildInheritedConstraints_AbandonedAndRevertedFiltered(t *testi
 		}
 		files, subs := drawTouchedFilesAndSubs(rt)
 		out := BuildInheritedConstraints(view, files, subs, "")
-		if len(out) != 0 {
-			rt.Fatalf("all-abandoned/reverted view must produce empty output, got: %+v", out)
+		for _, c := range out {
+			if c.ConstraintID == "" {
+				rt.Fatalf("explicit constraint should keep stable id despite source lifecycle: %+v", c)
+			}
 		}
 	})
 }
 
 // Output structure: sorted ascending by ConstraintID, ConstraintIDs
-// have the "<source>#<idx>" shape, and every MatchedBy entry is
+// have the "guard_<hexish>" shape, and every MatchedBy entry is
 // "file:<path>" prefixed and sorted (no subsystem reasons in v2).
 func TestPropertyBuildInheritedConstraints_OutputStructure(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
@@ -211,14 +203,8 @@ func TestPropertyBuildInheritedConstraints_OutputStructure(t *testing.T) {
 					out[i-1].ConstraintID, out[i].ConstraintID)
 			}
 		}
-		// "<source>#<idx>" format and idx within source's AP range.
-		idxByID := map[string]int{}
-		for i, iv := range view.Intents {
-			idxByID[iv.IntentID] = i
-		}
 		for _, c := range out {
-			parts := strings.SplitN(c.ConstraintID, "#", 2)
-			if len(parts) != 2 || parts[0] != c.SourceIntent {
+			if !strings.HasPrefix(c.ConstraintID, "guard_") {
 				rt.Fatalf("constraint id format violated: id=%q source=%q",
 					c.ConstraintID, c.SourceIntent)
 			}
@@ -443,10 +429,25 @@ func drawInheritedView(rt *rapid.T) *MainlineView {
 	n := rapid.IntRange(0, 5).Draw(rt, "view.n")
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	intents := make([]IntentView, 0, n)
+	constraints := make([]Constraint, 0, n*2)
 	for i := 0; i < n; i++ {
-		intents = append(intents, drawSourceIntent(rt, fmt.Sprintf("iv-%d", i), base))
+		iv := drawSourceIntent(rt, fmt.Sprintf("iv-%d", i), base)
+		intents = append(intents, iv)
+		if iv.Summary != nil && iv.Fingerprint != nil {
+			for j, ap := range iv.Summary.AntiPatterns {
+				constraints = append(constraints, Constraint{
+					ID:           fmt.Sprintf("guard_%d_%d", i, j),
+					SourceIntent: iv.IntentID,
+					Files:        append([]string(nil), iv.Fingerprint.FilesTouched...),
+					What:         ap.What,
+					Why:          ap.Why,
+					Severity:     ap.Severity,
+					OpenedAt:     iv.SealedAt,
+				})
+			}
+		}
 	}
-	return &MainlineView{Intents: intents}
+	return &MainlineView{Intents: intents, Constraints: constraints}
 }
 
 func drawSourceIntent(rt *rapid.T, label string, baseTime time.Time) IntentView {

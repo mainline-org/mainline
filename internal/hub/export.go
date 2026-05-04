@@ -100,12 +100,11 @@ func buildHubModel(view *domain.MainlineView) *HubModel {
 	}
 	annotateOpenRisks(m, view)
 	// Inherited-constraint propagation: for each intent, surface
-	// anti_patterns from prior sealed intents whose files/subsystems
-	// overlap. Done after the flatten loop so we can reuse the
-	// MainlineView's authoritative IntentSummary for acknowledgement
-	// matching. O(N²) worst case but each call is bounded by the
-	// number of intents that touch overlapping files; small in
-	// practice.
+	// human-promoted constraints whose files overlap. Done after the
+	// flatten loop so we can reuse the MainlineView's authoritative
+	// IntentSummary for acknowledgement matching. O(N²) worst case
+	// but each call is bounded by the number of intents that touch
+	// overlapping files; small in practice.
 	annotateInheritedConstraints(m, view)
 	m.InheritedHotspots = buildInheritedHotspots(view)
 	sort.SliceStable(m.Intents, func(i, j int) bool {
@@ -194,7 +193,7 @@ func annotateOpenRisks(m *HubModel, view *domain.MainlineView) {
 }
 
 func isEffectiveRiskBearing(in HubIntent) bool {
-	return len(in.OpenRisks) > 0 || len(in.AntiPatterns) > 0
+	return len(in.OpenRisks) > 0 || len(in.InheritedConstraints) > 0
 }
 
 // enrichIntentsWithTurns loads turn descriptions from the local store
@@ -957,10 +956,9 @@ func hasHighSeverityInherited(in HubIntent) bool {
 }
 
 // annotateInheritedConstraints walks every HubIntent and attaches
-// the inherited anti_patterns from prior intents whose touched
-// files / subsystems overlap. Acknowledgement form is computed
-// against the source IntentSummary in the view (not the flattened
-// HubIntent) so we don't lose any field.
+// human-promoted constraints whose files overlap. Acknowledgement form
+// is computed against the source IntentSummary in the view (not the
+// flattened HubIntent) so we don't lose any field.
 func annotateInheritedConstraints(m *HubModel, view *domain.MainlineView) {
 	if view == nil {
 		return

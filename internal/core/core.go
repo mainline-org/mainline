@@ -161,7 +161,7 @@ func ValidateSealResult(sr *domain.SealResult) error {
 			return fmt.Errorf("seal_result: summary.anti_patterns[%d].what is required", i)
 		}
 		if strings.TrimSpace(ap.Why) == "" {
-			return fmt.Errorf("seal_result: summary.anti_patterns[%d].why is required (anti-patterns without a load-bearing reason are too easy to ignore)", i)
+			return fmt.Errorf("seal_result: summary.anti_patterns[%d].why is required for legacy anti-pattern records", i)
 		}
 		switch ap.Severity {
 		case "", "low", "medium", "high":

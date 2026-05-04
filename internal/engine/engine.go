@@ -856,7 +856,7 @@ const statusActionableLimit = 5
 
 // buildStatusActionItems derives the compact "what needs attention"
 // inbox from the same read models that power the existing status,
-// gaps, doctor, risks, and followups commands. It must stay read-only:
+// gaps, and doctor commands. It must stay read-only:
 // every recommendation points at a command that lets the user inspect
 // and decide rather than auto-applying a lifecycle event.
 func buildStatusActionItems(r *StatusResult, view *domain.MainlineView) []StatusActionItem {
@@ -966,27 +966,6 @@ func buildStatusActionItems(r *StatusResult, view *domain.MainlineView) []Status
 				Why:                "The repo has pre-v0.4 guidance that should be migrated before future updates.",
 				Risk:               "Legacy guidance can drift from the current skill workflow.",
 				RecommendedCommand: "mainline agents update",
-			})
-		}
-	}
-
-	if view != nil {
-		if n := openRiskCount(view); n > 0 {
-			add(StatusActionItem{
-				Kind:               "risks",
-				Title:              fmt.Sprintf("%d open risk(s) in sealed intents", n),
-				Why:                "Sealed intents recorded reviewer-facing risks that are not resolved or expired.",
-				Risk:               "Known hazards can become background noise instead of being reviewed or explicitly resolved.",
-				RecommendedCommand: "mainline risks",
-			})
-		}
-		if n := openFollowupCount(view); n > 0 {
-			add(StatusActionItem{
-				Kind:               "followups",
-				Title:              fmt.Sprintf("%d open follow-up(s) in sealed intents", n),
-				Why:                "Prior work left explicit future tasks that are still open.",
-				Risk:               "Important cleanup or polish can be rediscovered repeatedly instead of triaged once.",
-				RecommendedCommand: "mainline followups",
 			})
 		}
 	}

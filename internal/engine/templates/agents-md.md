@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 18 -->
+<!-- mainline-agents-md-version: 19 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -24,8 +24,8 @@ the diff alone cannot give you.
 
 **Match the user's language in everything you write into Mainline:**
 intent goal text, append turn descriptions, seal `summary.title` /
-`what` / `why` / `user_goal` / decisions / risks / anti_patterns /
-followups, and PR description prose. If the user wrote to you in
+`what` / `why` / `user_goal` / decisions / review_notes, explicit
+signal command text, and PR description prose. If the user wrote to you in
 Chinese, seal in Chinese. English in, English out. Mixed → match
 the dominant language of the user's request.
 
@@ -79,14 +79,13 @@ The default agent order is:
    your current branch + active draft + diff vs main.
 3. If the task names files: `mainline context --files <path>... --json`.
 4. If the task is semantic: `mainline context --query "<task summary>" --json`.
-5. Read the returned intents' `summary`, `decisions`, `risks`,
-   `anti_patterns`, and `fingerprint`.
+5. Read the returned intents' `summary`, `decisions`, lifecycle
+   warnings, explicit `inherited_constraints`, and `fingerprint`.
 6. **Only then** grep / read code to verify against the current
    implementation.
 7. Edit.
 8. When sealing, reference relevant prior intent IDs in your
-   decisions, and record any new `anti_patterns` future agents must
-   avoid in this area.
+   decisions. Do not create risks, followups, or constraints from seal.
 
 Do not lead with `grep`, `rg`, or broad file reads for non-trivial
 changes unless Mainline is unavailable or the task is purely mechanical.
@@ -105,19 +104,18 @@ its lifecycle status):
 | `abandoned` | this approach was tried and abandoned; do not repeat without understanding why |
 | `stale` | files have churned or the intent is old; verify decisions still hold |
 
-Each intent also carries:
+Each intent may also carry:
 
-- `risks` — soft warnings to weigh.
-- `anti_patterns` — **hard constraints**. Each one carries a `what`,
-  a `why`, and a `severity`. Do not violate them. The retrieval API
-  never truncates `anti_patterns`, so if you see one, it is in scope.
+- legacy `risks` / `anti_patterns` / `followups` from older seals.
+  Treat them as historical context unless they are surfaced as explicit
+  `inherited_constraints`.
 - `guidance` — a single-line reminder derived from `status`.
 
 **Inherited constraints** — `mainline context` may surface an
-`inherited_constraints` array listing high-severity anti_patterns
-from prior intents that touched the same files you are editing.
-Each carries a stable `constraint_id` (format: `int_xxx#N`). When
-sealing, you must explicitly acknowledge each in `acknowledged_constraints`:
+`inherited_constraints` array listing human-promoted constraints
+or legacy high-severity constraints on the same files you are editing.
+Each carries a stable `constraint_id`. When sealing, you must explicitly
+acknowledge each in `acknowledged_constraints`:
 
 ```json
 "acknowledged_constraints": [
@@ -144,7 +142,7 @@ Before editing code, answer:
 - Did I run `mainline status`?
 - Did I run `mainline context --current --json`?
 - If files are involved, did I run `mainline context --files ... --json`?
-- Did I read the relevant prior decisions and risks?
+- Did I read the relevant prior decisions and explicit constraints?
 - Did I verify those intents against the current code?
 - Am I about to repeat an abandoned or superseded approach?
 
@@ -165,7 +163,7 @@ Before editing code, answer:
 
 Before working on anything non-trivial, scan recent intents for prior
 work in the area you're about to touch. Each intent's `summary`
-(what / why / decisions / risks / followups) plus `fingerprint`
+(what / why / decisions / review_notes) plus `fingerprint`
 (subsystems, files_touched, tags) is **strictly richer than the diff** —
 it tells you *why* the code looks the way it does, which decisions
 were considered and rejected, and what the author flagged as a risk
@@ -179,7 +177,7 @@ Filter by goal/title keywords matching the user's task. For each
 relevant hit, pull the full record:
 
 ```
-mainline show <intent_id> --json    # decisions / risks / followups / fingerprint
+mainline show <intent_id> --json    # decisions / fingerprint / legacy signals
 mainline trace <intent_id> --json   # turn timeline (when each turn
                                     # was added, how long it took)
 ```
@@ -221,7 +219,7 @@ mainline show <intent_id> --json
 ```
 
 to inspect the structured conclusion of an intent: summary,
-decisions, risks, and fingerprint.
+decisions, fingerprint, and any legacy or explicit signals.
 
 Use:
 
@@ -269,9 +267,8 @@ the next state in a new turn.
    filled `SealResult` with the deterministic bits (intent_id,
    fingerprint.files_touched, fingerprint.subsystems) pre-populated.
    Patch in the required agent-judgment fields rather than typing the
-   JSON from scratch. Leave `risks`, `anti_patterns`, and `followups`
-   as `[]` unless the strict rules below apply; most intents should
-   keep these fields empty.
+   JSON from scratch. The starter intentionally omits durable action
+   signals; do not add `risks`, `anti_patterns`, or `followups`.
 
    Why `.ml-cache/`? Init writes that directory to `.gitignore`, so
    the temporary seal file stays out of git and does not trip the
@@ -286,42 +283,20 @@ the next state in a new turn.
    "tags": ["auth", "authentication", "security", "jwt", "session"]
    ```
 
-   `risks`, `anti_patterns`, and `followups` are exceptional fields,
-   not sections to fill for completeness:
+   Seal records decisions by default. It does not let agents create
+   repo-wide constraints, risks, or follow-up queues. Use:
 
-   - Use `risks` only for concrete failure modes a future reviewer
-     should actively audit.
-   - Use `anti_patterns` only for hard constraints future agents must
-     not violate.
-   - Use `followups` only when the user explicitly wants something
-     done later, or this work deliberately cut out a known next task.
+   - `review_notes` for ephemeral reviewer context.
+   - `decisions` for accepted trade-offs and implementation limits.
+   - `mainline risk add` only when a concrete failure mode also has a
+     trigger or impact, plus mitigation / validation / owner.
+   - `mainline followup add` only when the user explicitly deferred the
+     work, an external issue/ticket/PR exists, or this PR explicitly cut
+     real scope.
+   - `mainline guard add` only through interactive human confirmation.
 
-   Do not invent speculative "consider", "maybe", dogfood,
-   telemetry, or nice-to-have items. Put accepted trade-offs in
-   `decisions` and ephemeral reviewer context in `review_notes`.
-
-   If the prepare package includes `applicable_open_risks` or
-   `applicable_open_followups`, and your work actually resolves one,
-   add `resolves_risks` or `resolves_followups` at the top level of
-   the seal result. Do not copy the old item into a new risk or
-   follow-up just to mark it done.
-
-   When the work establishes constraints future agents must respect,
-   record them as `anti_patterns` (NOT as `risks`). Each entry MUST
-   carry both `what` and `why`; empty `why` is rejected at seal time.
-
-   ```json
-   "anti_patterns": [
-     {
-       "what": "Removing legacy session middleware on /oauth path",
-       "why":  "OAuth callback handler still requires session state",
-       "severity": "high"
-     }
-   ]
-   ```
-
-   Only `high` severity anti-patterns propagate as inherited
-   constraints to future agents editing the same files.
+   Submit rejects any seal payload containing `summary.risks`,
+   `summary.followups`, or `summary.anti_patterns`.
 
    If `mainline context` surfaced `inherited_constraints`, acknowledge
    each in the seal's `summary.acknowledged_constraints`:
@@ -355,7 +330,7 @@ the next state in a new turn.
 
    `lint` runs deterministic checks against the sealed payload —
    empty / boilerplate `what`, missing decisions, decision without
-   rationale, generic/spurious risks, broken supersedes refs.
+   rationale, seal-embedded action signals, broken supersedes refs.
    Errors mean the seal will be hard for future retrieval to use;
    warnings are advisory. Lint is **not** wired into submit, so a
    bad seal still goes through — but a low-quality seal pollutes
@@ -453,8 +428,8 @@ You should suggest the hub when the user asks one of:
   every intent that touched it.
 - *"Who's been working on what lately?"* → hub's index shows the
   recent intents table; the actor pages give per-author rollups.
-- *"Are there any conflicts or risky changes I should review?"* →
-  hub's risks page and graph (supersessions, conflicts_with,
+- *"Are there any conflicts or explicitly promoted signals I should review?"* →
+  hub's signal/review pages and graph (supersessions, conflicts_with,
   shares_file edges) put the answer one click away.
 
 Concretely:
