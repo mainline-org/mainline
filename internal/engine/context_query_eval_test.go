@@ -202,8 +202,11 @@ func TestContextRetrieval_QueryCJKOnlyFallback(t *testing.T) {
 	assertEffectiveKeyword(t, res, "不要重新引入")
 	assertEffectiveKeyword(t, res, "继承")
 	ri := mustFindRelevant(t, res, "int_subsystem_inheritance")
-	if ri.Relevance.Breakdown == nil || ri.Relevance.Breakdown.AntiPattern == 0 {
-		t.Fatalf("expected CJK-only query to score via anti_pattern, got %+v", ri.Relevance.Breakdown)
+	if ri.Relevance.Breakdown == nil || (ri.Relevance.Breakdown.Summary == 0 && ri.Relevance.Breakdown.Decision == 0) {
+		t.Fatalf("expected CJK-only query to score via history fields, got %+v", ri.Relevance.Breakdown)
+	}
+	if ri.Relevance.Breakdown.AntiPattern != 0 {
+		t.Fatalf("legacy anti_pattern should not score default query context, got %+v", ri.Relevance.Breakdown)
 	}
 }
 

@@ -202,7 +202,7 @@ func init() {
 	guardAddCmd.Flags().StringVar(&guardAddWhy, "why", "", "load-bearing reason future agents must respect")
 	guardAddCmd.Flags().StringVar(&guardAddSeverity, "severity", "high", "severity: high, medium, low")
 	guardAddCmd.Flags().StringVar(&guardAddSourceNote, "source-note", "", "human approval note or reviewer context")
-	guardAddCmd.MarkFlagRequired("why")
+	_ = guardAddCmd.MarkFlagRequired("why")
 	guardCmd.AddCommand(guardAddCmd)
 
 	riskAddCmd.Flags().StringVar(&riskAddIntent, "intent", "", "source intent id (defaults to active draft)")
