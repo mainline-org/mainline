@@ -80,7 +80,11 @@ func mkFollowupIntent(id string, status domain.IntentStatus, followups []string,
 func TestMaterializeFollowups_Open(t *testing.T) {
 	view := &domain.MainlineView{
 		Intents: []domain.IntentView{
-			mkFollowupIntent("int_aaa", domain.StatusMerged, []string{"follow-up one", "follow-up two"}, nil),
+			mkFollowupIntent("int_aaa", domain.StatusMerged, nil, nil),
+		},
+		Followups: []domain.Followup{
+			{ID: "followup_aaa", Text: "follow-up one", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
+			{ID: "followup_bbb", Text: "follow-up two", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
 		},
 	}
 	followups := materializeFollowups(view, "")
@@ -92,18 +96,37 @@ func TestMaterializeFollowups_Open(t *testing.T) {
 			t.Errorf("follow-up %s should be open, got %s", f.ID, f.Status)
 		}
 	}
-	if followups[0].ID != "int_aaa#0" || followups[1].ID != "int_aaa#1" {
+	if followups[0].ID != "followup_aaa" || followups[1].ID != "followup_bbb" {
 		t.Errorf("unexpected IDs: %s, %s", followups[0].ID, followups[1].ID)
+	}
+}
+
+func TestMaterializeFollowups_HidesLegacySealSummary(t *testing.T) {
+	view := &domain.MainlineView{
+		Intents: []domain.IntentView{
+			mkFollowupIntent("int_aaa", domain.StatusMerged, []string{"old follow-up one", "old follow-up two"}, nil),
+		},
+	}
+	if followups := materializeFollowups(view, ""); len(followups) != 0 {
+		t.Fatalf("active follow-up queue should ignore seal-summary follow-ups, got %d", len(followups))
+	}
+	legacy := materializeLegacyFollowups(view, "")
+	if len(legacy) != 2 {
+		t.Fatalf("diagnostic legacy materializer should preserve 2 historical follow-ups, got %d", len(legacy))
 	}
 }
 
 func TestMaterializeFollowups_Resolved(t *testing.T) {
 	view := &domain.MainlineView{
 		Intents: []domain.IntentView{
-			mkFollowupIntent("int_aaa", domain.StatusMerged, []string{"follow-up one", "follow-up two"}, nil),
+			mkFollowupIntent("int_aaa", domain.StatusMerged, nil, nil),
+		},
+		Followups: []domain.Followup{
+			{ID: "followup_aaa", Text: "follow-up one", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
+			{ID: "followup_bbb", Text: "follow-up two", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
 		},
 		FollowupResolutions: map[string][]domain.FollowupResolution{
-			"int_aaa#0": {{IntentID: "int_bbb", Rationale: "done"}},
+			"followup_aaa": {{IntentID: "int_bbb", Rationale: "done"}},
 		},
 	}
 	followups := materializeFollowups(view, "")
@@ -115,7 +138,7 @@ func TestMaterializeFollowups_Resolved(t *testing.T) {
 		switch f.Status {
 		case "resolved":
 			resolved++
-			if f.ID != "int_aaa#0" {
+			if f.ID != "followup_aaa" {
 				t.Errorf("wrong follow-up resolved: %s", f.ID)
 			}
 		case "open":
@@ -130,10 +153,13 @@ func TestMaterializeFollowups_Resolved(t *testing.T) {
 func TestMaterializeFollowups_Expired(t *testing.T) {
 	view := &domain.MainlineView{
 		Intents: []domain.IntentView{
-			mkFollowupIntent("int_aaa", domain.StatusSuperseded, []string{"old follow-up"}, nil),
+			mkFollowupIntent("int_aaa", domain.StatusSuperseded, nil, nil),
+		},
+		Followups: []domain.Followup{
+			{ID: "followup_aaa", Text: "old follow-up", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
 		},
 		FollowupResolutions: map[string][]domain.FollowupResolution{
-			"int_aaa#0": {{IntentID: "int_bbb", Rationale: "done"}},
+			"followup_aaa": {{IntentID: "int_bbb", Rationale: "done"}},
 		},
 	}
 	followups := materializeFollowups(view, "")
@@ -148,8 +174,12 @@ func TestMaterializeFollowups_Expired(t *testing.T) {
 func TestMaterializeFollowups_FileFilter(t *testing.T) {
 	view := &domain.MainlineView{
 		Intents: []domain.IntentView{
-			mkFollowupIntent("int_aaa", domain.StatusMerged, []string{"auth follow-up"}, []string{"internal/auth/handler.go"}),
-			mkFollowupIntent("int_bbb", domain.StatusMerged, []string{"db follow-up"}, []string{"internal/db/migrate.go"}),
+			mkFollowupIntent("int_aaa", domain.StatusMerged, nil, []string{"internal/auth/handler.go"}),
+			mkFollowupIntent("int_bbb", domain.StatusMerged, nil, []string{"internal/db/migrate.go"}),
+		},
+		Followups: []domain.Followup{
+			{ID: "followup_aaa", Text: "auth follow-up", SourceIntent: "int_aaa", Files: []string{"internal/auth/handler.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+			{ID: "followup_bbb", Text: "db follow-up", SourceIntent: "int_bbb", Files: []string{"internal/db/migrate.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
 		},
 	}
 	followups := materializeFollowups(view, "internal/auth")
@@ -164,9 +194,14 @@ func TestMaterializeFollowups_FileFilter(t *testing.T) {
 func TestMaterializeOpenFollowups(t *testing.T) {
 	view := &domain.MainlineView{
 		Intents: []domain.IntentView{
-			mkFollowupIntent("int_aaa", domain.StatusMerged, []string{"auth follow-up"}, []string{"internal/auth/handler.go"}),
-			mkFollowupIntent("int_bbb", domain.StatusMerged, []string{"db follow-up"}, []string{"internal/db/migrate.go"}),
-			mkFollowupIntent("int_ccc", domain.StatusSuperseded, []string{"old follow-up"}, []string{"internal/auth/handler.go"}),
+			mkFollowupIntent("int_aaa", domain.StatusMerged, nil, []string{"internal/auth/handler.go"}),
+			mkFollowupIntent("int_bbb", domain.StatusMerged, nil, []string{"internal/db/migrate.go"}),
+			mkFollowupIntent("int_ccc", domain.StatusSuperseded, nil, []string{"internal/auth/handler.go"}),
+		},
+		Followups: []domain.Followup{
+			{ID: "followup_aaa", Text: "auth follow-up", SourceIntent: "int_aaa", Files: []string{"internal/auth/handler.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+			{ID: "followup_bbb", Text: "db follow-up", SourceIntent: "int_bbb", Files: []string{"internal/db/migrate.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+			{ID: "followup_ccc", Text: "old follow-up", SourceIntent: "int_ccc", Files: []string{"internal/auth/handler.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
 		},
 	}
 	open := materializeOpenFollowups(view, []string{"internal/auth/handler.go"})

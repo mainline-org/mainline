@@ -28,12 +28,13 @@ type DoctorOptions struct {
 }
 
 type DoctorResult struct {
-	CheckedDrafts int                   `json:"checked_drafts,omitempty"`
-	OrphanDrafts  []DoctorDraftFinding  `json:"orphan_drafts,omitempty"`
-	StaleDrafts   []DoctorDraftFinding  `json:"stale_drafts,omitempty"`
-	DeletedDrafts []string              `json:"deleted_drafts,omitempty"`
-	Setup         *DoctorSetupReport    `json:"setup,omitempty"`
-	Proposals     *DoctorProposalReport `json:"proposals,omitempty"`
+	CheckedDrafts int                            `json:"checked_drafts,omitempty"`
+	OrphanDrafts  []DoctorDraftFinding           `json:"orphan_drafts,omitempty"`
+	StaleDrafts   []DoctorDraftFinding           `json:"stale_drafts,omitempty"`
+	DeletedDrafts []string                       `json:"deleted_drafts,omitempty"`
+	Setup         *DoctorSetupReport             `json:"setup,omitempty"`
+	Proposals     *DoctorProposalReport          `json:"proposals,omitempty"`
+	Historical    *DoctorHistoricalSignalsReport `json:"historical_signals,omitempty"`
 }
 
 // DoctorSetupReport summarises every install / wiring check the doctor
@@ -103,6 +104,12 @@ type DoctorProposalFinding struct {
 	RecommendedCommand string   `json:"recommended_command,omitempty"`
 }
 
+type DoctorHistoricalSignalsReport struct {
+	SealSummaryRisks        int `json:"seal_summary_risks,omitempty"`
+	SealSummaryFollowups    int `json:"seal_summary_followups,omitempty"`
+	SealSummaryAntiPatterns int `json:"seal_summary_anti_patterns,omitempty"`
+}
+
 func (s *Service) Doctor(opts DoctorOptions) (*DoctorResult, error) {
 	if err := s.requireInit(); err != nil {
 		return nil, err
@@ -163,7 +170,33 @@ func (s *Service) Doctor(opts DoctorOptions) (*DoctorResult, error) {
 		}
 	}
 
+	if view, _ := s.Store.ReadMainlineView(); view != nil {
+		result.Historical = doctorHistoricalSignals(view)
+	}
+
 	return result, nil
+}
+
+func doctorHistoricalSignals(view *domain.MainlineView) *DoctorHistoricalSignalsReport {
+	if view == nil {
+		return nil
+	}
+	report := &DoctorHistoricalSignalsReport{
+		SealSummaryRisks:     len(materializeLegacyRisks(view, "")),
+		SealSummaryFollowups: len(materializeLegacyFollowups(view, "")),
+	}
+	for _, iv := range view.Intents {
+		if iv.Summary == nil {
+			continue
+		}
+		report.SealSummaryAntiPatterns += len(iv.Summary.AntiPatterns)
+	}
+	if report.SealSummaryRisks == 0 &&
+		report.SealSummaryFollowups == 0 &&
+		report.SealSummaryAntiPatterns == 0 {
+		return nil
+	}
+	return report
 }
 
 func (s *Service) doctorProposals(staleAfter time.Duration) (*DoctorResult, error) {

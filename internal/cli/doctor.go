@@ -66,6 +66,7 @@ or pin commands after confirming the recommendation.`,
 		fmt.Printf("Checked local drafts: %d\n", result.CheckedDrafts)
 		if len(result.OrphanDrafts) == 0 && len(result.StaleDrafts) == 0 {
 			fmt.Println("No local draft issues found.")
+			renderHistoricalSignalsReport(result.Historical)
 			return
 		}
 
@@ -92,7 +93,19 @@ or pin commands after confirming the recommendation.`,
 				fmt.Printf("  %s [%s] %s (%s)\n", d.IntentID, d.Status, d.Goal, d.Reason)
 			}
 		}
+		renderHistoricalSignalsReport(result.Historical)
 	},
+}
+
+func renderHistoricalSignalsReport(r *engine.DoctorHistoricalSignalsReport) {
+	if r == nil {
+		return
+	}
+	fmt.Println("\nHistorical seal-era signals:")
+	fmt.Printf("  risks: %d\n", r.SealSummaryRisks)
+	fmt.Printf("  follow-ups: %d\n", r.SealSummaryFollowups)
+	fmt.Printf("  constraints: %d\n", r.SealSummaryAntiPatterns)
+	fmt.Println("  These records are hidden from active signal queues; inspect the source intent with `mainline show <id>` when auditing history.")
 }
 
 func renderProposalReport(r *engine.DoctorProposalReport) {
