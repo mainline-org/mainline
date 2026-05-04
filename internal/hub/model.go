@@ -454,9 +454,9 @@ func hubIntentFromView(v *domain.IntentView) HubIntent {
 		if out.UserGoal == "" {
 			out.UserGoal = s.UserGoal
 		}
-		out.Risks = append([]string(nil), s.Risks...)
+		out.Risks = domain.RiskTextList(s.Risks)
 		out.AntiPatterns = append([]domain.AntiPattern(nil), s.AntiPatterns...)
-		out.Followups = append([]string(nil), s.Followups...)
+		out.Followups = domain.FollowupTextList(s.Followups)
 		for _, d := range s.Decisions {
 			out.Decisions = append(out.Decisions, HubDecision{
 				Point:     d.Point,

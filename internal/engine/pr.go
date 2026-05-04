@@ -168,7 +168,7 @@ func formatPRIntent(iv domain.IntentView, level int) string {
 	if len(summary.Risks) > 0 {
 		sb.WriteString(subheading + " Risks\n\n")
 		for _, r := range summary.Risks {
-			sb.WriteString(fmt.Sprintf("- %s\n", r))
+			sb.WriteString(fmt.Sprintf("- %s\n", r.Text()))
 		}
 		sb.WriteString("\n")
 	}
@@ -192,7 +192,7 @@ func formatPRIntent(iv domain.IntentView, level int) string {
 	if len(summary.Followups) > 0 {
 		sb.WriteString(subheading + " Follow-ups\n\n")
 		for _, f := range summary.Followups {
-			sb.WriteString(fmt.Sprintf("- %s\n", f))
+			sb.WriteString(fmt.Sprintf("- %s\n", f.Text()))
 		}
 		sb.WriteString("\n")
 	}

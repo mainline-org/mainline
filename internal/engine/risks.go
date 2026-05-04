@@ -12,7 +12,7 @@ import (
 // Risk lifecycle engine
 // -----------------------------------------------------------
 //
-// Risks are soft warnings written as []string on IntentSummary.
+// Risks are soft warnings written as structured entries on IntentSummary.
 // Before v0.4 they were write-once: no IDs, no resolution, no
 // expiry. This file adds:
 //

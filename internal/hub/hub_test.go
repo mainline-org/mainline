@@ -154,7 +154,7 @@ func TestBuildActorIndex_GroupsByActor(t *testing.T) {
 
 func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 	withRisk := intent("int_risky", "a", "2026-04-28T01:00:00Z", domain.StatusMerged)
-	withRisk.Summary.Risks = []string{"the deploy might break old clients"}
+	withRisk.Summary.Risks = domain.LegacyRiskStatements("the deploy might break old clients")
 	plain := intent("int_plain", "a", "2026-04-28T02:00:00Z", domain.StatusMerged)
 	v := makeView(withRisk, plain)
 
@@ -166,11 +166,11 @@ func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 
 func TestBuildRiskList_UsesOpenRiskLifecycle(t *testing.T) {
 	resolved := intent("int_resolved", "a", "2026-04-28T01:00:00Z", domain.StatusMerged)
-	resolved.Summary.Risks = []string{"resolved risk should stay historical"}
+	resolved.Summary.Risks = domain.LegacyRiskStatements("resolved risk should stay historical")
 	expired := intent("int_expired", "a", "2026-04-28T02:00:00Z", domain.StatusSuperseded)
-	expired.Summary.Risks = []string{"expired risk should stay historical"}
+	expired.Summary.Risks = domain.LegacyRiskStatements("expired risk should stay historical")
 	open := intent("int_open", "a", "2026-04-28T03:00:00Z", domain.StatusMerged)
-	open.Summary.Risks = []string{"open risk should appear"}
+	open.Summary.Risks = domain.LegacyRiskStatements("open risk should appear")
 
 	v := makeView(resolved, expired, open)
 	v.RiskResolutions = map[string][]domain.RiskResolution{
@@ -213,7 +213,7 @@ func TestBuildRiskList_UsesOpenRiskLifecycle(t *testing.T) {
 func TestBuildDashboard_FocusListSurfacesOnlyActionableItems(t *testing.T) {
 	proposed := intent("int_proposed", "a", "2026-04-28T03:00:00Z", domain.StatusProposed, "src/hub.go")
 	risky := intent("int_risky", "a", "2026-04-28T02:00:00Z", domain.StatusMerged, "src/hub.go", "src/model.go")
-	risky.Summary.Risks = []string{"needs careful rollout"}
+	risky.Summary.Risks = domain.LegacyRiskStatements("needs careful rollout")
 	merged := intent("int_merged", "a", "2026-04-28T01:00:00Z", domain.StatusMerged, "src/model.go")
 	v := makeView(proposed, risky, merged)
 
@@ -372,7 +372,7 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 
 	a := intent("int_a", "actor_alice", "2026-04-28T01:00:00Z", domain.StatusMerged, "src/auth.go")
 	a.ActorName = "Alice"
-	a.Summary.Risks = []string{"breaks old clients"}
+	a.Summary.Risks = domain.LegacyRiskStatements("breaks old clients")
 	b := intent("int_b", "actor_bob", "2026-04-28T02:00:00Z", domain.StatusSuperseded, "src/auth.go")
 	b.StatusEvidence.SupersededByIntent = "int_a"
 	if err := store.WriteMainlineView(makeView(a, b)); err != nil {
@@ -574,7 +574,7 @@ func intentSealed(id, status string, daysAgo int, files []string, risks []string
 		ActorID:  "actor_x",
 		Thread:   "t",
 		SealedAt: sealedAt,
-		Summary:  &domain.IntentSummary{Title: id, What: "did " + id, Risks: risks},
+		Summary:  &domain.IntentSummary{Title: id, What: "did " + id, Risks: domain.LegacyRiskStatements(risks...)},
 		Fingerprint: &domain.SemanticFingerprint{
 			Subsystems:   []string{"sub"},
 			FilesTouched: files,

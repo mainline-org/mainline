@@ -400,8 +400,9 @@ The contract is intentionally stricter than "run a command sometimes":
 - **Read before writing:** retrieve repo intent before non-trivial edits.
 - **Record meaning, not keystrokes:** append decisions, pivots, and completed
   slices.
-- **Treat structured signals as explicit:** do not create risks,
-  anti-patterns, or follow-up queues unless a human promoted that note.
+- **Treat structured signals by authority:** constraints are
+  interactive human-promoted rules, risks are structured present-review
+  warnings, and follow-ups need explicit deferral or an external reference.
 - **Recover conservatively:** dirty state, stale sync, drift, parse failures,
   and conflict warnings stop silent progress.
 - **Leave reviewable intent:** a human reviewer should be able to compare the
@@ -444,10 +445,14 @@ Append at the granularity of engineering meaning: a design choice, a completed
 slice, a pivot, or validation that changes confidence. Do
 not append every shell command.
 
-If a human explicitly approved creating `summary.risks`,
-`summary.anti_patterns`, or `summary.followups`, submit with
-`--allow-structured-signals`. Without that approval, omit those fields; use
-`decisions` for trade-offs and `review_notes` for ephemeral reviewer context.
+Default seals omit `summary.risks`, `summary.anti_patterns`, and
+`summary.followups`. `summary.anti_patterns` cannot be created from seal.
+`summary.risks` must use object form with `failure_mode`, `trigger` or
+`impact`, and at least one of `mitigation`, `validation`, or `owner`.
+`summary.followups` must use `source="explicit_defer"` with `source_note`,
+`source="external_reference"` with `reference`, or `source="cut_scope"` with
+`source_note`. Otherwise use `decisions` for trade-offs and `review_notes` for
+ephemeral reviewer context.
 
 ### Recovery rules
 

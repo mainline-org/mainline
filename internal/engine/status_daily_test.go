@@ -222,8 +222,8 @@ func TestStatus_ActionableItemsBuildsTopInbox(t *testing.T) {
 				Status:   domain.StatusMerged,
 				SealedAt: "2026-05-01T00:00:00Z",
 				Summary: &domain.IntentSummary{
-					Risks:     []string{"known risk"},
-					Followups: []string{"known follow-up"},
+					Risks:     domain.LegacyRiskStatements("known risk"),
+					Followups: domain.LegacyFollowupStatements("known follow-up"),
 				},
 			},
 		},

@@ -779,10 +779,11 @@ func scoreIntentRelevanceWithRiskLifecycle(iv domain.IntentView, files []string,
 				}
 			}
 			for _, f := range iv.Summary.Followups {
-				if countKeywordHits(keywords, f) > 0 {
+				followupText := f.SearchText()
+				if countKeywordHits(keywords, followupText) > 0 {
 					score += 0.08
 					breakdown.Followup += 0.08
-					reasons = append(reasons, "follow-up mentions "+truncateForReason(f, 40))
+					reasons = append(reasons, "follow-up mentions "+truncateForReason(followupText, 40))
 					break
 				}
 			}
@@ -903,7 +904,7 @@ func packRelevant(
 
 // filterOpenRisks returns only risks that are still open (not resolved
 // and not from an expired source intent).
-func filterOpenRisks(intentID string, risks []string, resolutions map[string][]domain.RiskResolution, sourceStatus domain.IntentStatus) []string {
+func filterOpenRisks(intentID string, risks []domain.RiskStatement, resolutions map[string][]domain.RiskResolution, sourceStatus domain.IntentStatus) []string {
 	return domain.OpenRiskTexts(intentID, risks, resolutions, sourceStatus)
 }
 

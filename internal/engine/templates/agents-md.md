@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 19 -->
+<!-- mainline-agents-md-version: 20 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -286,13 +286,12 @@ the next state in a new turn.
    ```
 
    Mainline records decisions by default. It does not let agents create
-   repo-wide constraints, risks, or follow-up queues unless a human
-   explicitly promotes that note into a structured signal.
+   repo-wide constraints, risks, or follow-up queues just because a seal
+   feels incomplete.
 
    - Put accepted trade-offs and scope limits in `decisions`.
    - Put ephemeral reviewer context in `review_notes`.
-   - Do not add `risks`, `anti_patterns`, or `followups` for
-     completeness.
+   - Do not add `risks`, `anti_patterns`, or `followups` for completeness.
    - Do not invent speculative "consider", "maybe", dogfood,
      telemetry, or nice-to-have items.
 
@@ -302,35 +301,52 @@ the next state in a new turn.
    the seal result. Do not copy the old item into a new risk or
    follow-up just to mark it done.
 
-   If the user or reviewer explicitly approved a structured signal, add
-   the relevant field and submit with `--allow-structured-signals`.
-   Without that explicit approval, omit the field entirely.
-
    A constraint is the highest-authority signal: a future behavior rule
-   that agents must see and obey. Only create `anti_patterns` when a
-   human explicitly promoted the rule. Each entry MUST carry both `what`
-   and `why`; empty `why` is rejected at seal time.
+   that agents must see and obey. Do not create `anti_patterns` from
+   seal. A constraint must be added through an interactive human-promoted
+   guard path, not through agent-authored seal prose.
 
    ```json
-   "anti_patterns": [
+   "anti_patterns": []
+   ```
+
+   Only `high` severity anti-patterns propagate as inherited
+   constraints to future agents editing the same files, which is why seal
+   cannot create them.
+
+   A risk is a present-review warning, not a future-agent rule. Only
+   create `risks` when the item names:
+
+   - a concrete `failure_mode`;
+   - `trigger` or `impact`;
+   - at least one of `mitigation`, `validation`, or `owner`.
+
+   ```json
+   "risks": [
      {
-       "what": "Removing legacy session middleware on /oauth path",
-       "why":  "OAuth callback handler still requires session state",
-       "severity": "high"
+       "failure_mode": "Changing auth middleware may break OAuth callback sessions",
+       "impact": "Existing login sessions could fail during callback handling",
+       "validation": "Covered by callback integration test"
      }
    ]
    ```
 
-   Only `high` severity anti-patterns propagate as inherited
-   constraints to future agents editing the same files.
-
-   A risk is a present-review warning, not a future-agent rule. Only
-   create `risks` when the human-approved item names a concrete failure
-   mode plus mitigation, validation, or owner.
-
    A follow-up is a deferred work item, not an agent-generated backlog.
-   Only create `followups` when the user explicitly deferred scope, or
-   when an external issue/ticket/PR already owns the work.
+   Only create `followups` when the user explicitly deferred scope, an
+   external issue/ticket/PR already owns the work, or this PR
+   deliberately cut a real follow-up task. Use `source="explicit_defer"`
+   with `source_note`, `source="external_reference"` with `reference`, or
+   `source="cut_scope"` with `source_note`.
+
+   ```json
+   "followups": [
+     {
+       "task": "Remove legacy callback session middleware after stateless callback migration",
+       "source": "external_reference",
+       "reference": "https://github.com/org/repo/issues/123"
+     }
+   ]
+   ```
 
    If `mainline context` surfaced `inherited_constraints`, acknowledge
    each in the seal's `summary.acknowledged_constraints`:
@@ -349,13 +365,6 @@ the next state in a new turn.
 
    ```
    mainline seal --submit --json < .ml-cache/seal.json
-   ```
-
-   If and only if a human explicitly approved creating
-   `summary.risks`, `summary.anti_patterns`, or `summary.followups`, use:
-
-   ```
-   mainline seal --submit --allow-structured-signals --json < .ml-cache/seal.json
    ```
 
    Submit auto-syncs with the team and runs phase-1 conflict detection

@@ -19,7 +19,7 @@ func mkSummary(decisions []Decision, rejected []RejectedAlternative, aps []AntiP
 		Why:          "y",
 		Decisions:    decisions,
 		Rejected:     rejected,
-		Risks:        risks,
+		Risks:        LegacyRiskStatements(risks...),
 		AntiPatterns: aps,
 	}
 }

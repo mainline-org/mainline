@@ -33,8 +33,8 @@ func TestRebuildMainlineIndexLogRowsAndLookupTables(t *testing.T) {
 						Chose:     "JSON",
 						Rationale: "Existing path",
 					}},
-					Risks:     []string{"old risk"},
-					Followups: []string{"old follow-up"},
+					Risks:     domain.LegacyRiskStatements("old risk"),
+					Followups: domain.LegacyFollowupStatements("old follow-up"),
 					AntiPatterns: []domain.AntiPattern{{
 						What:     "Bypassing the JSON fallback",
 						Why:      "SQLite is only a derived cache",
@@ -226,8 +226,8 @@ func TestReadIntentViewsByQuery_TextSearchHits(t *testing.T) {
 			{IntentID: "int_billing", Status: domain.StatusMerged, ActorID: "x", Goal: "Add billing",
 				Summary: &domain.IntentSummary{
 					Title:     "Billing rewrite",
-					Risks:     []string{"may break old jwt sessions"},
-					Followups: []string{"add homebrew install path"},
+					Risks:     domain.LegacyRiskStatements("may break old jwt sessions"),
+					Followups: domain.LegacyFollowupStatements("add homebrew install path"),
 				},
 				Fingerprint: &domain.SemanticFingerprint{Subsystems: []string{"billing"}, FilesTouched: []string{"b.go"}}},
 			{IntentID: "int_docs", Status: domain.StatusMerged, ActorID: "x", Goal: "Clean up docs copy",

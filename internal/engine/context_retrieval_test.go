@@ -135,7 +135,7 @@ func TestContextRetrieval_QueryModeScoresOnlyOpenRisks(t *testing.T) {
 				Summary: &domain.IntentSummary{
 					Title: "Unrelated resolved work",
 					What:  "No matching content here.",
-					Risks: []string{"rollback corruption on old clients"},
+					Risks: domain.LegacyRiskStatements("rollback corruption on old clients"),
 				},
 				Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"src/old.go"}},
 			},
@@ -148,7 +148,7 @@ func TestContextRetrieval_QueryModeScoresOnlyOpenRisks(t *testing.T) {
 				Summary: &domain.IntentSummary{
 					Title: "Unrelated open work",
 					What:  "No matching content here either.",
-					Risks: []string{"rollback corruption on new clients"},
+					Risks: domain.LegacyRiskStatements("rollback corruption on new clients"),
 				},
 				Fingerprint: &domain.SemanticFingerprint{FilesTouched: []string{"src/new.go"}},
 			},

@@ -92,8 +92,8 @@ func AuthMiddleware() {}
 			Decisions: []domain.Decision{
 				{Point: "Token format", Chose: "JWT", Rationale: "Industry standard"},
 			},
-			Risks:     []string{"Token expiry handling needs attention"},
-			Followups: []string{"Add refresh token support"},
+			Risks:     domain.LegacyRiskStatements("Token expiry handling needs attention"),
+			Followups: domain.LegacyFollowupStatements("Add refresh token support"),
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:          []string{"auth", "middleware"},
@@ -627,7 +627,7 @@ func validSealResult(intentID string) domain.SealResult {
 	}
 }
 
-func TestSealSubmitRejectsStructuredSignalsWhenNotExplicit(t *testing.T) {
+func TestSealSubmitEnforcesStructuredSignalWriteRules(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 
@@ -645,14 +645,30 @@ func TestSealSubmitRejectsStructuredSignalsWhenNotExplicit(t *testing.T) {
 	gitCmd(t, dir, "commit", "-m", "add signal")
 
 	sr := validSealResult(start.IntentID)
-	sr.Summary.Risks = []string{"Changing auth middleware may break OAuth callback sessions"}
-	data, _ := json.Marshal(sr)
+	sr.Summary.Risks = []domain.RiskStatement{{
+		FailureMode: "Changing auth middleware may break OAuth callback sessions",
+		Impact:      "Existing login sessions could fail during callback handling",
+		Validation:  "Covered by callback integration test",
+	}}
+	sr.Summary.Followups = []domain.FollowupStatement{{
+		Task:      "Remove legacy callback session middleware after the stateless callback issue lands",
+		Source:    domain.FollowupSourceExternalReference,
+		Reference: "https://github.com/mainline-org/mainline/issues/123",
+	}}
+	validData, _ := json.Marshal(sr)
 
+	withConstraint := sr
+	withConstraint.Summary.AntiPatterns = []domain.AntiPattern{{
+		What:     "Do not remove callback session middleware",
+		Why:      "OAuth callback still depends on session state",
+		Severity: "high",
+	}}
+	data, _ := json.Marshal(withConstraint)
 	_, err = svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{
-		RejectStructuredSignals: true,
+		EnforceSignalWriteRules: true,
 	})
 	if err == nil {
-		t.Fatal("expected default submit gate to reject seal-time structured signals")
+		t.Fatal("expected seal-time constraint creation to be rejected")
 	}
 
 	draft, readErr := svc.Store.ReadDraft(start.IntentID)
@@ -660,11 +676,34 @@ func TestSealSubmitRejectsStructuredSignalsWhenNotExplicit(t *testing.T) {
 		t.Fatalf("read draft: %v", readErr)
 	}
 	if draft.Status != domain.StatusDrafting {
-		t.Fatalf("rejecting structured signals must not mutate draft status, got %s", draft.Status)
+		t.Fatalf("rejecting invalid structured signals must not mutate draft status, got %s", draft.Status)
 	}
 
-	if _, err := svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{}); err != nil {
-		t.Fatalf("explicit opt-in path should still accept structured signals: %v", err)
+	invalidRisk := sr
+	invalidRisk.Summary.Risks = []domain.RiskStatement{{FailureMode: "Risky"}}
+	data, _ = json.Marshal(invalidRisk)
+	if _, err := svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{
+		EnforceSignalWriteRules: true,
+	}); err == nil {
+		t.Fatal("expected risk without trigger/impact and mitigation/validation/owner to be rejected")
+	}
+
+	invalidFollowup := sr
+	invalidFollowup.Summary.Followups = []domain.FollowupStatement{{
+		Task:   "Maybe add telemetry later",
+		Source: "maybe_later",
+	}}
+	data, _ = json.Marshal(invalidFollowup)
+	if _, err := svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{
+		EnforceSignalWriteRules: true,
+	}); err == nil {
+		t.Fatal("expected speculative followup source to be rejected")
+	}
+
+	if _, err := svc.SealSubmitWithOptions(json.RawMessage(validData), &SealSubmitOptions{
+		EnforceSignalWriteRules: true,
+	}); err != nil {
+		t.Fatalf("valid risk and followup should be accepted: %v", err)
 	}
 }
 

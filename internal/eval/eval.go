@@ -81,7 +81,7 @@ type SeedIntent struct {
 	What         string
 	Why          string
 	Decisions    []domain.Decision
-	Risks        []string
+	Risks        []domain.RiskStatement
 	AntiPatterns []domain.AntiPattern
 	Files        []string
 	Subsystems   []string
@@ -120,11 +120,11 @@ type ExpectedItem struct {
 
 // ScoreResult is the per-fixture rollup the harness emits.
 type ScoreResult struct {
-	Fixture     string                `json:"fixture"`
-	Description string                `json:"description"`
-	Pass        bool                  `json:"pass"`
-	Items       []ScoreItem           `json:"items"`
-	Forbidden   []string              `json:"forbidden_summary,omitempty"`
+	Fixture     string      `json:"fixture"`
+	Description string      `json:"description"`
+	Pass        bool        `json:"pass"`
+	Items       []ScoreItem `json:"items"`
+	Forbidden   []string    `json:"forbidden_summary,omitempty"`
 }
 
 // ScoreItem is one Expected check's outcome.

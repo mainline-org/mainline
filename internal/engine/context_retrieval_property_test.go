@@ -391,8 +391,8 @@ func drawScoredIntentView(rt *rapid.T, label string) domain.IntentView {
 				Chose:     "score auth and billing signals",
 				Rationale: "decision rationale mentions jwt",
 			}},
-			Risks:     []string{"risk followup can drift"},
-			Followups: []string{"followup context query audit"},
+			Risks:     domain.LegacyRiskStatements("risk followup can drift"),
+			Followups: domain.LegacyFollowupStatements("followup context query audit"),
 			AntiPatterns: []domain.AntiPattern{{
 				What:     "anti_pattern constraint",
 				Why:      "avoid hidden context retrieval drift",

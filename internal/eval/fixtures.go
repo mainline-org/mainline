@@ -45,7 +45,7 @@ func authMigration() Fixture {
 				Decisions: []domain.Decision{
 					{Point: "auth shape", Chose: "JWT for /api", Rationale: "stateless"},
 				},
-				Risks: []string{"old mobile clients still send session cookies"},
+				Risks: domain.LegacyRiskStatements("old mobile clients still send session cookies"),
 				AntiPatterns: []domain.AntiPattern{
 					{
 						What:     "Removing legacy session middleware on /oauth path",
@@ -115,7 +115,7 @@ func abandonedApproach() Fixture {
 				Goal:  "move session state out of cookies into Redis",
 				What:  "Stand up a Redis cluster, write session middleware to read/write keys.",
 				Why:   "Cookie sessions don't scale beyond a single region.",
-				Risks: []string{"Redis cluster ops burden", "p95 latency hit on every request"},
+				Risks: domain.LegacyRiskStatements("Redis cluster ops burden", "p95 latency hit on every request"),
 				AntiPatterns: []domain.AntiPattern{
 					{
 						What:     "Reintroducing Redis-backed sessions without the multi-region replication design",
@@ -298,9 +298,9 @@ func staleIntent() Fixture {
 				Decisions: []domain.Decision{
 					{Point: "limit shape", Chose: "100rps token bucket", Rationale: "100 was the empirical sustainable rate at the time"},
 				},
-				Risks: []string{
+				Risks: domain.LegacyRiskStatements(
 					"100rps was tuned to a smaller index; if the index has grown, this may be too aggressive",
-				},
+				),
 				Files:      []string{"src/search/limiter.go"},
 				Subsystems: []string{"search"},
 				Status:     domain.StatusMerged,

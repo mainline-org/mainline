@@ -79,7 +79,7 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 	}
 
 	type bucket struct {
-		ic     InheritedConstraint
+		ic      InheritedConstraint
 		reasons map[string]bool
 	}
 	merged := map[string]*bucket{}
@@ -351,11 +351,11 @@ func severityRank(sev string) int {
 type AcknowledgementForm string
 
 const (
-	AckNone           AcknowledgementForm = ""
-	AckDecision       AcknowledgementForm = "decision"
-	AckRejected       AcknowledgementForm = "rejected_alternative"
-	AckAntiPattern    AcknowledgementForm = "anti_pattern"
-	AckRisk           AcknowledgementForm = "risk"
+	AckNone        AcknowledgementForm = ""
+	AckDecision    AcknowledgementForm = "decision"
+	AckRejected    AcknowledgementForm = "rejected_alternative"
+	AckAntiPattern AcknowledgementForm = "anti_pattern"
+	AckRisk        AcknowledgementForm = "risk"
 )
 
 // AcknowledgementOf checks whether the supplied summary's
@@ -408,7 +408,7 @@ func AcknowledgementOf(ic InheritedConstraint, summary *IntentSummary) Acknowled
 		}
 	}
 	for _, r := range summary.Risks {
-		if hasTokenOverlap(strings.ToLower(r), tokens, required) {
+		if hasTokenOverlap(strings.ToLower(r.SearchText()), tokens, required) {
 			return AckRisk
 		}
 	}
