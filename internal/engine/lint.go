@@ -322,7 +322,42 @@ func LintSealResult(sr *domain.SealResult, viewIntents map[string]bool) LintResu
 			Message: "seal result is nil",
 		}}}
 	}
-	return LintIntent(sr.IntentID, &sr.Summary, &sr.Fingerprint, "", viewIntents)
+	res := LintIntent(sr.IntentID, &sr.Summary, &sr.Fingerprint, "", viewIntents)
+	res.Issues = append(res.Issues, sealActionSignalLintIssues(sr)...)
+	res.Pass = !hasErrors(res.Issues)
+	return res
+}
+
+func sealActionSignalLintIssues(sr *domain.SealResult) []LintIssue {
+	if sr == nil {
+		return nil
+	}
+	var out []LintIssue
+	if len(sr.Summary.AntiPatterns) > 0 {
+		out = append(out, LintIssue{
+			Code:     "seal_action_signal_constraint",
+			Severity: "error",
+			Field:    "summary.anti_patterns",
+			Message:  "seal cannot create constraints; use human-confirmed `mainline guard add`",
+		})
+	}
+	if len(sr.Summary.Risks) > 0 {
+		out = append(out, LintIssue{
+			Code:     "seal_action_signal_risk",
+			Severity: "error",
+			Field:    "summary.risks",
+			Message:  "seal cannot create risks; use `mainline risk add` with a structured failure mode",
+		})
+	}
+	if len(sr.Summary.Followups) > 0 {
+		out = append(out, LintIssue{
+			Code:     "seal_action_signal_followup",
+			Severity: "error",
+			Field:    "summary.followups",
+			Message:  "seal cannot create follow-ups; use `mainline followup add` with explicit provenance",
+		})
+	}
+	return out
 }
 
 // LintSealResultWithView extends LintSealResult with inherited-constraint

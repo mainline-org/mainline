@@ -14,17 +14,19 @@ var (
 
 var followupsCmd = &cobra.Command{
 	Use:   "followups",
-	Short: "List open follow-ups across sealed intents",
-	Long: `List follow-ups from the sealed intent catalog with lifecycle status.
+	Short: "List open explicit and legacy follow-ups",
+	Long: `List follow-ups with lifecycle status.
 
 By default shows only open follow-ups. Use --all to include resolved and expired.
+New follow-ups are created with "mainline followup add"; legacy seal-embedded
+follow-ups remain visible for compatibility.
 
 Follow-up lifecycle:
   open      - no resolution event; source intent is active
   resolved  - explicitly completed by a later intent or manual action
   expired   - source intent was superseded, abandoned, or reverted
 
-Follow-up IDs are deterministic: "{intent_id}#{array_index}".`,
+Follow-up IDs are "followup_<hex>" for explicit follow-ups or "{intent_id}#{array_index}" for legacy follow-ups.`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
@@ -105,7 +107,8 @@ var (
 var followupsResolveCmd = &cobra.Command{
 	Use:   "resolve <followup_id>",
 	Short: "Mark a follow-up as completed",
-	Long: `Mark a follow-up as completed. The follow-up ID has the format "int_<hex>#<index>".
+	Long: `Mark a follow-up as completed. Follow-up IDs are "followup_<hex>"
+for explicit follow-ups or "int_<hex>#<index>" for legacy follow-ups.
 
 Use --by-intent to record which intent's work completed it.
 Use --rationale to explain how the follow-up was addressed.`,

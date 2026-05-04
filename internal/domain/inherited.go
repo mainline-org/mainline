@@ -7,11 +7,12 @@ import (
 	"time"
 )
 
-// Inherited-constraint propagation. High-severity AntiPatterns from
-// past sealed intents become "inherited constraints" for any future
-// change that touches the same files. Surfaced to the agent via
-// `mainline context`, to the reviewer via Hub + PR description, and
-// to the linter as a warning when not explicitly acknowledged.
+// Inherited-constraint propagation. Human-promoted constraints, plus
+// legacy high-severity AntiPatterns from older seals, become
+// "inherited constraints" for any future change that touches the same
+// files. Surfaced to the agent via `mainline context`, to the reviewer
+// via Hub + PR description, and to the linter as a warning when not
+// explicitly acknowledged.
 //
 // Design principles (v2):
 //   - Only HIGH severity propagates — the checklist must be short.
@@ -26,9 +27,9 @@ import (
 // Violation detection remains out of scope — awareness + explicit
 // acknowledgement is the load-bearing contract.
 
-// BuildInheritedConstraints aggregates high-severity AntiPatterns
-// from prior sealed intents whose FilesTouched overlap with the
-// supplied files of the change in progress.
+// BuildInheritedConstraints aggregates explicit constraints and
+// legacy high-severity AntiPatterns whose FilesTouched overlap with
+// the supplied files of the change in progress.
 //
 // v2 design: only HIGH severity anti_patterns propagate (the
 // checklist must be short and hard), and matching is FILE-ONLY
@@ -79,10 +80,55 @@ func BuildInheritedConstraints(view *MainlineView, files, subsystems []string, e
 	}
 
 	type bucket struct {
-		ic     InheritedConstraint
+		ic      InheritedConstraint
 		reasons map[string]bool
 	}
 	merged := map[string]*bucket{}
+
+	for _, c := range view.Constraints {
+		if excludeID != "" && c.SourceIntent == excludeID {
+			continue
+		}
+		if strings.TrimSpace(c.What) == "" {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(c.Severity), "high") {
+			continue
+		}
+		if !cutoff.IsZero() && c.OpenedAt != "" {
+			if t, err := time.Parse(time.RFC3339, c.OpenedAt); err == nil && t.After(cutoff) {
+				continue
+			}
+		}
+		var matched []string
+		for _, f := range c.Files {
+			if fileSet[f] {
+				matched = append(matched, "file:"+f)
+			}
+		}
+		if len(matched) == 0 {
+			continue
+		}
+		key := c.ID
+		b, ok := merged[key]
+		if !ok {
+			b = &bucket{
+				ic: InheritedConstraint{
+					ConstraintID: c.ID,
+					SourceIntent: c.SourceIntent,
+					What:         c.What,
+					Why:          c.Why,
+					Severity:     c.Severity,
+				},
+				reasons: map[string]bool{},
+			}
+			merged[key] = b
+		}
+		for _, r := range matched {
+			b.reasons[r] = true
+		}
+	}
+
 	for i := range view.Intents {
 		iv := &view.Intents[i]
 		if iv.IntentID == excludeID {
@@ -183,6 +229,33 @@ func BuildInheritedHeatmap(view *MainlineView, recentWindow time.Time) []Inherit
 	// later check whether the intent acknowledged its applicable
 	// inherited constraints.
 	recentByFile := map[string][]*IntentView{}
+
+	for _, c := range view.Constraints {
+		if strings.TrimSpace(c.What) == "" {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(c.Severity), "high") {
+			continue
+		}
+		for _, f := range c.Files {
+			if strings.TrimSpace(f) == "" {
+				continue
+			}
+			m, ok := perFile[f]
+			if !ok {
+				m = map[cKey]InheritedConstraint{}
+				perFile[f] = m
+			}
+			m[cKey{c.ID, c.What}] = InheritedConstraint{
+				ConstraintID: c.ID,
+				SourceIntent: c.SourceIntent,
+				What:         c.What,
+				Why:          c.Why,
+				Severity:     c.Severity,
+				MatchedBy:    []string{"file:" + f},
+			}
+		}
+	}
 
 	for i := range view.Intents {
 		iv := &view.Intents[i]
@@ -351,11 +424,11 @@ func severityRank(sev string) int {
 type AcknowledgementForm string
 
 const (
-	AckNone           AcknowledgementForm = ""
-	AckDecision       AcknowledgementForm = "decision"
-	AckRejected       AcknowledgementForm = "rejected_alternative"
-	AckAntiPattern    AcknowledgementForm = "anti_pattern"
-	AckRisk           AcknowledgementForm = "risk"
+	AckNone        AcknowledgementForm = ""
+	AckDecision    AcknowledgementForm = "decision"
+	AckRejected    AcknowledgementForm = "rejected_alternative"
+	AckAntiPattern AcknowledgementForm = "anti_pattern"
+	AckRisk        AcknowledgementForm = "risk"
 )
 
 // AcknowledgementOf checks whether the supplied summary's

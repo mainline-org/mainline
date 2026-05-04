@@ -19,6 +19,7 @@ import (
 // events materialise an effective queue with open/resolved/expired state.
 
 var followupIDPattern = regexp.MustCompile(`^int_[0-9a-f]+#\d+$`)
+var explicitFollowupIDPattern = regexp.MustCompile(`^followup_[0-9a-f]+$`)
 
 // ParseFollowupID splits a follow-up ID into (intent_id, index). Returns
 // an error if the format is invalid.
@@ -32,6 +33,10 @@ func ParseFollowupID(followupID string) (intentID string, index int, err error) 
 		return "", 0, fmt.Errorf("invalid follow-up index in %q: %w", followupID, err)
 	}
 	return parts[0], idx, nil
+}
+
+func validFollowupID(followupID string) bool {
+	return followupIDPattern.MatchString(followupID) || explicitFollowupIDPattern.MatchString(followupID)
 }
 
 // FollowupID builds a deterministic follow-up ID from intent ID and array index.
@@ -53,6 +58,21 @@ func materializeFollowups(view *domain.MainlineView, fileFilter string) []domain
 	}
 
 	var followups []domain.Followup
+	for _, f := range view.Followups {
+		followup := f
+		followup.Status = "open"
+		if rr, ok := resolutions[followup.ID]; ok && len(rr) > 0 {
+			followup.Status = "resolved"
+			followup.ResolvedBy = rr
+		}
+		if riskExpiredStatuses[statusOfIntent(view, followup.SourceIntent)] {
+			followup.Status = "expired"
+		}
+		if fileFilter != "" && !followupMatchesPath(view, followup, fileFilter) {
+			continue
+		}
+		followups = append(followups, followup)
+	}
 	for _, iv := range view.Intents {
 		if iv.Summary == nil || len(iv.Summary.Followups) == 0 {
 			continue
@@ -108,6 +128,10 @@ func materializeOpenFollowups(view *domain.MainlineView, files []string) []domai
 		if f.Status != "open" {
 			continue
 		}
+		if len(f.Files) > 0 && filesOverlap(f.Files, files) {
+			open = append(open, f)
+			continue
+		}
 		for _, iv := range view.Intents {
 			if iv.IntentID != f.SourceIntent || iv.Fingerprint == nil {
 				continue
@@ -158,29 +182,49 @@ func (s *Service) ResolveFollowup(followupID string, byIntent string, rationale 
 		return err
 	}
 
-	intentID, index, err := ParseFollowupID(followupID)
-	if err != nil {
-		return err
-	}
-
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
 		return fmt.Errorf("no mainline view available; run 'mainline sync' first")
 	}
 
 	var found bool
-	for _, iv := range view.Intents {
-		if iv.IntentID == intentID && iv.Summary != nil && index < len(iv.Summary.Followups) {
-			found = true
-			break
+	if validFollowupID(followupID) {
+		for _, f := range materializeFollowups(view, "") {
+			if f.ID == followupID {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		if intentID, index, err := ParseFollowupID(followupID); err == nil {
+			for _, iv := range view.Intents {
+				if iv.IntentID == intentID && iv.Summary != nil && index < len(iv.Summary.Followups) {
+					found = true
+					break
+				}
+			}
 		}
 	}
 	if !found {
 		return domain.NewRecoverableError(
 			domain.ErrInvalidInput,
-			fmt.Sprintf("follow-up %q not found: intent %s has no follow-up at index %d", followupID, intentID, index),
-			"run `mainline followups` to see available follow-ups",
+			fmt.Sprintf("follow-up %q not found", followupID),
+			"run `mainline followups --all` to see available follow-ups",
 		)
+	}
+	for _, f := range materializeFollowups(view, "") {
+		if f.ID == followupID && f.Status != "open" {
+			return domain.NewRecoverableError(
+				domain.ErrInvalidInput,
+				fmt.Sprintf("follow-up %q is already %s", followupID, f.Status),
+				"run `mainline followups --all` to see resolved or expired follow-ups",
+			)
+		}
+		if f.ID == followupID {
+			found = true
+			break
+		}
 	}
 
 	if rr, ok := view.FollowupResolutions[followupID]; ok && len(rr) > 0 {
@@ -236,4 +280,28 @@ func filterOpenFollowups(intentID string, followups []string, resolutions map[st
 		open = append(open, text)
 	}
 	return open
+}
+
+func followupMatchesPath(view *domain.MainlineView, f domain.Followup, prefix string) bool {
+	if touchesPath(f.Files, prefix) {
+		return true
+	}
+	for _, iv := range view.Intents {
+		if iv.IntentID == f.SourceIntent && iv.Fingerprint != nil {
+			return touchesPath(iv.Fingerprint.FilesTouched, prefix)
+		}
+	}
+	return false
+}
+
+func statusOfIntent(view *domain.MainlineView, intentID string) domain.IntentStatus {
+	if view == nil || intentID == "" {
+		return ""
+	}
+	for _, iv := range view.Intents {
+		if iv.IntentID == intentID {
+			return iv.Status
+		}
+	}
+	return ""
 }

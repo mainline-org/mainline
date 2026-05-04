@@ -16,17 +16,19 @@ var (
 
 var risksCmd = &cobra.Command{
 	Use:   "risks",
-	Short: "List open risks across sealed intents",
-	Long: `List risks from the sealed intent catalog with lifecycle status.
+	Short: "List open explicit and legacy risks",
+	Long: `List risks with lifecycle status.
 
 By default shows only open risks. Use --all to include resolved and expired.
+New risks are created with "mainline risk add"; legacy seal-embedded risks
+remain visible for compatibility.
 
 Risk lifecycle:
   open      — no resolution event; source intent is active
   resolved  — explicitly resolved by a later intent or manual action
   expired   — source intent was superseded, abandoned, or reverted
 
-Risk IDs are deterministic: "{intent_id}#{array_index}".`,
+Risk IDs are "risk_<hex>" for explicit risks or "{intent_id}#{array_index}" for legacy risks.`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
@@ -108,7 +110,8 @@ var (
 var risksResolveCmd = &cobra.Command{
 	Use:   "resolve <risk_id>",
 	Short: "Manually resolve a risk",
-	Long: `Mark a risk as resolved. The risk ID has the format "int_<hex>#<index>".
+	Long: `Mark a risk as resolved. Risk IDs are "risk_<hex>" for explicit risks
+or "int_<hex>#<index>" for legacy seal-embedded risks.
 
 Use --by-intent to record which intent's work resolved it.
 Use --rationale to explain how the risk was addressed.`,

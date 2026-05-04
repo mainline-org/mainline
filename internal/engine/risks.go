@@ -12,17 +12,20 @@ import (
 // Risk lifecycle engine
 // -----------------------------------------------------------
 //
-// Risks are soft warnings written as []string on IntentSummary.
+// Risks are explicit review warnings. Legacy risks may still be read
+// from []string on IntentSummary, but new risks are written through
+// `mainline risk add`.
 // Before v0.4 they were write-once: no IDs, no resolution, no
 // expiry. This file adds:
 //
-//   - Deterministic risk IDs: "{intent_id}#{array_index}"
+//   - Deterministic legacy risk IDs: "{intent_id}#{array_index}"
+//   - Explicit risk IDs: "risk_<hex>"
 //   - Materialised Risk view-model with status (open/resolved/expired)
 //   - Resolution via SealResult.ResolvesRisks (atomic with seal)
 //   - Manual resolution via `mainline risks resolve`
 //   - Expiry when source intent is superseded/abandoned/reverted
 //
-// Risk IDs are stable because sealed intents are immutable —
+// Legacy risk IDs are stable because sealed intents are immutable —
 // the risk array never changes after seal, so the index is fixed.
 
 // ParseRiskID splits a risk ID into (intent_id, index). Returns an
@@ -109,31 +112,50 @@ func (s *Service) ResolveRisk(riskID string, byIntent string, rationale string) 
 		return err
 	}
 
-	// Validate risk ID format
-	intentID, index, err := ParseRiskID(riskID)
-	if err != nil {
-		return err
-	}
-
-	// Validate the source intent exists and has that risk index
 	view, _ := s.Store.ReadMainlineView()
 	if view == nil {
 		return fmt.Errorf("no mainline view available; run 'mainline sync' first")
 	}
 
 	var found bool
-	for _, iv := range view.Intents {
-		if iv.IntentID == intentID && iv.Summary != nil && index < len(iv.Summary.Risks) {
-			found = true
-			break
+	if domain.ValidRiskID(riskID) {
+		for _, r := range materializeRisks(view, "") {
+			if r.ID == riskID {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		if intentID, index, err := ParseRiskID(riskID); err == nil {
+			for _, iv := range view.Intents {
+				if iv.IntentID == intentID && iv.Summary != nil && index < len(iv.Summary.Risks) {
+					found = true
+					break
+				}
+			}
 		}
 	}
 	if !found {
 		return domain.NewRecoverableError(
 			domain.ErrInvalidInput,
-			fmt.Sprintf("risk %q not found: intent %s has no risk at index %d", riskID, intentID, index),
-			"run `mainline risks` to see available risks",
+			fmt.Sprintf("risk %q not found", riskID),
+			"run `mainline risks --all` to see available risks",
 		)
+	}
+
+	for _, r := range materializeRisks(view, "") {
+		if r.ID == riskID && r.Status != "open" {
+			return domain.NewRecoverableError(
+				domain.ErrInvalidInput,
+				fmt.Sprintf("risk %q is already %s", riskID, r.Status),
+				"run `mainline risks --all` to see resolved or expired risks",
+			)
+		}
+		if r.ID == riskID {
+			found = true
+			break
+		}
 	}
 
 	// Check it's not already resolved

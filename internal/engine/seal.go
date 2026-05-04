@@ -105,26 +105,6 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	// validator's fingerprint checks pass on the first patch.
 	pkg.Starter = buildSealStarter(draft.IntentID, draft.Goal, changedFiles)
 
-	// v0.4 risk lifecycle: surface open risks on files this intent
-	// touches so the agent can resolve them via resolves_risks.
-	// Best-effort from the local view — may be stale if no recent sync.
-	if view, _ := s.Store.ReadMainlineView(); view != nil {
-		viewUsed := false
-		openRisks := materializeOpenRisks(view, changedFiles)
-		if len(openRisks) > 0 {
-			pkg.ApplicableOpenRisks = openRisks
-			viewUsed = true
-		}
-		openFollowups := materializeOpenFollowups(view, changedFiles)
-		if len(openFollowups) > 0 {
-			pkg.ApplicableOpenFollowups = openFollowups
-			viewUsed = true
-		}
-		if viewUsed {
-			pkg.ViewRebuiltAt = view.RebuiltAt
-		}
-	}
-
 	// Persist the snapshot so SealSubmit can validate the live repo
 	// against what prepare claimed. Overwrite-safe: re-running --prepare
 	// updates the snapshot (intentional — agent may iterate).
@@ -206,9 +186,9 @@ func short(sha string) string {
 // Agent-judgment fields stay zero/empty so the schema is visible (the
 // agent sees the field names + types and patches in their content).
 // summary.user_goal is not agent judgment: it mirrors the authoritative
-// `mainline start` goal and SealSubmit enforces that value. Optional
-// judgment arrays default to [] because most intents have no concrete
-// risk, no hard constraint, and no explicit follow-up.
+// `mainline start` goal and SealSubmit enforces that value. Durable
+// action signals are intentionally not part of the starter; creating
+// one requires an explicit guard/risk/followup command.
 //
 // Subsystems are derived from path prefixes via the same helper
 // the conflict-detection layer uses, so seal-time and check-time
@@ -218,16 +198,13 @@ func buildSealStarter(intentID, userGoal string, files []string) *domain.SealRes
 	return &domain.SealResult{
 		IntentID: intentID,
 		Summary: domain.IntentSummary{
-			Title:                   "",
-			What:                    "",
-			Why:                     "",
-			UserGoal:                userGoal,
-			Decisions:               []domain.Decision{},
-			Rejected:                []domain.RejectedAlternative{},
-			Risks:                   []string{},
-			Followups:               []string{},
-			ReviewNotes:             []string{},
-			AcknowledgedConstraints: []domain.AcknowledgedConstraint{},
+			Title:       "",
+			What:        "",
+			Why:         "",
+			UserGoal:    userGoal,
+			Decisions:   []domain.Decision{},
+			Rejected:    []domain.RejectedAlternative{},
+			ReviewNotes: []string{},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:           subs,
@@ -250,68 +227,32 @@ starting point — intent_id, fingerprint.files_touched, and
 fingerprint.subsystems are pre-filled deterministically from the
 diff. summary.user_goal is also pre-filled from mainline start and
 SealSubmit enforces that authoritative goal. Patch in the
-agent-judgment fields (title, what, why, decisions, fingerprint
-details, confidence) and submit. Keep risks, anti_patterns, and
-followups as [] unless the strict criteria below are met; do not fill
-them for completeness.
+agent-judgment fields (title, what, why, decisions, rejected,
+review_notes, fingerprint details, confidence) and submit.
+
+Default seal contract:
+- Seal records history: what changed, why, decisions, rejected
+  alternatives, validation/review notes, and semantic fingerprint.
+- Seal does not create durable action signals. Do not include
+  summary.risks, summary.followups, or summary.anti_patterns.
+- If a human explicitly promotes a signal, create it outside seal:
+  mainline guard add   (human-confirmed constraints)
+  mainline risk add    (structured reviewer-facing failure modes)
+  mainline followup add (explicitly deferred work with provenance)
 
 Required structure:
-1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups, review_notes, acknowledged_constraints
+1. summary: title, what, why, user_goal, decisions, rejected alternatives, review_notes
 2. fingerprint: subsystems, files_touched, architectural_claims, behavioral_changes,
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)
 
-Field decision tree — for each future-facing observation, pick the right field:
-
-  "It will fail when X" / "Y subsystem will break"    → risks
-  "We chose to ship with limitation X (acceptable)"   → decisions[].chose with rationale
-  "The user asked us to do X later" / "X was explicitly cut from this work" → followups
-  "Reviewer should focus on Z" / scope explanation     → review_notes (ephemeral, not inherited)
-  "Future work in this area MUST NOT do X"            → anti_patterns
-  "We considered B but ruled it out"                  → rejected
-  "I saw inherited constraint X and handled it"       → acknowledged_constraints
-
-  If you can't pick: it's probably a decision (you made a judgment call).
-
-Default-empty rule:
-- risks, anti_patterns, and followups are exceptional fields. Most seals
-  should leave them as [].
-- Never invent a risk, anti_pattern, or follow-up just because the schema
-  has a field for it.
-- Use review_notes for ephemeral reviewer context and decisions for accepted
-  trade-offs or implementation limits.
-
-Acknowledged constraints:
-- If mainline context surfaced inherited_constraints, acknowledge each here.
-- Format: {"constraint_id": "int_xxx#N", "disposition": "preserved|mitigated|not_applicable|intentionally_changed", "note": "..."}
-- "intentionally_changed" signals reviewer attention needed.
-
-Risk discipline:
-- Put an item in summary.risks only when it names a concrete failure mode,
-  compatibility break, data loss/corruption possibility, security/privacy issue,
-  performance/scale regression, user-visible misbehavior, or maintenance hazard
-  that a future reviewer should audit.
-- Do not put verification notes, "tests not run", review guidance, cosmetic
-  concerns, generic unknown-risk disclaimers, implementation summaries, scope
-  limitations, accepted trade-offs, or ordinary follow-up work in risks.
-- If there is no concrete risk, use an empty risks array — that is the
-  normal default, not a suspicious omission.
-
-Follow-up discipline:
-- Put an item in summary.followups only when the user explicitly wants it
-  done later, or when this work deliberately cut out a known next task.
-- Do not write speculative "consider", "maybe", telemetry, dogfood, or
-  nice-to-have ideas as followups. Leave followups as [] instead.
-
-Risk resolution:
-- If applicable_open_risks lists risks on files you touched, and your
-  work resolves any of them, add a resolves_risks entry:
-    "resolves_risks": [{"risk_id": "int_xxx#0", "rationale": "shipped X"}]
-
-Follow-up resolution:
-- If applicable_open_followups lists follow-ups on files you touched, and
-  your work completes any of them, add a resolves_followups entry:
-    "resolves_followups": [{"followup_id": "int_xxx#0", "rationale": "shipped X"}]
+Field decision tree:
+- "We chose X because Y" or "we shipped with limitation X" -> decisions
+- "We considered B but ruled it out" -> rejected
+- "Reviewer should focus on Z", validation notes, or scope explanation -> review_notes
+- "This may fail when X" -> do not put it in seal; use mainline risk add only when it meets the explicit risk rules.
+- "Do X later" -> do not put it in seal; use mainline followup add only when the user/reference/cut-scope provenance exists.
+- "Future work MUST NOT do X" -> do not put it in seal; a human must run mainline guard add.
 
 Return ONLY valid JSON matching the SealResult schema.`
 }
@@ -372,6 +313,28 @@ func nonBlockingLintIssues(issues []LintIssue) []LintIssue {
 	return out
 }
 
+func validateSealActionSignalContract(sr *domain.SealResult) error {
+	var fields []string
+	if len(sr.Summary.AntiPatterns) > 0 {
+		fields = append(fields, "summary.anti_patterns")
+	}
+	if len(sr.Summary.Risks) > 0 {
+		fields = append(fields, "summary.risks")
+	}
+	if len(sr.Summary.Followups) > 0 {
+		fields = append(fields, "summary.followups")
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return domain.NewRecoverableError(
+		domain.ErrSealFailed,
+		fmt.Sprintf("seal cannot create durable action signals: %s", strings.Join(fields, ", ")),
+		"use review_notes for ephemeral reviewer context",
+		"use `mainline risk add`, `mainline followup add`, or human-confirmed `mainline guard add` for promoted signals",
+	)
+}
+
 func formatBlockingLintIssues(issues []LintIssue) string {
 	if len(issues) == 0 {
 		return "seal lint failed"
@@ -402,6 +365,10 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 	if err := json.Unmarshal(input, &sr); err != nil {
 		return nil, domain.NewError(domain.ErrInvalidInput,
 			fmt.Sprintf("invalid SealResult JSON: %v", err))
+	}
+
+	if err := validateSealActionSignalContract(&sr); err != nil {
+		return nil, err
 	}
 
 	if err := core.ValidateSealResult(&sr); err != nil {
