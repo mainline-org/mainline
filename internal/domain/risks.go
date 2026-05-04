@@ -12,10 +12,10 @@ import (
 // Risk lifecycle view helpers
 // -----------------------------------------------------------
 //
-// Risks are stored immutably as []string on IntentSummary. These helpers
-// derive the effective lifecycle view used by CLI, context, seal prepare,
-// and Hub so consumers don't accidentally treat raw historical prose as
-// current state.
+// Risks are explicit signal records on MainlineView.Risks. Older
+// IntentSummary.Risks entries are still materialized through
+// MaterializeLegacyRisks for audit/diagnostic callers, but active
+// user-facing queues use explicit risks only.
 
 var riskIDPattern = regexp.MustCompile(`^int_[0-9a-f]+#\d+$`)
 var explicitRiskIDPattern = regexp.MustCompile(`^risk_[0-9a-f]+$`)
@@ -51,9 +51,9 @@ func RiskSourceExpired(status IntentStatus) bool {
 		status == StatusReverted
 }
 
-// MaterializeRisks converts a MainlineView into Risk view-models with
-// lifecycle status. fileFilter, when non-empty, restricts to risks from
-// intents that touched a file matching the prefix.
+// MaterializeRisks converts explicit risk signal records into Risk
+// view-models with lifecycle status. fileFilter, when non-empty,
+// restricts to risks that touch a matching path.
 func MaterializeRisks(view *MainlineView, fileFilter string) []Risk {
 	if view == nil {
 		return nil
@@ -80,6 +80,26 @@ func MaterializeRisks(view *MainlineView, fileFilter string) []Risk {
 		}
 		risks = append(risks, risk)
 	}
+
+	sortRisks(risks)
+	return risks
+}
+
+// MaterializeLegacyRisks converts seal-summary risk strings from old
+// records into a historical lifecycle view. Daily product surfaces should
+// not call this; it exists so old repositories can be diagnosed without
+// erasing their audit trail.
+func MaterializeLegacyRisks(view *MainlineView, fileFilter string) []Risk {
+	if view == nil {
+		return nil
+	}
+
+	resolutions := view.RiskResolutions
+	if resolutions == nil {
+		resolutions = map[string][]RiskResolution{}
+	}
+
+	var risks []Risk
 	for _, iv := range view.Intents {
 		if iv.Summary == nil || len(iv.Summary.Risks) == 0 {
 			continue
@@ -112,11 +132,17 @@ func MaterializeRisks(view *MainlineView, fileFilter string) []Risk {
 				Status:       status,
 				SourceIntent: iv.IntentID,
 				OpenedAt:     iv.SealedAt,
+				Source:       "seal_summary",
 				ResolvedBy:   resolvedBy,
 			})
 		}
 	}
 
+	sortRisks(risks)
+	return risks
+}
+
+func sortRisks(risks []Risk) {
 	sort.Slice(risks, func(i, j int) bool {
 		oi, oj := RiskStatusOrder(risks[i].Status), RiskStatusOrder(risks[j].Status)
 		if oi != oj {
@@ -124,8 +150,6 @@ func MaterializeRisks(view *MainlineView, fileFilter string) []Risk {
 		}
 		return risks[i].OpenedAt > risks[j].OpenedAt
 	})
-
-	return risks
 }
 
 // MaterializeOpenRisks returns only open risks whose source intent

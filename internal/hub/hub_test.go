@@ -26,6 +26,24 @@ func makeView(intents ...domain.IntentView) *domain.MainlineView {
 	}
 }
 
+func addExplicitRisk(v *domain.MainlineView, intentID, text string, files ...string) {
+	openedAt := ""
+	for _, iv := range v.Intents {
+		if iv.IntentID == intentID {
+			openedAt = iv.SealedAt
+			break
+		}
+	}
+	v.Risks = append(v.Risks, domain.Risk{
+		ID:           "risk_" + strings.TrimPrefix(intentID, "int_"),
+		Text:         text,
+		Status:       "open",
+		SourceIntent: intentID,
+		Files:        append([]string(nil), files...),
+		OpenedAt:     openedAt,
+	})
+}
+
 func intent(id, actor, sealed string, status domain.IntentStatus, files ...string) domain.IntentView {
 	return domain.IntentView{
 		IntentID: id,
@@ -154,9 +172,9 @@ func TestBuildActorIndex_GroupsByActor(t *testing.T) {
 
 func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 	withRisk := intent("int_risky", "a", "2026-04-28T01:00:00Z", domain.StatusMerged)
-	withRisk.Summary.Risks = []string{"the deploy might break old clients"}
 	plain := intent("int_plain", "a", "2026-04-28T02:00:00Z", domain.StatusMerged)
 	v := makeView(withRisk, plain)
+	addExplicitRisk(v, "int_risky", "the deploy might break old clients")
 
 	m := buildHubModel(v)
 	if len(m.RiskIntents) != 1 || m.RiskIntents[0] != "int_risky" {
@@ -173,8 +191,11 @@ func TestBuildRiskList_UsesOpenRiskLifecycle(t *testing.T) {
 	open.Summary.Risks = []string{"open risk should appear"}
 
 	v := makeView(resolved, expired, open)
+	addExplicitRisk(v, "int_resolved", "resolved explicit risk")
+	addExplicitRisk(v, "int_expired", "expired explicit risk")
+	addExplicitRisk(v, "int_open", "open explicit risk")
 	v.RiskResolutions = map[string][]domain.RiskResolution{
-		"int_resolved#0": {{IntentID: "int_fix", Rationale: "fixed"}},
+		"risk_resolved": {{IntentID: "int_fix", Rationale: "fixed"}},
 	}
 
 	m := buildHubModel(v)
@@ -213,9 +234,9 @@ func TestBuildRiskList_UsesOpenRiskLifecycle(t *testing.T) {
 func TestBuildDashboard_FocusListSurfacesOnlyActionableItems(t *testing.T) {
 	proposed := intent("int_proposed", "a", "2026-04-28T03:00:00Z", domain.StatusProposed, "src/hub.go")
 	risky := intent("int_risky", "a", "2026-04-28T02:00:00Z", domain.StatusMerged, "src/hub.go", "src/model.go")
-	risky.Summary.Risks = []string{"needs careful rollout"}
 	merged := intent("int_merged", "a", "2026-04-28T01:00:00Z", domain.StatusMerged, "src/model.go")
 	v := makeView(proposed, risky, merged)
+	addExplicitRisk(v, "int_risky", "needs careful rollout", "src/hub.go")
 
 	m := buildHubModel(v)
 	if m.Dashboard.TotalIntents != 3 || m.Dashboard.ProposedIntents != 1 || m.Dashboard.MergedIntents != 2 || m.Dashboard.RiskIntents != 1 {
@@ -372,10 +393,11 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 
 	a := intent("int_a", "actor_alice", "2026-04-28T01:00:00Z", domain.StatusMerged, "src/auth.go")
 	a.ActorName = "Alice"
-	a.Summary.Risks = []string{"breaks old clients"}
 	b := intent("int_b", "actor_bob", "2026-04-28T02:00:00Z", domain.StatusSuperseded, "src/auth.go")
 	b.StatusEvidence.SupersededByIntent = "int_a"
-	if err := store.WriteMainlineView(makeView(a, b)); err != nil {
+	v := makeView(a, b)
+	addExplicitRisk(v, "int_a", "breaks old clients", "src/auth.go")
+	if err := store.WriteMainlineView(v); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.WriteDraft(&domain.DraftIntent{
@@ -589,6 +611,7 @@ func TestHubTeamHealth_GeneratesSummary(t *testing.T) {
 		intentSealed("int_m1", "merged", 0, []string{"a.go"}, []string{"watch the rollout"}),
 		intentSealed("int_m2", "merged", 0, []string{"b.go"}, nil),
 	)
+	addExplicitRisk(v, "int_m1", "watch the rollout", "a.go")
 	m := buildHubModel(v)
 	if m.TeamHealth.HealthSummary == "" {
 		t.Fatal("HealthSummary must not be empty")
@@ -614,6 +637,8 @@ func TestHubReviewAging_OldestStaleProposedFirst(t *testing.T) {
 		intentSealed("int_new_with_risk", "proposed", 0, []string{"x.go"}, []string{"breaking change"}),
 		intentSealed("int_old_with_risk", "proposed", 3, []string{"x.go"}, []string{"big risk"}),
 	)
+	addExplicitRisk(v, "int_new_with_risk", "breaking change", "x.go")
+	addExplicitRisk(v, "int_old_with_risk", "big risk", "x.go")
 	m := buildHubModel(v)
 	if len(m.Dashboard.Focus) == 0 {
 		t.Fatalf("expected at least one focus item, got %d", len(m.Dashboard.Focus))
@@ -643,11 +668,7 @@ func focusOrder(items []HubFocusIntent) []string {
 	return out
 }
 
-// AntiPattern-only intents must register on the Risk radar. Pre-fix
-// the radar relied on len(Risks)>0, so an intent that recorded a
-// hard constraint (anti_pattern) without a soft warning (risk) was
-// invisible — a real undercount on the load-bearing safety surface.
-func TestHubRiskRadar_AntiPatternOnlyIntentRegisters(t *testing.T) {
+func TestHubRiskRadar_HidesSealSummaryAntiPatterns(t *testing.T) {
 	ap := intent("int_ap_only", "act", time.Now().UTC().Format(time.RFC3339), domain.StatusProposed)
 	ap.Summary.AntiPatterns = []domain.AntiPattern{
 		{What: "Do not delete /oauth", Why: "callback needs it", Severity: "high"},
@@ -655,8 +676,8 @@ func TestHubRiskRadar_AntiPatternOnlyIntentRegisters(t *testing.T) {
 	v := makeView(ap)
 	m := buildHubModel(v)
 
-	if m.TeamHealth.Risk.RiskBearingProposed != 1 {
-		t.Errorf("anti-pattern-only intent should register as risk-bearing proposed; got count %d",
+	if m.TeamHealth.Risk.RiskBearingProposed != 0 {
+		t.Errorf("seal-summary anti-patterns should not register as active risk-bearing proposed; got count %d",
 			m.TeamHealth.Risk.RiskBearingProposed)
 	}
 	if len(m.Intents) != 1 || len(m.Intents[0].AntiPatterns) != 1 {
@@ -670,6 +691,8 @@ func TestHubRiskRadar_GroupsRiskBearingProposed(t *testing.T) {
 		intentSealed("int_merged_risky", "merged", 1, []string{"a.go"}, []string{"r"}),
 		intentSealed("int_proposed_clean", "proposed", 0, []string{"b.go"}, nil),
 	)
+	addExplicitRisk(v, "int_proposed_risky", "r", "a.go")
+	addExplicitRisk(v, "int_merged_risky", "r", "a.go")
 	m := buildHubModel(v)
 	if m.TeamHealth.Risk.RiskBearingProposed != 1 {
 		t.Errorf("expected 1 risk-bearing proposed, got %d", m.TeamHealth.Risk.RiskBearingProposed)
@@ -688,6 +711,8 @@ func TestHubDecisionHotspots_UsesIntentHistoryCounts(t *testing.T) {
 		intentSealed("int_c", "merged", 3, []string{"hot.go"}, nil),
 		intentSealed("int_d", "merged", 4, []string{"cold.go"}, nil),
 	)
+	addExplicitRisk(v, "int_a", "r", "hot.go")
+	addExplicitRisk(v, "int_b", "r", "hot.go")
 	m := buildHubModel(v)
 	if len(m.Dashboard.HotFiles) == 0 {
 		t.Fatal("hot files should be populated")
@@ -714,6 +739,7 @@ func TestHubDigest_GeneratesSevenDaySummary(t *testing.T) {
 		intentSealed("int_recent_abandoned", "abandoned", 3, []string{"a.go"}, nil),
 		intentSealed("int_old_merged", "merged", 60, []string{"a.go"}, nil), // outside 7-day window
 	)
+	addExplicitRisk(v, "int_recent_merged", "a real risk here that should appear", "a.go")
 	m := buildHubModel(v)
 	d := m.TeamHealth.Digest
 	if d.WindowDays != 7 {

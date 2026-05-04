@@ -155,11 +155,10 @@ SHOULD:
 
 ### 6.4 Respecting inherited constraints (SHOULD)
 
-Inherited constraints are explicit constraints, plus legacy
-high-severity anti-patterns, that apply because of file overlap.
-Agents SHOULD acknowledge high-severity inherited constraints in
-their seal result using `acknowledged_constraints` or a decision that
-shows how the rule was handled.
+Inherited constraints are explicit constraints that apply because of
+file overlap. Agents SHOULD acknowledge high-severity inherited
+constraints in their seal result using `acknowledged_constraints` or a
+decision that shows how the rule was handled.
 
 The acknowledgment does not need to be verbatim. It needs to
 demonstrate that the agent saw the constraint and consciously

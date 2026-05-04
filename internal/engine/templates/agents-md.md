@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 19 -->
+<!-- mainline-agents-md-version: 20 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -104,18 +104,14 @@ its lifecycle status):
 | `abandoned` | this approach was tried and abandoned; do not repeat without understanding why |
 | `stale` | files have churned or the intent is old; verify decisions still hold |
 
-Each intent may also carry:
-
-- legacy `risks` / `anti_patterns` / `followups` from older seals.
-  Treat them as historical context unless they are surfaced as explicit
-  `inherited_constraints`.
-- `guidance` — a single-line reminder derived from `status`.
+Each intent may also carry `guidance` — a single-line reminder derived
+from `status`.
 
 **Inherited constraints** — `mainline context` may surface an
 `inherited_constraints` array listing human-promoted constraints
-or legacy high-severity constraints on the same files you are editing.
-Each carries a stable `constraint_id`. When sealing, you must explicitly
-acknowledge each in `acknowledged_constraints`:
+on the same files you are editing. Each carries a stable
+`constraint_id`. When sealing, you must explicitly acknowledge each in
+`acknowledged_constraints`:
 
 ```json
 "acknowledged_constraints": [
@@ -177,7 +173,7 @@ Filter by goal/title keywords matching the user's task. For each
 relevant hit, pull the full record:
 
 ```
-mainline show <intent_id> --json    # decisions / fingerprint / legacy signals
+mainline show <intent_id> --json    # decisions / fingerprint / references
 mainline trace <intent_id> --json   # turn timeline (when each turn
                                     # was added, how long it took)
 ```
@@ -219,7 +215,7 @@ mainline show <intent_id> --json
 ```
 
 to inspect the structured conclusion of an intent: summary,
-decisions, fingerprint, and any legacy or explicit signals.
+decisions, fingerprint, and references.
 
 Use:
 

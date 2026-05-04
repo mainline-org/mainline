@@ -87,10 +87,14 @@ func mkIntent(id string, status domain.IntentStatus, risks []string, files []str
 func TestMaterializeRisks_Open(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusMerged, []string{"risk one", "risk two"}, nil),
+			mkIntent("int_aaa", domain.StatusMerged, nil, nil),
 		},
 		nil,
 	)
+	view.Risks = []domain.Risk{
+		{ID: "risk_aaa", Text: "risk one", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
+		{ID: "risk_bbb", Text: "risk two", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
+	}
 	risks := materializeRisks(view, "")
 	if len(risks) != 2 {
 		t.Fatalf("expected 2 risks, got %d", len(risks))
@@ -100,20 +104,40 @@ func TestMaterializeRisks_Open(t *testing.T) {
 			t.Errorf("risk %s should be open, got %s", r.ID, r.Status)
 		}
 	}
-	if risks[0].ID != "int_aaa#0" || risks[1].ID != "int_aaa#1" {
+	if risks[0].ID != "risk_aaa" || risks[1].ID != "risk_bbb" {
 		t.Errorf("unexpected IDs: %s, %s", risks[0].ID, risks[1].ID)
+	}
+}
+
+func TestMaterializeRisks_HidesLegacySealSummary(t *testing.T) {
+	view := mkView(
+		[]domain.IntentView{
+			mkIntent("int_aaa", domain.StatusMerged, []string{"old risk one", "old risk two"}, nil),
+		},
+		nil,
+	)
+	if risks := materializeRisks(view, ""); len(risks) != 0 {
+		t.Fatalf("active risk queue should ignore seal-summary risks, got %d", len(risks))
+	}
+	legacy := materializeLegacyRisks(view, "")
+	if len(legacy) != 2 {
+		t.Fatalf("diagnostic legacy materializer should preserve 2 historical risks, got %d", len(legacy))
 	}
 }
 
 func TestMaterializeRisks_Resolved(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusMerged, []string{"risk one", "risk two"}, nil),
+			mkIntent("int_aaa", domain.StatusMerged, nil, nil),
 		},
 		map[string][]domain.RiskResolution{
-			"int_aaa#0": {{IntentID: "int_bbb", Rationale: "fixed"}},
+			"risk_aaa": {{IntentID: "int_bbb", Rationale: "fixed"}},
 		},
 	)
+	view.Risks = []domain.Risk{
+		{ID: "risk_aaa", Text: "risk one", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
+		{ID: "risk_bbb", Text: "risk two", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"},
+	}
 	risks := materializeRisks(view, "")
 	if len(risks) != 2 {
 		t.Fatalf("expected 2 risks, got %d", len(risks))
@@ -123,7 +147,7 @@ func TestMaterializeRisks_Resolved(t *testing.T) {
 		switch r.Status {
 		case "resolved":
 			resolved++
-			if r.ID != "int_aaa#0" {
+			if r.ID != "risk_aaa" {
 				t.Errorf("wrong risk resolved: %s", r.ID)
 			}
 		case "open":
@@ -138,10 +162,11 @@ func TestMaterializeRisks_Resolved(t *testing.T) {
 func TestMaterializeRisks_Expired_Superseded(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusSuperseded, []string{"old risk"}, nil),
+			mkIntent("int_aaa", domain.StatusSuperseded, nil, nil),
 		},
 		nil,
 	)
+	view.Risks = []domain.Risk{{ID: "risk_aaa", Text: "old risk", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"}}
 	risks := materializeRisks(view, "")
 	if len(risks) != 1 {
 		t.Fatalf("expected 1 risk, got %d", len(risks))
@@ -154,10 +179,11 @@ func TestMaterializeRisks_Expired_Superseded(t *testing.T) {
 func TestMaterializeRisks_Expired_Abandoned(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusAbandoned, []string{"abandoned risk"}, nil),
+			mkIntent("int_aaa", domain.StatusAbandoned, nil, nil),
 		},
 		nil,
 	)
+	view.Risks = []domain.Risk{{ID: "risk_aaa", Text: "abandoned risk", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"}}
 	risks := materializeRisks(view, "")
 	if len(risks) != 1 {
 		t.Fatalf("expected 1 risk, got %d", len(risks))
@@ -170,10 +196,11 @@ func TestMaterializeRisks_Expired_Abandoned(t *testing.T) {
 func TestMaterializeRisks_Expired_Reverted(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusReverted, []string{"reverted risk"}, nil),
+			mkIntent("int_aaa", domain.StatusReverted, nil, nil),
 		},
 		nil,
 	)
+	view.Risks = []domain.Risk{{ID: "risk_aaa", Text: "reverted risk", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"}}
 	risks := materializeRisks(view, "")
 	if len(risks) != 1 {
 		t.Fatalf("expected 1 risk, got %d", len(risks))
@@ -187,12 +214,13 @@ func TestMaterializeRisks_Expired_OverridesResolved(t *testing.T) {
 	// If an intent is superseded AND a risk was resolved, expiry wins.
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusSuperseded, []string{"old risk"}, nil),
+			mkIntent("int_aaa", domain.StatusSuperseded, nil, nil),
 		},
 		map[string][]domain.RiskResolution{
-			"int_aaa#0": {{IntentID: "int_bbb", Rationale: "fixed"}},
+			"risk_aaa": {{IntentID: "int_bbb", Rationale: "fixed"}},
 		},
 	)
+	view.Risks = []domain.Risk{{ID: "risk_aaa", Text: "old risk", SourceIntent: "int_aaa", OpenedAt: "2025-01-01T00:00:00Z"}}
 	risks := materializeRisks(view, "")
 	if len(risks) != 1 {
 		t.Fatalf("expected 1 risk, got %d", len(risks))
@@ -205,11 +233,15 @@ func TestMaterializeRisks_Expired_OverridesResolved(t *testing.T) {
 func TestMaterializeRisks_FileFilter(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusMerged, []string{"auth risk"}, []string{"internal/auth/handler.go"}),
-			mkIntent("int_bbb", domain.StatusMerged, []string{"db risk"}, []string{"internal/db/migrate.go"}),
+			mkIntent("int_aaa", domain.StatusMerged, nil, []string{"internal/auth/handler.go"}),
+			mkIntent("int_bbb", domain.StatusMerged, nil, []string{"internal/db/migrate.go"}),
 		},
 		nil,
 	)
+	view.Risks = []domain.Risk{
+		{ID: "risk_aaa", Text: "auth risk", SourceIntent: "int_aaa", Files: []string{"internal/auth/handler.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+		{ID: "risk_bbb", Text: "db risk", SourceIntent: "int_bbb", Files: []string{"internal/db/migrate.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+	}
 	risks := materializeRisks(view, "internal/auth")
 	if len(risks) != 1 {
 		t.Fatalf("expected 1 risk with auth filter, got %d", len(risks))
@@ -222,16 +254,21 @@ func TestMaterializeRisks_FileFilter(t *testing.T) {
 func TestMaterializeRisks_SortOrder(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusMerged, []string{"open risk"}, nil),
-			mkIntent("int_bbb", domain.StatusSuperseded, []string{"expired risk"}, nil),
+			mkIntent("int_aaa", domain.StatusMerged, nil, nil),
+			mkIntent("int_bbb", domain.StatusSuperseded, nil, nil),
 		},
 		map[string][]domain.RiskResolution{},
 	)
 	// Add a third intent with a resolved risk
 	view.Intents = append(view.Intents,
-		mkIntent("int_ccc", domain.StatusMerged, []string{"resolved risk"}, nil),
+		mkIntent("int_ccc", domain.StatusMerged, nil, nil),
 	)
-	view.RiskResolutions["int_ccc#0"] = []domain.RiskResolution{{Rationale: "done"}}
+	view.RiskResolutions["risk_ccc"] = []domain.RiskResolution{{Rationale: "done"}}
+	view.Risks = []domain.Risk{
+		{ID: "risk_aaa", Text: "open risk", SourceIntent: "int_aaa", OpenedAt: "2025-01-03T00:00:00Z"},
+		{ID: "risk_bbb", Text: "expired risk", SourceIntent: "int_bbb", OpenedAt: "2025-01-02T00:00:00Z"},
+		{ID: "risk_ccc", Text: "resolved risk", SourceIntent: "int_ccc", OpenedAt: "2025-01-01T00:00:00Z"},
+	}
 
 	risks := materializeRisks(view, "")
 	if len(risks) != 3 {
@@ -271,12 +308,17 @@ func TestMaterializeRisks_NoSummary(t *testing.T) {
 func TestMaterializeOpenRisks(t *testing.T) {
 	view := mkView(
 		[]domain.IntentView{
-			mkIntent("int_aaa", domain.StatusMerged, []string{"auth risk"}, []string{"internal/auth/handler.go"}),
-			mkIntent("int_bbb", domain.StatusMerged, []string{"db risk"}, []string{"internal/db/migrate.go"}),
-			mkIntent("int_ccc", domain.StatusSuperseded, []string{"old risk"}, []string{"internal/auth/handler.go"}),
+			mkIntent("int_aaa", domain.StatusMerged, nil, []string{"internal/auth/handler.go"}),
+			mkIntent("int_bbb", domain.StatusMerged, nil, []string{"internal/db/migrate.go"}),
+			mkIntent("int_ccc", domain.StatusSuperseded, nil, []string{"internal/auth/handler.go"}),
 		},
 		nil,
 	)
+	view.Risks = []domain.Risk{
+		{ID: "risk_aaa", Text: "auth risk", SourceIntent: "int_aaa", Files: []string{"internal/auth/handler.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+		{ID: "risk_bbb", Text: "db risk", SourceIntent: "int_bbb", Files: []string{"internal/db/migrate.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+		{ID: "risk_ccc", Text: "old risk", SourceIntent: "int_ccc", Files: []string{"internal/auth/handler.go"}, OpenedAt: "2025-01-01T00:00:00Z"},
+	}
 	// Only open risks on files overlapping with auth should appear.
 	open := materializeOpenRisks(view, []string{"internal/auth/handler.go"})
 	if len(open) != 1 {

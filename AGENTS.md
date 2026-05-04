@@ -1,7 +1,7 @@
-<!-- mainline:agents:start version=19 checksum=sha256:4079098d55f60632d2ff0bbac4e1c7b7126fe5cb6cbed776ef425660a8bc2569 -->
+<!-- mainline:agents:start version=20 checksum=sha256:8e39baa95b04ed01ebb2b436367b04c26cfc9724d52fa808e3d35698736d9c6a -->
 ## Mainline
 
-<!-- mainline-agents-md-version: 19 -->
+<!-- mainline-agents-md-version: 20 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 

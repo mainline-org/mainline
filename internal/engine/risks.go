@@ -12,9 +12,9 @@ import (
 // Risk lifecycle engine
 // -----------------------------------------------------------
 //
-// Risks are explicit review warnings. Legacy risks may still be read
-// from []string on IntentSummary, but new risks are written through
-// `mainline risk add`.
+// Risks are explicit review warnings written through `mainline risk add`.
+// Older seal-summary risk strings remain readable for audit/diagnostics,
+// but they do not enter active queues.
 // Before v0.4 they were write-once: no IDs, no resolution, no
 // expiry. This file adds:
 //
@@ -45,11 +45,20 @@ var riskExpiredStatuses = map[domain.IntentStatus]bool{
 	domain.StatusReverted:   true,
 }
 
-// materializeRisks converts the view into Risk view-models with status.
-// fileFilter, when non-empty, restricts to risks from intents that
-// touched a file matching the prefix.
+// materializeRisks converts explicit risk signals into active Risk
+// view-models with status.
 func materializeRisks(view *domain.MainlineView, fileFilter string) []domain.Risk {
 	return domain.MaterializeRisks(view, fileFilter)
+}
+
+func materializeLegacyRisks(view *domain.MainlineView, fileFilter string) []domain.Risk {
+	return domain.MaterializeLegacyRisks(view, fileFilter)
+}
+
+func materializeAllRisks(view *domain.MainlineView, fileFilter string) []domain.Risk {
+	risks := materializeRisks(view, fileFilter)
+	risks = append(risks, materializeLegacyRisks(view, fileFilter)...)
+	return risks
 }
 
 // materializeOpenRisks is the seal-prepare variant: only open risks
@@ -96,6 +105,9 @@ func (s *Service) ListRisks(fileFilter string, includeAll bool) ([]domain.Risk, 
 		}
 		risks = open
 	}
+	if risks == nil {
+		risks = []domain.Risk{}
+	}
 
 	return risks, nil
 }
@@ -119,7 +131,7 @@ func (s *Service) ResolveRisk(riskID string, byIntent string, rationale string) 
 
 	var found bool
 	if domain.ValidRiskID(riskID) {
-		for _, r := range materializeRisks(view, "") {
+		for _, r := range materializeAllRisks(view, "") {
 			if r.ID == riskID {
 				found = true
 				break
@@ -144,12 +156,12 @@ func (s *Service) ResolveRisk(riskID string, byIntent string, rationale string) 
 		)
 	}
 
-	for _, r := range materializeRisks(view, "") {
+	for _, r := range materializeAllRisks(view, "") {
 		if r.ID == riskID && r.Status != "open" {
 			return domain.NewRecoverableError(
 				domain.ErrInvalidInput,
 				fmt.Sprintf("risk %q is already %s", riskID, r.Status),
-				"run `mainline risks --all` to see resolved or expired risks",
+				"run `mainline risks --all` to see resolved or expired explicit risks",
 			)
 		}
 		if r.ID == riskID {
