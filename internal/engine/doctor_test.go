@@ -87,6 +87,45 @@ func TestDoctorReportsStaleCurrentBranchDraftWithoutDeleting(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsHistoricalSealSignals(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("test-agent"); err != nil {
+		t.Fatal(err)
+	}
+	view := &domain.MainlineView{SchemaVersion: 1, MainBranch: "main", Intents: []domain.IntentView{{
+		IntentID: "int_old",
+		Status:   domain.StatusMerged,
+		SealedAt: time.Now().UTC().Format(time.RFC3339),
+		Summary: &domain.IntentSummary{
+			Risks:     []string{"old risk"},
+			Followups: []string{"old follow-up"},
+			AntiPatterns: []domain.AntiPattern{{
+				What: "do not do old thing",
+				Why:  "historical reason",
+			}},
+		},
+	}}}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.Doctor(DoctorOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Historical == nil {
+		t.Fatal("expected historical signal report")
+	}
+	if result.Historical.SealSummaryRisks != 1 ||
+		result.Historical.SealSummaryFollowups != 1 ||
+		result.Historical.SealSummaryAntiPatterns != 1 {
+		t.Fatalf("unexpected historical signal counts: %+v", result.Historical)
+	}
+}
+
 func TestDoctorProposalsFlagsOnlyAfter72Hours(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()

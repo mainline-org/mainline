@@ -96,7 +96,7 @@ Future agents need to avoid old mistakes.
 Mainline turns individual AI-assisted changes into shared engineering memory:
 
 - review intent before reviewing diffs,
-- keep decisions, risks, and anti-patterns attached to the work,
+- keep decisions, explicit risks, and constraints attached to the work,
 - see proposed or in-flight intent before PR conflicts appear,
 - preserve abandoned and superseded decisions for future agents,
 - track whether important changes have intent coverage,
@@ -164,7 +164,7 @@ Mainline has two layers in the same repo:
   decisions, and find coverage gaps.
 - **Agent protocol** — a behaviour contract for coding agents: read context
   before risky edits, record meaningful turns, seal the intent, and surface
-  conflicts or anti-patterns instead of silently pushing through.
+  conflicts or constraints instead of silently pushing through.
 
 Humans should not have to learn the agent JSON protocol. The human main line is:
 
@@ -219,7 +219,7 @@ not required.
 
 | Pain | Without Mainline | With Mainline |
 |---|---|---|
-| Agent re-removes the legacy `/oauth` middleware you kept on purpose | Silent rework, prod outage | Agent reads the anti-pattern and stops before the diff |
+| Agent re-removes the legacy `/oauth` middleware you kept on purpose | Silent rework, prod outage | Agent reads the human-promoted constraint and stops before the diff |
 | You forgot why you chose JWT over sessions 3 weeks ago | `git log` doesn't carry decisions | `mainline show <id>` returns title / what / why / decisions / risks |
 | Two agents on the same repo solving the same problem differently | Discovered at PR-review time | `mainline check` flags the overlap on `seal --submit` |
 | New maintainer asks "why is this code like this?" | Slack archaeology | `mainline context --files src/auth/middleware.go` |
@@ -510,7 +510,7 @@ A sealed Mainline intent contains:
 - **Why** — why this engineering work exists.
 - **Decisions** — what the team decided, with rationale and rejected alternatives.
 - **Validation and review notes** — what reviewers should know for this PR.
-- **Legacy signals** — old risks, anti-patterns, and follow-ups remain readable.
+- **Explicit signals** — constraints, risks, and follow-ups promoted through dedicated commands.
 - **Lifecycle** — merged, abandoned, superseded, or reverted.
 - **References** — optional links to issues, PRs, docs, CI runs, or external sessions.
 - **Commit pins** — links between intents and the commits that implemented them.
@@ -649,7 +649,7 @@ Core human set:
 | `mainline hub open` | Build + open a static HTML site over the local intent view |
 | `mainline status --actionable` | Top 5 actionable items with why, risk, and next command |
 | `mainline log` | Intent history with author, time, and `[check:?\|~\|ok\|!\|human?]` |
-| `mainline show <id>` | Full intent detail (decisions, fingerprint, legacy and explicit signals) |
+| `mainline show <id>` | Full intent detail (decisions, fingerprint, references, and explicit signals) |
 | `mainline gaps` | List uncovered commits on main with reversibility-ranked rescue options |
 
 Reviewer and maintainer extras:

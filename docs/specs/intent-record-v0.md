@@ -50,8 +50,8 @@ An intent record is the structured answer to:
 | **Decision** | A recorded choice: what was chosen, why, and what was rejected. |
 | **Risk** | An explicit reviewer-facing failure mode created through `mainline risk add`. Advisory; may become irrelevant over time. |
 | **Constraint** | A human-promoted rule created through interactive `mainline guard add`. Future agents must see and obey it. |
-| **Legacy anti-pattern** | The old seal-embedded hard-constraint shape. Still read for compatibility; no longer created by seal. |
-| **Inherited constraint** | An explicit constraint or legacy high-severity anti-pattern that applies to the current change because of file overlap. |
+| **Historical seal field** | A read-only field on older sealed intents. Kept on the intent detail for audit, but ignored by active signal queues. |
+| **Inherited constraint** | An explicit constraint that applies to the current change because of file overlap. |
 | **Reference** | A link to external material (session, issue, PR, doc, CI run). Metadata only — Mainline never reads the referenced content. |
 | **Commit pin** | The association between a sealed intent and one or more commits on the main branch. |
 | **Turn** | A lightweight record of one meaningful work fragment within a draft intent. Thinking scaffold for seal preparation. |
@@ -125,9 +125,9 @@ intent.
 | `user_goal` | string | | The original user request, if different from `what`. |
 | `decisions` | Decision[] | ✓ | At least one decision. Each records a choice point, what was chosen, and optionally the rationale and rejected alternatives. |
 | `rejected` | RejectedAlternative[] | | Top-level rejected alternatives (beyond per-decision rejects). |
-| `risks` | string[] | | Legacy seal-embedded risks. New seals MUST leave empty/omit; use `mainline risk add`. |
-| `anti_patterns` | AntiPattern[] | | Legacy seal-embedded constraints. New seals MUST leave empty/omit; use human-confirmed `mainline guard add`. |
-| `followups` | string[] | | Legacy seal-embedded follow-ups. New seals MUST leave empty/omit; use `mainline followup add`. |
+| `risks` | string[] | | Historical read-only field. New seals MUST leave empty/omit; use `mainline risk add`. |
+| `anti_patterns` | AntiPattern[] | | Historical read-only field. New seals MUST leave empty/omit; use human-confirmed `mainline guard add`. |
+| `followups` | string[] | | Historical read-only field. New seals MUST leave empty/omit; use `mainline followup add`. |
 | `review_notes` | string[] | | Ephemeral notes for the PR reviewer. Not inherited, not surfaced in context retrieval. |
 
 ### 6.3 Decision
@@ -139,11 +139,12 @@ intent.
 | `rationale` | string | | Why this choice was made. Recommended for non-trivial choices. |
 | `rejected` | string[] | | Alternatives that were considered and rejected. |
 
-### 6.4 AntiPattern (legacy hard constraint)
+### 6.4 AntiPattern (historical seal field)
 
-This shape is retained so older intents remain readable. New hard
-constraints are created as explicit signal events, not through
-`IntentSummary.anti_patterns`.
+This shape is retained so older intents remain readable on intent detail.
+New hard constraints are created as explicit signal events, not through
+`IntentSummary.anti_patterns`; active context and queue surfaces ignore
+this field.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -205,15 +206,13 @@ At least one of `ref` or `url` must be non-empty.
 
 ### 6.9 Explicit signal lifecycle
 
-Risks and follow-ups are explicit signal events. Legacy
-`IntentSummary.risks` and `IntentSummary.followups` are still
-materialized for compatibility.
+Risks and follow-ups are explicit signal events. Older
+`IntentSummary.risks` and `IntentSummary.followups` remain readable on
+intent detail, but they are not active risk/follow-up queues.
 
-**Risk IDs** are `risk_<hex>` for explicit risks and
-`{intent_id}#{array_index}` for legacy risks.
+**Risk IDs** are `risk_<hex>`.
 
-**Follow-up IDs** are `followup_<hex>` for explicit follow-ups and
-`{intent_id}#{array_index}` for legacy follow-ups.
+**Follow-up IDs** are `followup_<hex>`.
 
 **Risk status:**
 
@@ -245,8 +244,7 @@ Mainline distinguishes these types of long-lived signals:
 |---|---|---|---|---|
 | **Risk** | Advisory review warning | Open → resolved / expired | No | Yes (top-N per intent) |
 | **Constraint** | Human-promoted hard rule | Permanent until explicitly changed | Yes | **Never** |
-| **Legacy anti-pattern** | Old seal-embedded hard rule | Permanent with source intent | Yes | **Never** |
-| **Inherited constraint** | Propagated explicit/legacy constraint | Until source intent is abandoned/reverted | N/A (is propagation) | **Never** |
+| **Inherited constraint** | Propagated explicit constraint | Until explicitly changed | N/A (is propagation) | **Never** |
 | **Conflict** | Detected overlap | Per-pair | N/A | N/A |
 | **Coverage gap** | Missing intent | Until covered or skipped | N/A | N/A |
 
@@ -257,9 +255,8 @@ Mainline distinguishes these types of long-lived signals:
 - A **constraint** says "do not delete the legacy session middleware
   on /oauth — the OAuth callback handler still requires session state"
   — it is a human-promoted rule future agents must respect.
-- An **inherited constraint** is an explicit constraint or legacy
-  high-severity anti-pattern that applies to the *current* change
-  because of file overlap.
+- An **inherited constraint** is an explicit constraint that applies
+  to the *current* change because of file overlap.
 
 Constraints are **never truncated** in retrieval. The safety property
 is: if a human-promoted constraint exists, the agent will see it before

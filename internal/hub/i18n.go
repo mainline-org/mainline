@@ -295,7 +295,7 @@ var translations = map[string]map[string]string{
 	"briefing.recent_proposed":      {LangEN: "Recent proposed work", LangZH: "最近待审 work"},
 
 	// Search (§7)
-	"search.placeholder":      {LangEN: "Search intents, files, decisions, risks, anti-patterns...", LangZH: "搜索 intents、文件、决策、风险、anti-patterns..."},
+	"search.placeholder":      {LangEN: "Search intents, files, decisions, risks, constraints...", LangZH: "搜索 intents、文件、决策、风险、约束..."},
 	"search.no_results":       {LangEN: "No results found.", LangZH: "未找到结果。"},
 	"search.group_intent":     {LangEN: "Intents", LangZH: "Intents"},
 	"search.group_file":       {LangEN: "Files", LangZH: "文件"},
