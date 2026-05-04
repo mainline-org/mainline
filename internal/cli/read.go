@@ -432,7 +432,7 @@ func printContextRetrievalText(r *engine.ContextRetrievalResult) {
 				fmt.Printf("    %s\n", ri.Summary)
 			}
 			if len(ri.AntiPatterns) > 0 {
-				fmt.Println("    legacy anti-patterns (historical only):")
+				fmt.Println("    historical seal constraints:")
 				for _, ap := range ri.AntiPatterns {
 					sev := ""
 					if ap.Severity != "" {

@@ -16,19 +16,18 @@ var (
 
 var risksCmd = &cobra.Command{
 	Use:   "risks",
-	Short: "List open explicit and legacy risks",
+	Short: "List open explicit risks",
 	Long: `List risks with lifecycle status.
 
 By default shows only open risks. Use --all to include resolved and expired.
-New risks are created with "mainline risk add"; legacy seal-embedded risks
-remain visible for compatibility.
+Risks are created with "mainline risk add".
 
 Risk lifecycle:
   open      — no resolution event; source intent is active
   resolved  — explicitly resolved by a later intent or manual action
   expired   — source intent was superseded, abandoned, or reverted
 
-Risk IDs are "risk_<hex>" for explicit risks or "{intent_id}#{array_index}" for legacy risks.`,
+Risk IDs are "risk_<hex>".`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
@@ -110,8 +109,7 @@ var (
 var risksResolveCmd = &cobra.Command{
 	Use:   "resolve <risk_id>",
 	Short: "Manually resolve a risk",
-	Long: `Mark a risk as resolved. Risk IDs are "risk_<hex>" for explicit risks
-or "int_<hex>#<index>" for legacy seal-embedded risks.
+	Long: `Mark a risk as resolved. Risk IDs are "risk_<hex>".
 
 Use --by-intent to record which intent's work resolved it.
 Use --rationale to explain how the risk was addressed.`,
@@ -141,7 +139,7 @@ Use --rationale to explain how the risk was addressed.`,
 
 func init() {
 	risksCmd.Flags().StringVar(&risksFileFilter, "file", "", "filter risks by file path prefix")
-	risksCmd.Flags().BoolVar(&risksShowAll, "all", false, "include resolved and expired risks")
+	risksCmd.Flags().BoolVar(&risksShowAll, "all", false, "include resolved and expired explicit risks")
 
 	risksResolveCmd.Flags().StringVar(&resolveByIntent, "by-intent", "", "intent ID whose work resolved this risk")
 	risksResolveCmd.Flags().StringVar(&resolveRationale, "rationale", "", "explanation of how the risk was addressed")

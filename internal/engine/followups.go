@@ -14,9 +14,9 @@ import (
 // Follow-up lifecycle engine
 // -----------------------------------------------------------
 //
-// Follow-ups are soft future-work items written as []string on
-// IntentSummary. Like risks, sealed summaries stay immutable; later
-// events materialise an effective queue with open/resolved/expired state.
+// Follow-ups are explicit future-work items written through
+// `mainline followup add`. Older seal-summary follow-up strings remain
+// readable for audit/diagnostics, but they do not enter active queues.
 
 var followupIDPattern = regexp.MustCompile(`^int_[0-9a-f]+#\d+$`)
 var explicitFollowupIDPattern = regexp.MustCompile(`^followup_[0-9a-f]+$`)
@@ -44,9 +44,8 @@ func FollowupID(intentID string, index int) string {
 	return fmt.Sprintf("%s#%d", intentID, index)
 }
 
-// materializeFollowups converts the view into Followup view-models with
-// status. fileFilter, when non-empty, restricts to follow-ups from intents
-// that touched a file matching the prefix.
+// materializeFollowups converts explicit follow-up signals into active
+// Followup view-models with status.
 func materializeFollowups(view *domain.MainlineView, fileFilter string) []domain.Followup {
 	if view == nil {
 		return nil
@@ -73,6 +72,22 @@ func materializeFollowups(view *domain.MainlineView, fileFilter string) []domain
 		}
 		followups = append(followups, followup)
 	}
+
+	sortFollowups(followups)
+	return followups
+}
+
+func materializeLegacyFollowups(view *domain.MainlineView, fileFilter string) []domain.Followup {
+	if view == nil {
+		return nil
+	}
+
+	resolutions := view.FollowupResolutions
+	if resolutions == nil {
+		resolutions = map[string][]domain.FollowupResolution{}
+	}
+
+	var followups []domain.Followup
 	for _, iv := range view.Intents {
 		if iv.Summary == nil || len(iv.Summary.Followups) == 0 {
 			continue
@@ -103,11 +118,23 @@ func materializeFollowups(view *domain.MainlineView, fileFilter string) []domain
 				Status:       status,
 				SourceIntent: iv.IntentID,
 				OpenedAt:     iv.SealedAt,
+				Source:       "seal_summary",
 				ResolvedBy:   resolvedBy,
 			})
 		}
 	}
 
+	sortFollowups(followups)
+	return followups
+}
+
+func materializeAllFollowups(view *domain.MainlineView, fileFilter string) []domain.Followup {
+	followups := materializeFollowups(view, fileFilter)
+	followups = append(followups, materializeLegacyFollowups(view, fileFilter)...)
+	return followups
+}
+
+func sortFollowups(followups []domain.Followup) {
 	sort.Slice(followups, func(i, j int) bool {
 		oi, oj := statusOrder(followups[i].Status), statusOrder(followups[j].Status)
 		if oi != oj {
@@ -115,8 +142,6 @@ func materializeFollowups(view *domain.MainlineView, fileFilter string) []domain
 		}
 		return followups[i].OpenedAt > followups[j].OpenedAt
 	})
-
-	return followups
 }
 
 // materializeOpenFollowups is the seal-prepare variant: only open
@@ -166,6 +191,9 @@ func (s *Service) ListFollowups(fileFilter string, includeAll bool) ([]domain.Fo
 		}
 		followups = open
 	}
+	if followups == nil {
+		followups = []domain.Followup{}
+	}
 
 	return followups, nil
 }
@@ -189,7 +217,7 @@ func (s *Service) ResolveFollowup(followupID string, byIntent string, rationale 
 
 	var found bool
 	if validFollowupID(followupID) {
-		for _, f := range materializeFollowups(view, "") {
+		for _, f := range materializeAllFollowups(view, "") {
 			if f.ID == followupID {
 				found = true
 				break
@@ -213,12 +241,12 @@ func (s *Service) ResolveFollowup(followupID string, byIntent string, rationale 
 			"run `mainline followups --all` to see available follow-ups",
 		)
 	}
-	for _, f := range materializeFollowups(view, "") {
+	for _, f := range materializeAllFollowups(view, "") {
 		if f.ID == followupID && f.Status != "open" {
 			return domain.NewRecoverableError(
 				domain.ErrInvalidInput,
 				fmt.Sprintf("follow-up %q is already %s", followupID, f.Status),
-				"run `mainline followups --all` to see resolved or expired follow-ups",
+				"run `mainline followups --all` to see resolved or expired explicit follow-ups",
 			)
 		}
 		if f.ID == followupID {
