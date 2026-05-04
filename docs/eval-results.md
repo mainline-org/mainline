@@ -109,33 +109,28 @@ intents.
 
 **Task:** "write a new section in AGENTS.md describing the seal workflow"
 **Expected:** `int_terminology_guide` (records the "agent guidance" vs
-"managed block" rule) surfaces with its anti_pattern, so the agent
-doesn't reintroduce the deprecated term.
+"managed block" decision) surfaces through decision / summary text, so
+the agent doesn't reintroduce the deprecated term.
 **Actual:** the intent doesn't appear in retrieval.
 
-**Root cause** (retrieval scoring scope):
+**Root cause** (historical retrieval scoring scope):
 
-1. The intent's load-bearing text is in its **anti_patterns**:
-   *"Reintroducing 'managed block' or 'Mainline template' in CLI
-   output, help text, README, or AGENTS.md"*. That string contains the
-   task keyword `AGENTS.md`.
-2. PR #86's SQLite-backed `--query` path joins on `intent_decisions`
-   and `intent_risks`. **It does not join on `intent_anti_patterns`.**
-3. The in-memory keyword scorer in `scoreIntentRelevance` also walks
-   only `Decisions` and `Risks`, not `AntiPatterns`.
-4. So the intent's most-relevant text is invisible to the scorer.
+1. The old eval expected legacy `anti_patterns` to behave as hard
+   retrieval signals.
+2. The signal-write redesign deliberately stops doing that:
+   `summary.anti_patterns` is legacy read-compatibility, not a
+   default pre-edit action signal.
+3. Terminology or workflow rules that future agents must obey should
+   be human-promoted constraints; otherwise they should be captured in
+   decisions / rejected alternatives / review notes.
 
-**Why this matters:** anti_patterns are the load-bearing safety
-surface. A reader reading the intent record relies on them. A scorer
-that *doesn't* search them is a glaring asymmetry — the agent's
-working memory contains the constraint as a target string, but
-retrieval can't find it.
+**Why this matters:** the old expectation created the exact pollution
+chain the signal-write rules now reject: agent seal prose becoming
+future-agent rules.
 
-**v2 candidate fix:**
-1. Add an `intent_anti_patterns.what` join to the SQLite query path.
-2. Add `AntiPatterns[*].What` to the in-memory keyword scorer.
-3. Consider scoring anti_pattern keyword matches *higher* than
-   decision/risk matches — they're the highest-severity surface.
+**Current fix:** keep legacy anti-patterns readable through detailed
+intent views, but remove them from default context scoring and inherited
+constraint propagation.
 
 ---
 

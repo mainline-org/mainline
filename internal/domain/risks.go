@@ -18,6 +18,7 @@ import (
 // current state.
 
 var riskIDPattern = regexp.MustCompile(`^int_[0-9a-f]+#\d+$`)
+var explicitRiskIDPattern = regexp.MustCompile(`^risk_[0-9a-f]+$`)
 
 // ParseRiskID splits a risk ID into (intent_id, index). Returns an
 // error if the format is invalid.
@@ -31,6 +32,10 @@ func ParseRiskID(riskID string) (intentID string, index int, err error) {
 		return "", 0, fmt.Errorf("invalid risk index in %q: %w", riskID, err)
 	}
 	return parts[0], idx, nil
+}
+
+func ValidRiskID(riskID string) bool {
+	return riskIDPattern.MatchString(riskID) || explicitRiskIDPattern.MatchString(riskID)
 }
 
 // RiskID builds a deterministic risk ID from intent ID and array index.
@@ -60,6 +65,21 @@ func MaterializeRisks(view *MainlineView, fileFilter string) []Risk {
 	}
 
 	var risks []Risk
+	for _, r := range view.Risks {
+		risk := r
+		risk.Status = "open"
+		if rr, ok := resolutions[risk.ID]; ok && len(rr) > 0 {
+			risk.Status = "resolved"
+			risk.ResolvedBy = rr
+		}
+		if RiskSourceExpired(statusOfIntent(view, risk.SourceIntent)) {
+			risk.Status = "expired"
+		}
+		if fileFilter != "" && !riskMatchesPath(view, risk, fileFilter) {
+			continue
+		}
+		risks = append(risks, risk)
+	}
 	for _, iv := range view.Intents {
 		if iv.Summary == nil || len(iv.Summary.Risks) == 0 {
 			continue
@@ -118,6 +138,10 @@ func MaterializeOpenRisks(view *MainlineView, files []string) []Risk {
 	var open []Risk
 	for _, r := range all {
 		if r.Status != "open" {
+			continue
+		}
+		if len(r.Files) > 0 && RiskFilesOverlap(r.Files, files) {
+			open = append(open, r)
 			continue
 		}
 		for _, iv := range view.Intents {
@@ -196,4 +220,28 @@ func riskTouchesPath(files []string, prefix string) bool {
 		}
 	}
 	return false
+}
+
+func riskMatchesPath(view *MainlineView, r Risk, prefix string) bool {
+	if riskTouchesPath(r.Files, prefix) {
+		return true
+	}
+	for _, iv := range view.Intents {
+		if iv.IntentID == r.SourceIntent && iv.Fingerprint != nil {
+			return riskTouchesPath(iv.Fingerprint.FilesTouched, prefix)
+		}
+	}
+	return false
+}
+
+func statusOfIntent(view *MainlineView, intentID string) IntentStatus {
+	if view == nil || intentID == "" {
+		return ""
+	}
+	for _, iv := range view.Intents {
+		if iv.IntentID == intentID {
+			return iv.Status
+		}
+	}
+	return ""
 }

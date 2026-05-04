@@ -25,7 +25,8 @@ import (
 //     → see overall state, get a hint to run context
 //   mainline context --current --json
 //     → list of intents relevant to the current change
-//   read decisions / risks / fingerprint of those intents
+//   read decisions / fingerprint of those intents
+//   notice explicit inherited constraints and lifecycle warnings
 //   THEN grep / read code to verify against current implementation
 //   THEN edit
 //
@@ -38,7 +39,8 @@ import (
 // What this command is NOT (per the v1 scope):
 //   - embedding / vector search — deterministic only
 //   - interactive UI — JSON / text only
-//   - hard hook blocking — agent guidance, not enforcement
+//   - hard hook blocking — agent guidance plus explicit CLI gates,
+//     not hidden hook magic
 //   - per-turn diffs — same fingerprint files_touched semantics
 //     the rest of mainline uses
 
@@ -65,10 +67,9 @@ type ContextRetrievalResult struct {
 	Query           ContextQueryEcho   `json:"query"`
 	QueryDebug      *ContextQueryDebug `json:"query_debug,omitempty"`
 	RelevantIntents []ContextRelevant  `json:"relevant_intents"`
-	// InheritedConstraints lists high-severity anti_patterns from
-	// prior sealed intents whose touched files overlap with the
-	// current change. Only high severity, file-only matching.
-	// Each carries a stable constraint_id for explicit acknowledgement.
+	// InheritedConstraints lists high-severity human-promoted
+	// constraints whose files overlap with the current change. Each
+	// carries a stable constraint_id for explicit acknowledgement.
 	InheritedConstraints []domain.InheritedConstraint `json:"inherited_constraints,omitempty"`
 	Notes                []string                     `json:"notes"`
 }
@@ -114,11 +115,13 @@ type ContextDroppedTerm struct {
 //     churning or it is old enough that its decisions
 //     may no longer hold; verify before acting.
 //
-// Decisions / Risks / OpenFollowups are top-N truncated; AntiPatterns
-// are NEVER truncated — they are the load-bearing safety surface.
-// Followups are command suggestions the agent can copy-paste to drill
-// into the full record. Guidance is the single-line advisory derived
-// from Status.
+// Decisions are top-N truncated. Explicit constraints are surfaced
+// through InheritedConstraints. Legacy risks / followups /
+// anti_patterns remain on the struct for wire compatibility but
+// default retrieval does not populate them; use `mainline show` or
+// the dedicated signal commands for those surfaces. Followups are
+// command suggestions the agent can copy-paste to drill into the full
+// record. Guidance is the single-line advisory derived from Status.
 type ContextRelevant struct {
 	IntentID      string               `json:"intent_id"`
 	Title         string               `json:"title"`
@@ -157,9 +160,11 @@ type ContextRelevance struct {
 	Reasons   []string                   `json:"reasons"`
 }
 
-// ContextRelevanceBreakdown mirrors the existing scorer's additive
-// signals. Final score is the additive fields plus lineage/same_thread
-// boosts, minus status_penalty, rounded to two decimals for output.
+// ContextRelevanceBreakdown mirrors the scorer's additive signals.
+// Risk / Followup / AntiPattern are retained for older JSON consumers
+// but no longer contribute to default pre-edit retrieval.
+// Final score is the additive fields plus lineage/same_thread boosts,
+// minus status_penalty, rounded to two decimals for output.
 type ContextRelevanceBreakdown struct {
 	File          float64 `json:"file"`
 	Subsystem     float64 `json:"subsystem"`
@@ -182,12 +187,10 @@ const (
 	// that drowns out the actual coding task.
 	ContextRetrievalDefaultLimit = 5
 
-	// contextDecisionLimit / contextRiskLimit / contextFollowupLimit cap per-intent
-	// surface so a 20-decision intent doesn't fill the agent's
-	// window. The agent can `mainline show <id>` for the rest.
+	// contextDecisionLimit caps per-intent decision surface so a
+	// 20-decision intent doesn't fill the agent's window. The agent
+	// can `mainline show <id>` for the rest.
 	contextDecisionLimit = 3
-	contextRiskLimit     = 3
-	contextFollowupLimit = 3
 
 	// contextRelevanceThreshold filters out intents below this
 	// score. Tuned against the dogfood repo: 0.05 keeps anything
@@ -244,7 +247,7 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 			fmt.Sprintf("context mode %q not recognised — use one of: --current, --files, --query", req.Mode),
 			"--current to retrieve intents relevant to the active draft + current diff",
 			"--files <paths...> to retrieve intents that touched these files",
-			"--query \"<text>\" to retrieve intents whose decisions / risks / summary match these keywords",
+			"--query \"<text>\" to retrieve intents whose decisions / summary / fingerprint match these keywords",
 		)
 	}
 
@@ -267,13 +270,11 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 	now := time.Now()
 
 	// Decide the candidate set the scorer iterates over. For --files
-	// and --query, prefer the SQLite reverse indexes (intent_files /
-	// intent_decisions / intent_risks) so we only score intents
-	// that have at least one matching surface, instead of every
-	// sealed intent in the view. JSON-view scan stays as the
-	// fallback when the SQLite cache is missing — semantics
-	// identical because both paths deserialise the same IntentView
-	// struct.
+	// and --query, prefer the SQLite reverse indexes so we only score
+	// intents that have at least one matching surface, instead of
+	// every sealed intent in the view. JSON-view scan stays as the
+	// fallback when the SQLite cache is missing — semantics identical
+	// because both paths deserialise the same IntentView struct.
 	var qTerms queryTerms
 	var queryKeywords []string
 	if req.Mode == "query" {
@@ -339,13 +340,10 @@ func (s *Service) RetrieveContext(req ContextRetrievalRequest) (*ContextRetrieva
 		scored = scored[:req.Limit]
 	}
 
-	// Aggregate inherited anti_patterns from prior sealed intents
-	// whose FilesTouched / Subsystems overlap with the current change.
-	// Files come from the request (or from `currentRelevantFiles` for
-	// --current); subsystems are derived from the same files via the
-	// conflict-detector's path→subsystem map so retrieval and conflict
-	// detection agree on what counts as the "auth" or "engine"
-	// subsystem.
+	// Aggregate explicit inherited constraints whose files overlap
+	// with the current change. Files come from the request (or from
+	// `currentRelevantFiles` for --current); subsystems are derived
+	// only to preserve the public helper signature.
 	subsystems := subsystemsFromFiles(files)
 	excludeID := ""
 	if req.Mode == "current" {
@@ -679,9 +677,6 @@ func moveIntentAfter(scored []ContextRelevant, from, after int) {
 //	title keyword:        0.05 per keyword hit
 //	what / why keyword:   0.025 per keyword hit in each field
 //	decision keyword:     0.05 once, for the first matching decision
-//	risk keyword:         0.10 once, for the first matching risk
-//	follow-up keyword:    0.08 once, for the first matching follow-up
-//	anti_pattern keyword: 0.15 once, for the first matching anti_pattern
 //	recency:              0.10 when <7d old, 0.05 when <30d old
 //
 // Retrieval adds a same-thread +0.15 boost outside this function for
@@ -766,35 +761,6 @@ func scoreIntentRelevanceWithRiskLifecycle(iv domain.IntentView, files []string,
 					break
 				}
 			}
-			// Risk lifecycle: query/current scoring should use the
-			// effective open-risk surface, not raw historical risks
-			// that were already resolved or expired with the source
-			// intent.
-			for _, r := range filterOpenRisks(iv.IntentID, iv.Summary.Risks, riskResolutions, iv.Status) {
-				if countKeywordHits(keywords, r) > 0 {
-					score += 0.10
-					breakdown.Risk += 0.10
-					reasons = append(reasons, "risk mentions "+truncateForReason(r, 40))
-					break
-				}
-			}
-			for _, f := range iv.Summary.Followups {
-				if countKeywordHits(keywords, f) > 0 {
-					score += 0.08
-					breakdown.Followup += 0.08
-					reasons = append(reasons, "follow-up mentions "+truncateForReason(f, 40))
-					break
-				}
-			}
-			for _, ap := range iv.Summary.AntiPatterns {
-				apText := ap.What + " " + ap.Why + " " + ap.Severity
-				if countKeywordHits(keywords, apText) > 0 {
-					score += 0.15
-					breakdown.AntiPattern += 0.15
-					reasons = append(reasons, "anti_pattern mentions "+strings.Join(matchedKeywords(keywords, apText), ", "))
-					break
-				}
-			}
 		}
 	}
 
@@ -843,10 +809,7 @@ func scoreIntentRelevanceWithRiskLifecycle(iv domain.IntentView, files []string,
 func hasQueryContentSignal(b ContextRelevanceBreakdown) bool {
 	return b.Title > 0 ||
 		b.Summary > 0 ||
-		b.Decision > 0 ||
-		b.Risk > 0 ||
-		b.Followup > 0 ||
-		b.AntiPattern > 0
+		b.Decision > 0
 }
 
 func packRelevant(
@@ -876,23 +839,6 @@ func packRelevant(
 		r.Title = iv.Summary.Title
 		r.Summary = truncateForReason(iv.Summary.What, 240)
 		r.Decisions = topDecisions(iv.Summary.Decisions, contextDecisionLimit)
-
-		// v0.4 risk lifecycle: filter out resolved/expired risks so
-		// retrieval only surfaces open risks. Expired is already
-		// handled by the retrieval status (superseded/abandoned), but
-		// explicit resolution should suppress the risk text too.
-		openRisks := filterOpenRisks(iv.IntentID, iv.Summary.Risks, riskResolutions, iv.Status)
-		r.Risks = topItems(openRisks, contextRiskLimit)
-
-		openFollowups := filterOpenFollowups(iv.IntentID, iv.Summary.Followups, followupResolutions, iv.Status)
-		r.OpenFollowups = topItems(openFollowups, contextFollowupLimit)
-
-		// AntiPatterns are NEVER truncated — Property 5. Copy them
-		// through verbatim so the agent always sees every hard
-		// constraint the seal recorded.
-		if len(iv.Summary.AntiPatterns) > 0 {
-			r.AntiPatterns = append([]domain.AntiPattern(nil), iv.Summary.AntiPatterns...)
-		}
 	}
 	if iv.StatusEvidence.SupersededByIntent != "" {
 		r.SupersededBy = iv.StatusEvidence.SupersededByIntent
@@ -936,14 +882,13 @@ func guidanceFor(status, supersededBy string) string {
 //  2. "verify against current code before editing" — guard
 //     against the opposite extreme (agent trusting an intent
 //     whose code has been refactored since).
-//  3. "anti_patterns are hard constraints" — surface the hard/soft
-//     distinction at the top of the result so the agent doesn't
-//     treat anti_patterns as more risks-to-weigh.
+//  3. durable constraints are human-promoted signals, while lifecycle
+//     events are warnings.
 func contextNotes() []string {
 	return []string{
 		"Use these intents as historical context, not as a replacement for reading current code.",
 		"Verify decisions against the current working tree before editing.",
-		"anti_patterns are hard constraints — do not violate them. risks are soft warnings to weigh.",
+		"Only human-promoted constraints are hard rules; abandoned/superseded/reverted history is a warning to inspect, not a new constraint.",
 	}
 }
 

@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 9 -->
+<!-- mainline-agents-md-version: 10 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -13,7 +13,7 @@ mainline status                                      # see your state
 
 # Read team intents for context (do this aggressively):
 mainline log --json --limit 30                       # recent intents
-mainline show <intent_id> --json                     # full why/decisions/risks/followups
+mainline show <intent_id> --json                     # full why/decisions/signals
 mainline list-proposals --json                       # what's in flight
 
 # Write your own intent:
@@ -27,11 +27,16 @@ mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
 Sync, pin, merge are automatic — do not invoke them.
 
 **Language rule**: write everything you put into Mainline (goal,
-appends, seal title/what/why/decisions/risks/anti_patterns/followups) in the
+appends, seal title/what/why/decisions/review_notes/signals) in the
 language the user used. Chinese in, Chinese out; English in, English
 out. The seal is the team's memory — translating it makes it harder
 to read for the people whose memory it is. Code identifiers, command
 names, and file paths stay in their original form.
+
+Seal records decisions by default. Do not add `summary.risks`,
+`summary.followups`, or `summary.anti_patterns` to a seal payload.
+Use explicit `mainline risk add`, `mainline followup add`, or
+interactive human-confirmed `mainline guard add` for durable signals.
 
 ### If `mainline hooks` is installed for your agent
 

@@ -23,8 +23,8 @@ commands only when needed.
 Match the user's language in everything you write into Mainline:
 the goal text on `mainline start`, every `mainline append` turn,
 the seal `summary.title` / `what` / `why` / `user_goal` / decisions
-/ risks / anti_patterns / followups, and PR description prose. If
-the user wrote in Chinese, seal in Chinese. English in, English out.
+/ review_notes, explicit signal command text, and PR description prose.
+If the user wrote in Chinese, seal in Chinese. English in, English out.
 Mixed inputs → match the dominant language.
 
 Why this matters: the seal record is the team's long-term memory.
@@ -294,8 +294,26 @@ stays out of git AND keeps the v0.3 worktree-clean check happy on
 submit. The package contains a `seal_result_starter` field with the
 deterministic bits (intent_id, fingerprint.files_touched,
 fingerprint.subsystems) pre-populated — patch in title / what / why /
-decisions / risks / anti_patterns / confidence rather than typing
-the JSON from scratch.
+decisions / rejected / review_notes / fingerprint / confidence rather
+than typing the JSON from scratch.
+
+Seal records decisions by default. Do not add `summary.risks`,
+`summary.followups`, or `summary.anti_patterns` to the seal payload.
+Those are durable action signals, not completeness fields.
+
+Use explicit signal commands only when the source is real:
+
+- `mainline risk add` only for a concrete failure mode with trigger or
+  impact, plus mitigation / validation / owner.
+- `mainline followup add` only when the user explicitly deferred the
+  work, an external issue/ticket/PR exists, or this PR explicitly cut
+  real scope.
+- Do not create constraints yourself. `mainline guard add` is
+  interactive and requires human confirmation.
+
+If you only have reviewer context, validation notes, accepted trade-offs,
+scope explanation, or a "maybe later" thought, keep it in `review_notes`,
+`decisions`, or leave it out.
 
 Generate a SealResult JSON matching the returned schema. The fingerprint must
 be specific enough for conflict detection:

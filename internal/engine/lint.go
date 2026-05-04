@@ -169,25 +169,27 @@ func LintIntent(id string, summary *domain.IntentSummary, fingerprint *domain.Se
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "risk_looks_like_antipattern", Severity: "warning",
 				Field:   fmt.Sprintf("summary.risks[%d]", i),
-				Message: fmt.Sprintf("risk text contains rule-like language (%s); if this is a hard constraint, it belongs in anti_patterns", truncate(risk)),
+				Message: fmt.Sprintf("risk text contains rule-like language (%s); if this is a hard constraint, use human-confirmed `mainline guard add`", truncate(risk)),
 			})
 		}
 	}
 
-	// Anti-pattern quality: every anti_pattern must have both what and why.
+	// Legacy anti-pattern quality: old records must still be coherent
+	// when linted, but new seals are rejected by the action-signal
+	// contract before this shape can create durable constraints.
 	for i, ap := range summary.AntiPatterns {
 		if strings.TrimSpace(ap.What) == "" {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "anti_pattern_no_what", Severity: "error",
 				Field:   fmt.Sprintf("summary.anti_patterns[%d].what", i),
-				Message: fmt.Sprintf("anti_patterns[%d].what is empty; hard constraints must state what is forbidden", i),
+				Message: fmt.Sprintf("legacy anti_patterns[%d].what is empty; old constraint records must state what was forbidden", i),
 			})
 		}
 		if strings.TrimSpace(ap.Why) == "" {
 			out.Issues = append(out.Issues, LintIssue{
 				Code: "anti_pattern_no_why", Severity: "error",
 				Field:   fmt.Sprintf("summary.anti_patterns[%d].why", i),
-				Message: fmt.Sprintf("anti_patterns[%d].why is empty; without a reason the constraint will be ignored by future agents", i),
+				Message: fmt.Sprintf("legacy anti_patterns[%d].why is empty; old constraint records need a reason to remain interpretable", i),
 			})
 		}
 	}
@@ -278,10 +280,9 @@ func (s *Service) Lint(id string) (*LintResult, error) {
 				continue
 			}
 			res := LintIntent(iv.IntentID, iv.Summary, iv.Fingerprint, iv.StatusEvidence.SupersededByIntent, knownIDs)
-			// Inherited-AP acknowledgement check: any sealed intent
-			// in the catalog whose touched files / subsystems
-			// overlap this one's contributes anti_patterns the
-			// current seal must have acknowledged.
+			// Inherited constraint acknowledgement check: any
+			// human-promoted constraint whose files overlap this
+			// intent must be acknowledged.
 			if iv.Fingerprint != nil {
 				inherited := domain.BuildInheritedConstraints(view, iv.Fingerprint.FilesTouched, iv.Fingerprint.Subsystems, iv.IntentID)
 				res.Issues = append(res.Issues, LintInheritedAcknowledgement(iv.Summary, inherited)...)
@@ -322,7 +323,42 @@ func LintSealResult(sr *domain.SealResult, viewIntents map[string]bool) LintResu
 			Message: "seal result is nil",
 		}}}
 	}
-	return LintIntent(sr.IntentID, &sr.Summary, &sr.Fingerprint, "", viewIntents)
+	res := LintIntent(sr.IntentID, &sr.Summary, &sr.Fingerprint, "", viewIntents)
+	res.Issues = append(res.Issues, sealActionSignalLintIssues(sr)...)
+	res.Pass = !hasErrors(res.Issues)
+	return res
+}
+
+func sealActionSignalLintIssues(sr *domain.SealResult) []LintIssue {
+	if sr == nil {
+		return nil
+	}
+	var out []LintIssue
+	if len(sr.Summary.AntiPatterns) > 0 {
+		out = append(out, LintIssue{
+			Code:     "seal_action_signal_constraint",
+			Severity: "error",
+			Field:    "summary.anti_patterns",
+			Message:  "seal cannot create constraints; use human-confirmed `mainline guard add`",
+		})
+	}
+	if len(sr.Summary.Risks) > 0 {
+		out = append(out, LintIssue{
+			Code:     "seal_action_signal_risk",
+			Severity: "error",
+			Field:    "summary.risks",
+			Message:  "seal cannot create risks; use `mainline risk add` with a structured failure mode",
+		})
+	}
+	if len(sr.Summary.Followups) > 0 {
+		out = append(out, LintIssue{
+			Code:     "seal_action_signal_followup",
+			Severity: "error",
+			Field:    "summary.followups",
+			Message:  "seal cannot create follow-ups; use `mainline followup add` with explicit provenance",
+		})
+	}
+	return out
 }
 
 // LintSealResultWithView extends LintSealResult with inherited-constraint
@@ -377,7 +413,7 @@ func LintInheritedAcknowledgement(summary *domain.IntentSummary, inherited []dom
 						ic.ConstraintID, briefWhat(ic.What))
 				}
 				issues = append(issues, LintIssue{
-					Code:     "inherited_anti_pattern_acknowledged",
+					Code:     "inherited_constraint_acknowledged",
 					Severity: sev,
 					Field:    fmt.Sprintf("summary.acknowledged_constraints[%d]", i),
 					Message:  msg,
@@ -386,7 +422,7 @@ func LintInheritedAcknowledgement(summary *domain.IntentSummary, inherited []dom
 			}
 			// Not acknowledged → warning
 			issues = append(issues, LintIssue{
-				Code:     "inherited_anti_pattern_not_acknowledged",
+				Code:     "inherited_constraint_not_acknowledged",
 				Severity: "warning",
 				Field:    fmt.Sprintf("summary.inherited[%d]", i),
 				Message: fmt.Sprintf("high-severity inherited constraint %s not acknowledged: %s — add to acknowledged_constraints with disposition (preserved/mitigated/not_applicable/intentionally_changed)",
@@ -398,19 +434,19 @@ func LintInheritedAcknowledgement(summary *domain.IntentSummary, inherited []dom
 		ack := domain.AcknowledgementOf(ic, summary)
 		if ack != domain.AckNone {
 			issues = append(issues, LintIssue{
-				Code:     "inherited_anti_pattern_acknowledged",
+				Code:     "inherited_constraint_acknowledged",
 				Severity: "info",
 				Field:    fmt.Sprintf("summary.inherited[%d]", i),
-				Message: fmt.Sprintf("inherited high-severity anti_pattern from %s acknowledged via %s: %s",
+				Message: fmt.Sprintf("inherited high-severity constraint from %s acknowledged via %s: %s",
 					ic.SourceIntent, ack, briefWhat(ic.What)),
 			})
 			continue
 		}
 		issues = append(issues, LintIssue{
-			Code:     "inherited_anti_pattern_not_acknowledged",
+			Code:     "inherited_constraint_not_acknowledged",
 			Severity: "warning",
 			Field:    fmt.Sprintf("summary.inherited[%d]", i),
-			Message: fmt.Sprintf("high-severity inherited anti_pattern from %s not acknowledged in this seal: %s — add to acknowledged_constraints",
+			Message: fmt.Sprintf("high-severity inherited constraint from %s not acknowledged in this seal: %s — add to acknowledged_constraints",
 				ic.SourceIntent, briefWhat(ic.What)),
 		})
 	}

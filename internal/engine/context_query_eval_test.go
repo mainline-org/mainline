@@ -29,17 +29,17 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 		check     func(t *testing.T, res *ContextRetrievalResult)
 	}{
 		{
-			name:    "ack constraint inherited anti_patterns",
-			query:   "ack constraint inherited anti_patterns",
+			name:    "ack constraint inherited constraints",
+			query:   "ack constraint inherited constraints",
 			wantIDs: []string{"int_ack_constraints"},
 			check: func(t *testing.T, res *ContextRetrievalResult) {
 				assertEffectiveKeyword(t, res, "ack")
-				assertEffectiveKeyword(t, res, "anti_patterns")
+				assertEffectiveKeyword(t, res, "constraints")
 				assertNotDroppedTerm(t, res, "ack")
 				assertExpandedTerms(t, res, "ack", []string{"acknowledge", "acknowledged", "acknowledgement", "acknowledgment"})
 				ri := mustFindRelevant(t, res, "int_ack_constraints")
-				if len(ri.AntiPatterns) == 0 {
-					t.Fatalf("expected anti_patterns surfaced for ack constraint query")
+				if len(ri.AntiPatterns) != 0 {
+					t.Fatalf("legacy anti_patterns should not surface in default query context: %+v", ri.AntiPatterns)
 				}
 			},
 		},
@@ -53,8 +53,11 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 				if b == nil {
 					t.Fatalf("expected query-mode breakdown")
 				}
-				if b.Title == 0 || b.Summary == 0 || b.Decision == 0 || b.Risk == 0 || b.AntiPattern == 0 {
-					t.Fatalf("expected multi-signal breakdown, got %+v", b)
+				if b.Title == 0 || b.Summary == 0 || b.Decision == 0 {
+					t.Fatalf("expected history-signal breakdown, got %+v", b)
+				}
+				if b.Risk != 0 || b.Followup != 0 || b.AntiPattern != 0 {
+					t.Fatalf("risk/followup/anti_pattern should not score default context, got %+v", b)
 				}
 				if ri.Relevance.Score == 0 || len(ri.Relevance.Reasons) == 0 {
 					t.Fatalf("score/reasons compatibility fields must remain populated: %+v", ri.Relevance)
@@ -97,8 +100,8 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 				assertNotDroppedTerm(t, res, "不要重新引入")
 				assertNotDroppedTerm(t, res, "继承")
 				ri := mustFindRelevant(t, res, "int_subsystem_inheritance")
-				if ri.Relevance.Breakdown == nil || ri.Relevance.Breakdown.AntiPattern == 0 {
-					t.Fatalf("expected CJK anti_pattern signal in breakdown, got %+v", ri.Relevance.Breakdown)
+				if ri.Relevance.Breakdown == nil || (ri.Relevance.Breakdown.Summary == 0 && ri.Relevance.Breakdown.Decision == 0) {
+					t.Fatalf("expected CJK history signal in breakdown, got %+v", ri.Relevance.Breakdown)
 				}
 			},
 		},
@@ -112,8 +115,8 @@ func TestContextRetrieval_QueryGoldenRegressionCoverage(t *testing.T) {
 				assertEffectiveKeyword(t, res, "继承")
 				assertEffectiveKeyword(t, res, "约束")
 				ri := mustFindRelevant(t, res, "int_subsystem_inheritance")
-				if ri.Relevance.Breakdown == nil || ri.Relevance.Breakdown.AntiPattern == 0 {
-					t.Fatalf("expected unspaced CJK query to score via anti_pattern, got %+v", ri.Relevance.Breakdown)
+				if ri.Relevance.Breakdown == nil || (ri.Relevance.Breakdown.Summary == 0 && ri.Relevance.Breakdown.Decision == 0) {
+					t.Fatalf("expected unspaced CJK query to score via history fields, got %+v", ri.Relevance.Breakdown)
 				}
 			},
 		},
@@ -241,7 +244,7 @@ func TestContextRetrieval_QueryDebugJSONShape(t *testing.T) {
 
 	res, err := svc.RetrieveContext(ContextRetrievalRequest{
 		Mode:  "query",
-		Query: "ack constraint inherited anti_patterns",
+		Query: "ack constraint inherited constraints",
 		Limit: 5,
 	})
 	if err != nil {
@@ -452,16 +455,14 @@ func queryGoldenRegressionView(sealedAt string) *domain.MainlineView {
 		RebuiltAt:     sealedAt,
 		Intents: []domain.IntentView{
 			queryGoldenIntent("int_ack_constraints", sealedAt,
-				"Ack inherited constraints and anti_patterns",
-				"Context retrieval must surface inherited constraints and anti_patterns before editing.",
+				"Ack inherited constraints",
+				"Context retrieval must surface inherited constraints before editing.",
 				"Agents need a visible acknowledgement path for inherited constraints.",
 				[]domain.Decision{
 					{Point: "ack constraint flow", Chose: "Carry acknowledged_constraints in the seal summary.", Rationale: "Inherited constraints need explicit confirmation."},
 				},
 				[]string{"Dropping inherited constraints would hide prior safety rules."},
-				[]domain.AntiPattern{
-					{What: "Skipping inherited constraint acknowledgement in anti_patterns areas", Why: "Future agents must preserve high-severity constraints.", Severity: "high"},
-				},
+				nil,
 				nil,
 				[]string{"internal/engine/context_retrieval.go"},
 				[]string{"engine"},

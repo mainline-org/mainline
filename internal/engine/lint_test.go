@@ -355,9 +355,9 @@ func sevFor(issues []LintIssue, code string) string {
 	return ""
 }
 
-// LintInheritedAcknowledgement is the v1 awareness-not-conviction
-// gate: when a sealed intent's files overlap a prior intent's
-// anti_patterns, the seal must acknowledge the high-severity ones.
+// LintInheritedAcknowledgement is the awareness-not-conviction gate:
+// when a sealed intent's files overlap human-promoted constraints,
+// the seal must acknowledge the high-severity ones.
 
 func TestLintInherited_NoConstraints_NoIssues(t *testing.T) {
 	got := LintInheritedAcknowledgement(&domain.IntentSummary{}, nil)
@@ -376,10 +376,10 @@ func TestLintInherited_HighUnacknowledgedWarns(t *testing.T) {
 		Severity:     "high",
 	}}
 	issues := LintInheritedAcknowledgement(summary, inherited)
-	if !hasCode(issues, "inherited_anti_pattern_not_acknowledged") {
+	if !hasCode(issues, "inherited_constraint_not_acknowledged") {
 		t.Errorf("expected warn issue, got %v", issues)
 	}
-	if sevFor(issues, "inherited_anti_pattern_not_acknowledged") != "warning" {
+	if sevFor(issues, "inherited_constraint_not_acknowledged") != "warning" {
 		t.Errorf("v1 must be warning, not error")
 	}
 }
@@ -397,10 +397,10 @@ func TestLintInherited_HighAcknowledgedViaDecision(t *testing.T) {
 		Severity:     "high",
 	}}
 	issues := LintInheritedAcknowledgement(summary, inherited)
-	if hasCode(issues, "inherited_anti_pattern_not_acknowledged") {
+	if hasCode(issues, "inherited_constraint_not_acknowledged") {
 		t.Errorf("acknowledged constraint must NOT warn: %v", issues)
 	}
-	if !hasCode(issues, "inherited_anti_pattern_acknowledged") {
+	if !hasCode(issues, "inherited_constraint_acknowledged") {
 		t.Errorf("acknowledged-info issue should be present: %v", issues)
 	}
 }
@@ -409,22 +409,22 @@ func TestLintInherited_ExplicitAckPreventsWarning(t *testing.T) {
 	// v2: explicit acknowledged_constraints prevents warning
 	summary := &domain.IntentSummary{
 		AcknowledgedConstraints: []domain.AcknowledgedConstraint{{
-			ConstraintID: "int_old#0",
+			ConstraintID: "guard_old",
 			Disposition:  "preserved",
 			Note:         "kept the constraint",
 		}},
 	}
 	inherited := []domain.InheritedConstraint{{
-		ConstraintID: "int_old#0",
+		ConstraintID: "guard_old",
 		SourceIntent: "int_old",
 		What:         "Skip token rotation",
 		Severity:     "high",
 	}}
 	issues := LintInheritedAcknowledgement(summary, inherited)
-	if hasCode(issues, "inherited_anti_pattern_not_acknowledged") {
+	if hasCode(issues, "inherited_constraint_not_acknowledged") {
 		t.Errorf("explicit ack should prevent warning; got %v", issues)
 	}
-	if !hasCode(issues, "inherited_anti_pattern_acknowledged") {
+	if !hasCode(issues, "inherited_constraint_acknowledged") {
 		t.Errorf("expected info-level ack confirmation; got %v", issues)
 	}
 }

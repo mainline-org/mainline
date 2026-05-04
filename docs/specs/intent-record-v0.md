@@ -19,8 +19,8 @@ future agents and reviewers must remember.
 An intent record is the structured answer to:
 
 > Why does the code look this way, what decisions were made, what was
-> rejected, what risks were accepted, what constraints must future
-> changes respect, and what happened to this intent over time?
+> rejected, what validation/review context matters, and what happened
+> to this intent over time?
 
 ## 2. Goals
 
@@ -45,12 +45,13 @@ An intent record is the structured answer to:
 
 | Term | Definition |
 |---|---|
-| **Intent** | A unit of engineering work with a declared goal, summary, decisions, risks, constraints, and lifecycle. |
+| **Intent** | A unit of engineering work with a declared goal, summary, decisions, fingerprint, and lifecycle. |
 | **Sealed intent** | An intent whose summary and fingerprint are frozen. Immutable after seal. |
 | **Decision** | A recorded choice: what was chosen, why, and what was rejected. |
-| **Soft risk** | A warning about something that could go wrong. Advisory; may become irrelevant over time. |
-| **Anti-pattern** | A hard constraint: something a future agent or developer MUST NOT do in this area. Carries a mandatory `why`. |
-| **Inherited constraint** | An anti-pattern from a prior sealed intent that applies to the current change because of file or subsystem overlap. |
+| **Risk** | An explicit reviewer-facing failure mode created through `mainline risk add`. Advisory; may become irrelevant over time. |
+| **Constraint** | A human-promoted rule created through interactive `mainline guard add`. Future agents must see and obey it. |
+| **Legacy anti-pattern** | The old seal-embedded hard-constraint shape. Still read for compatibility; no longer created by seal. |
+| **Inherited constraint** | An explicit constraint or legacy high-severity anti-pattern that applies to the current change because of file overlap. |
 | **Reference** | A link to external material (session, issue, PR, doc, CI run). Metadata only — Mainline never reads the referenced content. |
 | **Commit pin** | The association between a sealed intent and one or more commits on the main branch. |
 | **Turn** | A lightweight record of one meaningful work fragment within a draft intent. Thinking scaffold for seal preparation. |
@@ -124,9 +125,9 @@ intent.
 | `user_goal` | string | | The original user request, if different from `what`. |
 | `decisions` | Decision[] | ✓ | At least one decision. Each records a choice point, what was chosen, and optionally the rationale and rejected alternatives. |
 | `rejected` | RejectedAlternative[] | | Top-level rejected alternatives (beyond per-decision rejects). |
-| `risks` | string[] | | Concrete soft warnings. Default empty; see §7. |
-| `anti_patterns` | AntiPattern[] | | Hard constraints. Default empty; see §7. |
-| `followups` | string[] | | Explicit later work the user wants or this task deliberately cut out. Default empty. |
+| `risks` | string[] | | Legacy seal-embedded risks. New seals MUST leave empty/omit; use `mainline risk add`. |
+| `anti_patterns` | AntiPattern[] | | Legacy seal-embedded constraints. New seals MUST leave empty/omit; use human-confirmed `mainline guard add`. |
+| `followups` | string[] | | Legacy seal-embedded follow-ups. New seals MUST leave empty/omit; use `mainline followup add`. |
 | `review_notes` | string[] | | Ephemeral notes for the PR reviewer. Not inherited, not surfaced in context retrieval. |
 
 ### 6.3 Decision
@@ -138,7 +139,11 @@ intent.
 | `rationale` | string | | Why this choice was made. Recommended for non-trivial choices. |
 | `rejected` | string[] | | Alternatives that were considered and rejected. |
 
-### 6.4 AntiPattern (hard constraint)
+### 6.4 AntiPattern (legacy hard constraint)
+
+This shape is retained so older intents remain readable. New hard
+constraints are created as explicit signal events, not through
+`IntentSummary.anti_patterns`.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -198,14 +203,17 @@ metadata — it never reads, parses, or indexes the referenced content.
 
 At least one of `ref` or `url` must be non-empty.
 
-### 6.9 Risk lifecycle (v0.4)
+### 6.9 Explicit signal lifecycle
 
-Risks are soft warnings stored as `string[]` on IntentSummary.
-Starting with v0.4, risks have a lifecycle:
+Risks and follow-ups are explicit signal events. Legacy
+`IntentSummary.risks` and `IntentSummary.followups` are still
+materialized for compatibility.
 
-**Risk IDs** are deterministic: `{intent_id}#{array_index}`. Safe
-because sealed intents are immutable — the risk array never changes
-after seal.
+**Risk IDs** are `risk_<hex>` for explicit risks and
+`{intent_id}#{array_index}` for legacy risks.
+
+**Follow-up IDs** are `followup_<hex>` for explicit follow-ups and
+`{intent_id}#{array_index}` for legacy follow-ups.
 
 **Risk status:**
 
@@ -218,26 +226,27 @@ after seal.
 **Resolution paths:**
 
 - **Seal-time resolution:** A new sealed intent can declare
-  `resolves_risks` entries, each naming a risk ID. Processed
-  atomically with the seal event.
+  `resolves_risks` / `resolves_followups` entries, each naming an ID.
+  Processed atomically with the seal event.
 - **Manual resolution:** Via `mainline risks resolve <id>`. Writes a
   separate event to the actor log.
 - **Automatic expiry:** When the source intent's status becomes
   `superseded`, `abandoned`, or `reverted`, all its risks are
   automatically expired. Expiry overrides resolution.
 
-Risk view-models (with ID, status, resolution metadata) are
-materialized at query time, not stored directly.
+Risk and follow-up view-models are materialized with ID, status,
+resolution metadata, and structured statement fields.
 
 ## 7. Constraints and risk taxonomy
 
-Mainline distinguishes five types of constraint information:
+Mainline distinguishes these types of long-lived signals:
 
 | Type | Nature | Lifetime | Inherited? | Truncated in retrieval? |
 |---|---|---|---|---|
-| **Soft risk** | Advisory warning | Open → resolved / expired | No | Yes (top-N per intent) |
-| **Anti-pattern** | Hard constraint | Permanent (with source intent) | Yes | **Never** |
-| **Inherited constraint** | Propagated anti-pattern | Until source intent is abandoned/reverted | N/A (is propagation) | **Never** |
+| **Risk** | Advisory review warning | Open → resolved / expired | No | Yes (top-N per intent) |
+| **Constraint** | Human-promoted hard rule | Permanent until explicitly changed | Yes | **Never** |
+| **Legacy anti-pattern** | Old seal-embedded hard rule | Permanent with source intent | Yes | **Never** |
+| **Inherited constraint** | Propagated explicit/legacy constraint | Until source intent is abandoned/reverted | N/A (is propagation) | **Never** |
 | **Conflict** | Detected overlap | Per-pair | N/A | N/A |
 | **Coverage gap** | Missing intent | Until covered or skipped | N/A | N/A |
 
@@ -245,15 +254,15 @@ Mainline distinguishes five types of constraint information:
 
 - A **risk** says "this might break old clients" — it is a warning to
   consider, and it may become irrelevant when code evolves.
-- An **anti-pattern** says "do not delete the legacy session middleware
+- A **constraint** says "do not delete the legacy session middleware
   on /oauth — the OAuth callback handler still requires session state"
-  — it is a hard constraint that future agents must respect.
-- An **inherited constraint** is an anti-pattern from a *prior* intent
-  that applies to the *current* change because of file or subsystem
-  overlap.
+  — it is a human-promoted rule future agents must respect.
+- An **inherited constraint** is an explicit constraint or legacy
+  high-severity anti-pattern that applies to the *current* change
+  because of file overlap.
 
-Anti-patterns are **never truncated** in retrieval. The safety
-property is: if a constraint exists, the agent will see it before
+Constraints are **never truncated** in retrieval. The safety property
+is: if a human-promoted constraint exists, the agent will see it before
 editing.
 
 ## 8. References
@@ -266,7 +275,8 @@ or indexes the content at a reference URL. References exist to:
 - Preserve provenance without coupling to external systems.
 
 A reference is **not** a source of truth. The sealed intent's
-summary is the source of truth for decisions and constraints.
+summary is the source of truth for decisions. Explicit signal events
+are the source of truth for constraints, risks, and follow-ups.
 
 ## 9. Git storage model
 
