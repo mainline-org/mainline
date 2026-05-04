@@ -16,8 +16,12 @@ var (
 
 var risksCmd = &cobra.Command{
 	Use:   "risks",
-	Short: "List open risks across sealed intents",
-	Long: `List risks from the sealed intent catalog with lifecycle status.
+	Short: "List explicit risks across sealed intents",
+	Long: `List explicit risks from the sealed intent catalog with lifecycle status.
+
+Risks are present-review warnings, not future-agent rules. Default seals do not
+create new risks; use this command to inspect or resolve risks that were
+explicitly created in older or opt-in workflows.
 
 By default shows only open risks. Use --all to include resolved and expired.
 

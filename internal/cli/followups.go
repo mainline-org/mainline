@@ -14,8 +14,12 @@ var (
 
 var followupsCmd = &cobra.Command{
 	Use:   "followups",
-	Short: "List open follow-ups across sealed intents",
-	Long: `List follow-ups from the sealed intent catalog with lifecycle status.
+	Short: "List explicit follow-ups across sealed intents",
+	Long: `List explicit follow-ups from the sealed intent catalog with lifecycle status.
+
+Follow-ups are deferred work items, not an agent-generated backlog. Default
+seals do not create new follow-ups; use this command to inspect or resolve
+follow-ups that were explicitly created in older or opt-in workflows.
 
 By default shows only open follow-ups. Use --all to include resolved and expired.
 

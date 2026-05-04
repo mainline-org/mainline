@@ -97,12 +97,11 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	pkg.DiffSummary.Removed = stats.Removed
 	pkg.DiffSummary.FilesChanged = changedFiles
 
-	// Pre-fill what we can derive deterministically. Agent-judgment
-	// fields stay empty so the schema is still a teaching aid, but
-	// fingerprint.files_touched / fingerprint.subsystems / intent_id
-	// are filled in — which removes ~50% of the typing for a
-	// first-touch agent and sets the JSON shape correctly so the
-	// validator's fingerprint checks pass on the first patch.
+	// Pre-fill only what we can derive deterministically:
+	// fingerprint.files_touched / fingerprint.subsystems / intent_id.
+	// Agent-judgment fields stay empty. Explicit-only structured
+	// signals (risks, anti_patterns, followups) are not shown in the
+	// starter at all, so agents don't treat them as blanks to fill.
 	pkg.Starter = buildSealStarter(draft.IntentID, draft.Goal, changedFiles)
 
 	// v0.4 risk lifecycle: surface open risks on files this intent
@@ -203,12 +202,10 @@ func short(sha string) string {
 //   - intent_id, summary.user_goal, fingerprint.files_touched,
 //     fingerprint.subsystems
 //
-// Agent-judgment fields stay zero/empty so the schema is visible (the
-// agent sees the field names + types and patches in their content).
+// Agent-judgment fields stay zero/empty. Explicit-only signal fields are not
+// included in the starter; their absence is intentional, not a schema gap.
 // summary.user_goal is not agent judgment: it mirrors the authoritative
-// `mainline start` goal and SealSubmit enforces that value. Optional
-// judgment arrays default to [] because most intents have no concrete
-// risk, no hard constraint, and no explicit follow-up.
+// `mainline start` goal and SealSubmit enforces that value.
 //
 // Subsystems are derived from path prefixes via the same helper
 // the conflict-detection layer uses, so seal-time and check-time
@@ -218,16 +215,13 @@ func buildSealStarter(intentID, userGoal string, files []string) *domain.SealRes
 	return &domain.SealResult{
 		IntentID: intentID,
 		Summary: domain.IntentSummary{
-			Title:                   "",
-			What:                    "",
-			Why:                     "",
-			UserGoal:                userGoal,
-			Decisions:               []domain.Decision{},
-			Rejected:                []domain.RejectedAlternative{},
-			Risks:                   []string{},
-			Followups:               []string{},
-			ReviewNotes:             []string{},
-			AcknowledgedConstraints: []domain.AcknowledgedConstraint{},
+			Title:       "",
+			What:        "",
+			Why:         "",
+			UserGoal:    userGoal,
+			Decisions:   []domain.Decision{},
+			Rejected:    []domain.RejectedAlternative{},
+			ReviewNotes: []string{},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:           subs,
@@ -250,58 +244,53 @@ starting point — intent_id, fingerprint.files_touched, and
 fingerprint.subsystems are pre-filled deterministically from the
 diff. summary.user_goal is also pre-filled from mainline start and
 SealSubmit enforces that authoritative goal. Patch in the
-agent-judgment fields (title, what, why, decisions, fingerprint
-details, confidence) and submit. Keep risks, anti_patterns, and
-followups as [] unless the strict criteria below are met; do not fill
-them for completeness.
+default agent-judgment fields (title, what, why, decisions,
+fingerprint details, confidence) and submit.
 
-Required structure:
-1. summary: title, what, why, user_goal, decisions, rejected alternatives, risks, anti_patterns, followups, review_notes, acknowledged_constraints
+Default structure:
+1. summary: title, what, why, user_goal, decisions, rejected alternatives, review_notes, acknowledged_constraints
 2. fingerprint: subsystems, files_touched, architectural_claims, behavioral_changes,
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)
 
-Field decision tree — for each future-facing observation, pick the right field:
+Default rule:
+- Mainline records decisions by default. It does not let agents create repo-wide
+  constraints, risks, or follow-up queues unless a human explicitly promotes
+  that note into a structured signal.
+- Do not add summary.risks, summary.anti_patterns, or summary.followups just
+  because the old schema supports them. If you did not receive explicit user or
+  reviewer approval for such a signal, omit the field entirely.
+- If a reviewer needs temporary context for this PR, put it in review_notes.
+- If you accepted a trade-off or scope limit, record it as a decision with
+  rationale.
 
-  "It will fail when X" / "Y subsystem will break"    → risks
+Field decision tree — for each observation, pick the lowest-authority field:
+
   "We chose to ship with limitation X (acceptable)"   → decisions[].chose with rationale
-  "The user asked us to do X later" / "X was explicitly cut from this work" → followups
   "Reviewer should focus on Z" / scope explanation     → review_notes (ephemeral, not inherited)
-  "Future work in this area MUST NOT do X"            → anti_patterns
   "We considered B but ruled it out"                  → rejected
   "I saw inherited constraint X and handled it"       → acknowledged_constraints
 
   If you can't pick: it's probably a decision (you made a judgment call).
-
-Default-empty rule:
-- risks, anti_patterns, and followups are exceptional fields. Most seals
-  should leave them as [].
-- Never invent a risk, anti_pattern, or follow-up just because the schema
-  has a field for it.
-- Use review_notes for ephemeral reviewer context and decisions for accepted
-  trade-offs or implementation limits.
 
 Acknowledged constraints:
 - If mainline context surfaced inherited_constraints, acknowledge each here.
 - Format: {"constraint_id": "int_xxx#N", "disposition": "preserved|mitigated|not_applicable|intentionally_changed", "note": "..."}
 - "intentionally_changed" signals reviewer attention needed.
 
-Risk discipline:
-- Put an item in summary.risks only when it names a concrete failure mode,
-  compatibility break, data loss/corruption possibility, security/privacy issue,
-  performance/scale regression, user-visible misbehavior, or maintenance hazard
-  that a future reviewer should audit.
-- Do not put verification notes, "tests not run", review guidance, cosmetic
-  concerns, generic unknown-risk disclaimers, implementation summaries, scope
-  limitations, accepted trade-offs, or ordinary follow-up work in risks.
-- If there is no concrete risk, use an empty risks array — that is the
-  normal default, not a suspicious omission.
-
-Follow-up discipline:
-- Put an item in summary.followups only when the user explicitly wants it
-  done later, or when this work deliberately cut out a known next task.
-- Do not write speculative "consider", "maybe", telemetry, dogfood, or
-  nice-to-have ideas as followups. Leave followups as [] instead.
+Explicit structured signals:
+- A constraint is a future behavior rule. Default seals cannot create one. Only
+  include summary.anti_patterns when the user or reviewer explicitly approved
+  promoting that rule, and submit with --allow-structured-signals.
+- A risk is a present-review warning with a concrete failure mode plus a
+  mitigation, validation, or owner. Only include summary.risks after explicit
+  approval, and submit with --allow-structured-signals.
+- A follow-up is deferred work the user explicitly asked to track, an external
+  issue/ticket, or scope deliberately cut from this change. Only include
+  summary.followups after explicit approval, and submit with
+  --allow-structured-signals.
+- Agent-invented "maybe later", "consider", "nice to have", dogfood, or
+  telemetry ideas must not become structured signals.
 
 Risk resolution:
 - If applicable_open_risks lists risks on files you touched, and your
@@ -341,9 +330,14 @@ type SealSubmitResult struct {
 //	           (CLI --allow-dirty). Dirty seals still proceed but the
 //	           IntentSealedEvent permanently records the worktree state
 //	           so reviewers see the audit trail.
+//	RejectStructuredSignals rejects seal-time creation of summary.risks,
+//	           summary.anti_patterns, and summary.followups. The CLI enables
+//	           this by default so these long-lived action signals require an
+//	           explicit opt-in flag.
 type SealSubmitOptions struct {
-	Offline    bool
-	AllowDirty bool
+	Offline                 bool
+	AllowDirty              bool
+	RejectStructuredSignals bool
 }
 
 // SealSubmit retains the original signature and runs with default
@@ -383,6 +377,25 @@ func formatBlockingLintIssues(issues []LintIssue) string {
 	return "seal lint failed: " + strings.Join(parts, "; ")
 }
 
+func structuredSignalCounts(summary domain.IntentSummary) (risks, constraints, followups int) {
+	return len(summary.Risks), len(summary.AntiPatterns), len(summary.Followups)
+}
+
+func structuredSignalSummary(summary domain.IntentSummary) string {
+	risks, constraints, followups := structuredSignalCounts(summary)
+	var parts []string
+	if risks > 0 {
+		parts = append(parts, fmt.Sprintf("summary.risks=%d", risks))
+	}
+	if constraints > 0 {
+		parts = append(parts, fmt.Sprintf("summary.anti_patterns=%d", constraints))
+	}
+	if followups > 0 {
+		parts = append(parts, fmt.Sprintf("summary.followups=%d", followups))
+	}
+	return strings.Join(parts, ", ")
+}
+
 func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitOptions) (*SealSubmitResult, error) {
 	// All validation (identity, JSON, draft state, snapshot contract)
 	// MUST run before any draft mutation. Pre-this-fix the code wrote
@@ -406,6 +419,17 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 
 	if err := core.ValidateSealResult(&sr); err != nil {
 		return nil, domain.NewError(domain.ErrSealFailed, err.Error())
+	}
+
+	if opts != nil && opts.RejectStructuredSignals {
+		if summary := structuredSignalSummary(sr.Summary); summary != "" {
+			return nil, domain.NewRecoverableError(
+				domain.ErrSealFailed,
+				"structured signals are explicit-only in default seal submit: "+summary,
+				"remove summary.risks, summary.anti_patterns, and summary.followups unless the user or reviewer explicitly approved creating them",
+				"if they were explicitly approved, re-run `mainline seal --submit --allow-structured-signals`",
+			)
+		}
 	}
 
 	draft, err := s.Store.ReadDraft(sr.IntentID)

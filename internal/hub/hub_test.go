@@ -865,10 +865,10 @@ func TestHubDashboard_HasNoVanitySections(t *testing.T) {
 	}
 }
 
-// Hub signal-reduction guard: /coverage.html and /digest.html must
-// not appear in the sidebar nav. The pages still render (data dump
-// useful) but should not be in the human nav surface.
-func TestHubSidebar_HidesCoverageAndDigest(t *testing.T) {
+// Hub signal-reduction guard: secondary pages should not appear in the
+// sidebar nav. The pages still render for deep links / data dumps, but
+// should not be in the primary human nav surface.
+func TestHubSidebar_HidesSecondaryPages(t *testing.T) {
 	dir := t.TempDir()
 	repoRoot := filepath.Join(dir, "repo")
 	os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755)
@@ -887,6 +887,9 @@ func TestHubSidebar_HidesCoverageAndDigest(t *testing.T) {
 	}
 	if strings.Contains(string(idxBytes), `href="digest.html"`) {
 		t.Errorf("sidebar must not link to /digest.html")
+	}
+	if strings.Contains(string(idxBytes), `href="risks.html"`) {
+		t.Errorf("sidebar must not link to /risks.html")
 	}
 }
 

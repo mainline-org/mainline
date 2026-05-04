@@ -247,10 +247,11 @@ func init() {
 	// not at the top of the help.
 	lintCmd.GroupID = groupSetup.ID
 
-	// Risks and followups are daily tools: agents and humans inspect
-	// open items before editing, resolve them during seal, or triage manually.
-	risksCmd.GroupID = groupDaily.ID
-	followupsCmd.GroupID = groupDaily.ID
+	// Risks and followups are legacy/explicit signal tools. They remain
+	// available for existing catalogs and manual resolution, but they are
+	// not part of the default daily agent loop.
+	risksCmd.GroupID = groupAdvanced.ID
+	followupsCmd.GroupID = groupAdvanced.ID
 
 	// Eval is the agent-eval harness — meta-tooling, not part of the
 	// daily agent loop. Setup group keeps it visible without
