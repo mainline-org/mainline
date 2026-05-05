@@ -219,7 +219,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
   --mainline "go run ."
 
 # Output structure:
-docs_for_ai/eval-runs/<timestamp>/
+docs/eval-runs/<timestamp>/
   seed-1-replay/eval-run.json
   seed-2-replay/eval-run.json
   seed-3-replay/eval-run.json

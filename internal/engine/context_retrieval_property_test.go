@@ -16,8 +16,7 @@ import (
 
 // -----------------------------------------------------------
 // Property-based tests for the load-bearing context-retrieval
-// invariants declared in docs_for_ai/mainline-spec-v0.2.md §9
-// Step 2. Each test exercises one of the named Properties.
+// invariants. Each test exercises one of the named Properties.
 //
 // These supplement (do not replace) the example-based tests in
 // context_retrieval_test.go: examples pin the obvious cases for

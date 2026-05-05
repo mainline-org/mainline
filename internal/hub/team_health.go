@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Team-health computation per docs_for_ai/hub-team-health spec.
+// Team-health computation for the Hub dashboard.
 //
 // Pure: every input is data already on the HubModel; no I/O. Built
 // once in BuildHubModel and reused by both the JSON dump and the

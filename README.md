@@ -1001,7 +1001,6 @@ mainline/
 │   └── cli/                   # cobra commands; PersistentPreRun is the
 │                              #   auto-before-command sync wrapper
 ├── docs/                      # Eval reports and public-facing docs
-├── docs_for_ai/               # Historical specs and agent-facing notes
 └── .github/workflows/ci.yml
 ```
 

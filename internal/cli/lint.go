@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// `mainline lint` — Step 3 from docs_for_ai/mainline-spec-v0.2.md.
+// `mainline lint` — deterministic seal-quality checks.
 // Advisory deterministic checks against a sealed (or in-flight)
 // intent's quality. Does not block seal --submit; the spec reserves
 // hard enforcement for a future hook.
