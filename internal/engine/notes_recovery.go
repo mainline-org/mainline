@@ -119,9 +119,9 @@ func (s *Service) buildDoctorNotesReport(commitMapPath string, infer bool) (*Doc
 		unreachable = append(unreachable, entry)
 	}
 
-	// Status and preflight call this report on the hot path. Parse
-	// unreachable note blobs through one cat-file --batch process
-	// instead of forking `git notes show` once per stale entry.
+	// Doctor is the full live diagnosis surface. Parse unreachable note
+	// blobs through one cat-file --batch process instead of forking
+	// `git notes show` once per stale entry.
 	batch, batchErr := s.Git.OpenCatFileBatch()
 	if batchErr == nil {
 		defer batch.Close()
@@ -152,12 +152,12 @@ func (s *Service) buildDoctorNotesReport(commitMapPath string, infer bool) (*Doc
 		}
 	}
 
-	unreachableDominates := report.NotesTotal > 0 &&
-		report.UnreachableMainlineNotes*2 >= report.NotesTotal
-	report.LikelyHistoryRewrite = report.UnreachableMainlineNotes > 0 &&
-		(report.ProposedCount >= 20 ||
-			report.ReachableNotes == 0 ||
-			(report.UnreachableMainlineNotes >= 10 && unreachableDominates))
+	report.LikelyHistoryRewrite = likelyNotesHistoryRewrite(
+		report.NotesTotal,
+		report.ReachableNotes,
+		report.UnreachableMainlineNotes,
+		report.ProposedCount,
+	)
 	if report.LikelyHistoryRewrite {
 		report.RecommendedCommand = "mainline migrate notes --infer --dry-run"
 		report.NotesRewriteRecoveryAvailable = true
@@ -175,6 +175,14 @@ func (s *Service) buildDoctorNotesReport(commitMapPath string, infer bool) (*Doc
 	}
 
 	return report, nil
+}
+
+func likelyNotesHistoryRewrite(notesTotal, reachableNotes, unreachableMainlineNotes, proposedCount int) bool {
+	unreachableDominates := notesTotal > 0 && unreachableMainlineNotes*2 >= notesTotal
+	return unreachableMainlineNotes > 0 &&
+		(proposedCount >= 20 ||
+			reachableNotes == 0 ||
+			(unreachableMainlineNotes >= 10 && unreachableDominates))
 }
 
 func (s *Service) readNoteBlob(entry gitops.NoteEntry, batch *gitops.CatFileBatch) (string, error) {

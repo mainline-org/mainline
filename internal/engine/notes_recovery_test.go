@@ -96,7 +96,7 @@ func TestMigrateNotesInferMovesUnreachableNoteByTreeHash(t *testing.T) {
 	}
 }
 
-func TestStatusSurfacesLikelyNotesRewriteDrift(t *testing.T) {
+func TestSyncCachesLikelyNotesRewriteDriftForStatus(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 
@@ -132,6 +132,29 @@ func TestStatusSurfacesLikelyNotesRewriteDrift(t *testing.T) {
 	}
 	gitCmd(t, dir, "branch", "old-main", oldTip)
 	gitCmd(t, dir, "reset", "--hard", initial)
+
+	before, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status before sync: %v", err)
+	}
+	if before.NotesHealth != nil {
+		t.Fatalf("status should not live-scan notes before sync, got %#v", before.NotesHealth)
+	}
+
+	syncRes, err := svc.Sync()
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if syncRes.NotesHealth == nil || !syncRes.NotesHealth.LikelyHistoryRewrite {
+		t.Fatalf("sync should surface cached notes rewrite health, got %#v", syncRes.NotesHealth)
+	}
+	view, err := svc.Store.ReadMainlineView()
+	if err != nil {
+		t.Fatalf("read view: %v", err)
+	}
+	if view == nil || view.NotesHealth == nil || !view.NotesHealth.LikelyHistoryRewrite {
+		t.Fatalf("view should cache notes rewrite health, got %#v", view)
+	}
 
 	res, err := svc.Status()
 	if err != nil {

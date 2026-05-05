@@ -254,7 +254,7 @@ func TestStatus_ActionableItemsPrioritizeNotesRewriteDrift(t *testing.T) {
 	status := &StatusResult{
 		Initialized:        true,
 		IdentityConfigured: true,
-		NotesHealth: &StatusNotesHealth{
+		NotesHealth: &domain.NotesHealth{
 			LikelyHistoryRewrite:     true,
 			UnreachableMainlineNotes: 238,
 			RecommendedCommand:       "mainline doctor --notes --json",
@@ -284,7 +284,7 @@ func TestStatus_SuggestionsIncludeNotesDoctor(t *testing.T) {
 	status := &StatusResult{
 		Initialized:        true,
 		IdentityConfigured: true,
-		NotesHealth: &StatusNotesHealth{
+		NotesHealth: &domain.NotesHealth{
 			LikelyHistoryRewrite:     true,
 			UnreachableMainlineNotes: 10,
 		},

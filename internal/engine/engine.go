@@ -466,7 +466,7 @@ type StatusResult struct {
 	// NotesHealth surfaces likely git-notes drift caused by a history rewrite
 	// or force-push. It is read-only and only points at doctor/migrate
 	// commands; status must never repair shared notes refs implicitly.
-	NotesHealth *StatusNotesHealth `json:"notes_health,omitempty"`
+	NotesHealth *domain.NotesHealth `json:"notes_health,omitempty"`
 
 	// Suggestions are actionable next-step CLI commands derived
 	// from the rest of StatusResult. The CLI prints them as a
@@ -496,20 +496,6 @@ type StatusProposalHealth struct {
 	StaleAfterHours int `json:"stale_after_hours"`
 	SuspiciousCount int `json:"suspicious_count"`
 	OldestAgeHours  int `json:"oldest_age_hours,omitempty"`
-}
-
-type StatusNotesHealth struct {
-	NotesTotal               int  `json:"notes_total"`
-	ReachableNotes           int  `json:"reachable_notes"`
-	UnreachableMainlineNotes int  `json:"unreachable_mainline_notes"`
-	ProposedCount            int  `json:"proposed_count,omitempty"`
-	SuspiciousProposedCount  int  `json:"suspicious_proposed_count,omitempty"`
-	LikelyHistoryRewrite     bool `json:"likely_history_rewrite"`
-
-	// RecommendedCommand deliberately points at the read-only doctor
-	// surface. migrate notes remains a second step after the plan is
-	// visible and the user has confirmed any writes.
-	RecommendedCommand string `json:"recommended_command,omitempty"`
 }
 
 // StatusRecentIntent is the per-intent summary in the "Recent sealed
@@ -596,6 +582,7 @@ func (s *Service) Status() (*StatusResult, error) {
 	} else {
 		if view, _ := s.Store.ReadMainlineView(); view != nil {
 			result.MainHead = view.MainHead
+			result.NotesHealth = statusNotesHealthFromCached(view.NotesHealth)
 		}
 		// Never synced — treat as stale so the CLI can prompt.
 		result.SyncStale = true
@@ -607,6 +594,9 @@ func (s *Service) Status() (*StatusResult, error) {
 	// nice-to-have, not load-bearing for status.
 	view, _ := s.Store.ReadMainlineView()
 	if view != nil {
+		if view.NotesHealth != nil {
+			result.NotesHealth = statusNotesHealthFromCached(view.NotesHealth)
+		}
 		cfg, _ := s.getTeamConfig()
 		if cfg != nil {
 			window := CoverageWindowSize
@@ -643,28 +633,51 @@ func (s *Service) Status() (*StatusResult, error) {
 	result.UnsealedDrafts = s.collectUnsealedDrafts(branch, view)
 	result.RecentSealed = collectRecentSealed(view, statusRecentSealedLimit)
 	result.ProposalHealth = collectStatusProposalHealth(view, DefaultStaleProposedAfter)
-	if report, err := s.buildDoctorNotesReport("", false); err == nil {
-		result.NotesHealth = statusNotesHealthFromDoctorReport(report)
-	}
 	result.Suggestions = buildStatusSuggestions(result)
 	result.ActionableItems = buildStatusActionItems(result)
 
 	return result, nil
 }
 
-func statusNotesHealthFromDoctorReport(report *DoctorNotesReport) *StatusNotesHealth {
-	if report == nil || !report.LikelyHistoryRewrite {
+func statusNotesHealthFromCached(health *domain.NotesHealth) *domain.NotesHealth {
+	if health == nil || !health.LikelyHistoryRewrite {
 		return nil
 	}
-	return &StatusNotesHealth{
-		NotesTotal:               report.NotesTotal,
-		ReachableNotes:           report.ReachableNotes,
-		UnreachableMainlineNotes: report.UnreachableMainlineNotes,
-		ProposedCount:            report.ProposedCount,
-		SuspiciousProposedCount:  report.SuspiciousProposedCount,
-		LikelyHistoryRewrite:     true,
-		RecommendedCommand:       "mainline doctor --notes --json",
+	out := *health
+	out.LikelyHistoryRewrite = true
+	out.RecommendedCommand = "mainline doctor --notes --json"
+	return &out
+}
+
+func finalizeCachedNotesHealth(health *domain.NotesHealth, view *domain.MainlineView) *domain.NotesHealth {
+	if health == nil {
+		return nil
 	}
+	health.CheckedAt = core.Now()
+	health.ProposedCount = 0
+	if view != nil {
+		for _, iv := range view.Intents {
+			if iv.Status == domain.StatusProposed {
+				health.ProposedCount++
+			}
+		}
+		if proposal := collectStatusProposalHealth(view, DefaultStaleProposedAfter); proposal != nil {
+			health.SuspiciousProposedCount = proposal.SuspiciousCount
+		}
+	}
+	health.LikelyHistoryRewrite = likelyNotesHistoryRewrite(
+		health.NotesTotal,
+		health.ReachableNotes,
+		health.UnreachableMainlineNotes,
+		health.ProposedCount,
+	)
+	if health.LikelyHistoryRewrite {
+		// Cached status should send callers to the read-only diagnosis first.
+		health.RecommendedCommand = "mainline doctor --notes --json"
+	} else {
+		health.RecommendedCommand = ""
+	}
+	return health
 }
 
 func collectStatusProposalHealth(view *domain.MainlineView, staleAfter time.Duration) *StatusProposalHealth {

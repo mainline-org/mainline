@@ -24,6 +24,7 @@ type SyncResult struct {
 	MainHead      string                `json:"main_head"`
 	NewSealedSeen int                   `json:"new_sealed_seen,omitempty"`
 	NewConflicts  []domain.ConflictPair `json:"new_conflicts,omitempty"`
+	NotesHealth   *domain.NotesHealth   `json:"notes_health,omitempty"`
 	// AutoPinned lists the (intent, commit, strategy) triples
 	// produced by the v0.2 auto-pin step. Empty when nothing matched
 	// or AutoPinAfterSync is disabled.
@@ -138,6 +139,9 @@ func (s *Service) Sync() (*SyncResult, error) {
 		MainHead:      view.MainHead,
 		NewSealedSeen: newSealedSeen,
 		AutoPinned:    autoPinned,
+	}
+	if view.NotesHealth != nil && view.NotesHealth.LikelyHistoryRewrite {
+		result.NotesHealth = view.NotesHealth
 	}
 
 	if cfg.Sync.AutoCheckAfterSync {
@@ -442,11 +446,12 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 	}
 
 	// Scan main branch notes for merge evidence (rc3: notes replace trailers)
-	s.scanMainNotes(mainRef, intentMap)
+	view.NotesHealth = s.scanMainNotes(mainRef, intentMap)
 
 	for _, iv := range intentMap {
 		view.Intents = append(view.Intents, *iv)
 	}
+	view.NotesHealth = finalizeCachedNotesHealth(view.NotesHealth, view)
 
 	// v0.4 risk lifecycle: persist risk resolutions on the view.
 	if len(constraints) > 0 {
@@ -590,18 +595,19 @@ type notedCommitData struct {
 	raw   string
 }
 
-func (s *Service) scanMainNotes(mainRef string, intentMap map[string]*domain.IntentView) {
+func (s *Service) scanMainNotes(mainRef string, intentMap map[string]*domain.IntentView) *domain.NotesHealth {
 	notes, err := s.Git.NotesListEntries()
 	if err != nil || len(notes) == 0 {
-		return
+		return nil
 	}
+	health := &domain.NotesHealth{NotesTotal: len(notes)}
 
 	// O(1) reachability and chronological replay order via a single
 	// rev-list of main, replacing N `merge-base --is-ancestor` forks.
 	// For a 50k-commit main this is ~150ms and constant in note count.
 	mainCommits, err := s.Git.RevList(mainRef)
 	if err != nil {
-		return
+		return health
 	}
 	reachable := make(map[string]bool, len(mainCommits))
 	mainOrder := make(map[string]int, len(mainCommits))
@@ -616,7 +622,14 @@ func (s *Service) scanMainNotes(mainRef string, intentMap map[string]*domain.Int
 	// list`), so git does no per-commit path resolution.
 	batch, err := s.Git.OpenCatFileBatch()
 	if err != nil {
-		return
+		for _, n := range notes {
+			if reachable[n.CommitHash] {
+				health.ReachableNotes++
+			} else {
+				health.UnreachableNotes++
+			}
+		}
+		return health
 	}
 	defer batch.Close()
 
@@ -628,8 +641,25 @@ func (s *Service) scanMainNotes(mainRef string, intentMap map[string]*domain.Int
 	commitsForDates := make([]string, 0, len(notes))
 	for _, n := range notes {
 		if !reachable[n.CommitHash] {
+			health.UnreachableNotes++
+			body, err := batch.Read(n.NoteBlob)
+			if err != nil || body == nil {
+				continue
+			}
+			raw := strings.TrimSpace(string(body))
+			note, ok := parseMainlineCommitNote(raw)
+			if !ok {
+				if raw != "" {
+					health.InvalidMainlineNotes++
+				}
+				continue
+			}
+			if len(note.Intents) > 0 || len(note.Reverts) > 0 {
+				health.UnreachableMainlineNotes++
+			}
 			continue
 		}
+		health.ReachableNotes++
 		body, err := batch.Read(n.NoteBlob)
 		if err != nil || body == nil {
 			continue
@@ -642,7 +672,7 @@ func (s *Service) scanMainNotes(mainRef string, intentMap map[string]*domain.Int
 		commitsForDates = append(commitsForDates, n.CommitHash)
 	}
 	if len(pending) == 0 {
-		return
+		return health
 	}
 
 	// One `log --no-walk` invocation for every date.
@@ -712,6 +742,7 @@ func (s *Service) scanMainNotes(mainRef string, intentMap map[string]*domain.Int
 			}
 		}
 	}
+	return health
 }
 
 // extractAgainstIntents pulls the unique mainline intent ids out of a

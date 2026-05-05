@@ -67,6 +67,7 @@ type MainlineView struct {
 	MainBranch    string       `json:"main_branch"`
 	MainHead      string       `json:"main_head"`
 	Intents       []IntentView `json:"intents"`
+	NotesHealth   *NotesHealth `json:"notes_health,omitempty"`
 
 	// ExplicitSignals are long-lived action signals created through
 	// dedicated commands or human promotion, not through the default

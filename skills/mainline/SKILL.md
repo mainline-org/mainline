@@ -140,6 +140,25 @@ context surface just to be safe. If it returns `warn` or `block`, read the
 targeted follow-up commands it points to (`show`, `trace`, `context
 --files/--query`, or `check`).
 
+`notes_health.likely_history_rewrite` on `status` or `preflight` is cached by
+the most recent sync, not recomputed on every hot-path command. If the user
+mentions a recent force-push, rebase, filter-repo rewrite, author rewrite,
+contributors cleanup, remote rollback, or suddenly wrong proposed / coverage
+state, run the read-only diagnosis even if the cached warning is absent:
+
+```bash
+mainline doctor --notes --json
+```
+
+If doctor recommends migration, preview first:
+
+```bash
+mainline migrate notes --infer --dry-run --json
+```
+
+Do not run `mainline migrate notes --write` or `--push` unless the user
+explicitly confirms the plan; `--push` changes the shared notes ref.
+
 If the installed binary is older and lacks `preflight`, fall back to:
 
 ```bash

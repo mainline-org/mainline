@@ -36,7 +36,7 @@ func TestPreflightWarnsOnNotesRewriteDrift(t *testing.T) {
 		status: &StatusResult{
 			Initialized:        true,
 			IdentityConfigured: true,
-			NotesHealth: &StatusNotesHealth{
+			NotesHealth: &domain.NotesHealth{
 				LikelyHistoryRewrite:     true,
 				UnreachableMainlineNotes: 42,
 			},

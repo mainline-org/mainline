@@ -67,12 +67,13 @@ when possible — it becomes the headline in `mainline log`):
 mainline start "<short description of the user's goal>" --json
 ```
 
-If `mainline status --json` includes
-`notes_health.likely_history_rewrite: true`, or the user mentions a
-recent force-push, rebase, filter-repo rewrite, author rewrite,
-contributors cleanup, remote rollback, or suddenly wrong proposed /
-coverage state, run the read-only notes diagnosis before trusting
-those queues:
+If `mainline status --json` or `mainline preflight --json` includes
+`notes_health.likely_history_rewrite: true`, run the read-only notes
+diagnosis before trusting proposed / coverage / context queues. That
+health is cached by sync; if the user mentions a recent force-push,
+rebase, filter-repo rewrite, author rewrite, contributors cleanup,
+remote rollback, or suddenly wrong proposed / coverage state, run the
+same diagnosis even when the cached warning is absent:
 
 ```
 mainline doctor --notes --json
