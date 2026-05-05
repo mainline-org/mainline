@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/mainline-org/mainline/internal/domain"
@@ -92,5 +93,57 @@ func TestMigrateNotesInferMovesUnreachableNoteByTreeHash(t *testing.T) {
 	}
 	if len(migrated.Intents) != 1 || migrated.Intents[0].IntentID != "int_rewrite" {
 		t.Fatalf("unexpected migrated note: %#v", migrated)
+	}
+}
+
+func TestStatusSurfacesLikelyNotesRewriteDrift(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	initial := svc.Git.ReadRef("refs/heads/main")
+
+	note := domain.CommitNote{
+		SchemaVersion: 1,
+		Kind:          "mainline.commit_note",
+		Intents: []domain.IntentReference{
+			{IntentID: "int_rewrite", SealResultHash: "sha256:test"},
+		},
+		AddedAt:       "2026-05-05T00:00:00Z",
+		AddedBy:       "actor_test",
+		Via:           "pin_auto",
+		MatchStrategy: "tree_hash",
+	}
+	noteJSON, _ := json.Marshal(note)
+
+	var oldTip string
+	for i := 0; i < 10; i++ {
+		writeFile(t, dir, "feature.txt", fmt.Sprintf("rewrite %d\n", i))
+		gitCmd(t, dir, "add", "feature.txt")
+		gitCmd(t, dir, "commit", "-m", fmt.Sprintf("old feature %d", i))
+		oldCommit := svc.Git.ReadRef("refs/heads/main")
+		oldTip = oldCommit
+		if err := svc.Git.NotesAdd(oldCommit, string(noteJSON)); err != nil {
+			t.Fatalf("add old note %d: %v", i, err)
+		}
+	}
+	gitCmd(t, dir, "branch", "old-main", oldTip)
+	gitCmd(t, dir, "reset", "--hard", initial)
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if res.NotesHealth == nil || !res.NotesHealth.LikelyHistoryRewrite {
+		t.Fatalf("expected notes rewrite health, got %#v", res.NotesHealth)
+	}
+	if res.NotesHealth.RecommendedCommand != "mainline doctor --notes --json" {
+		t.Fatalf("status should recommend read-only doctor, got %#v", res.NotesHealth)
+	}
+	if len(res.ActionableItems) == 0 || res.ActionableItems[0].Kind != "notes_rewrite" {
+		t.Fatalf("status should make notes rewrite an actionable item, got %#v", res.ActionableItems)
 	}
 }

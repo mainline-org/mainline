@@ -78,6 +78,11 @@ var statusCmd = &cobra.Command{
 					result.ProposalHealth.StaleAfterHours,
 					formatElapsed(int64(result.ProposalHealth.OldestAgeHours)*3600))
 			}
+			if result.NotesHealth != nil && result.NotesHealth.LikelyHistoryRewrite {
+				fmt.Printf("Notes:     possible rewrite drift (%d unreachable mainline notes)\n",
+					result.NotesHealth.UnreachableMainlineNotes)
+				fmt.Println("           run `mainline doctor --notes --json` before trusting proposal or coverage state")
+			}
 			if result.LastSync == nil {
 				fmt.Println("Sync:      never synced — run 'mainline sync' to see team activity")
 			} else {

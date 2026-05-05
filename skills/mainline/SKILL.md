@@ -149,6 +149,32 @@ mainline status --json
 Then run `mainline list-proposals --json` and targeted `mainline context
 --files ... --json` only when status or the task suggests overlap risk.
 
+## History Rewrite And Notes Recovery
+
+If `mainline preflight --json` reports a `notes_rewrite_drift` finding, or
+`mainline status --json` includes `notes_health.likely_history_rewrite: true`,
+run the read-only diagnosis first:
+
+```bash
+mainline doctor --notes --json
+```
+
+Also run `mainline doctor --notes --json` when the user mentions a recent
+force-push, rebase, filter-repo rewrite, author rewrite, contributors cleanup,
+remote rollback, or a sudden spike in proposed intents / uncovered commits
+after history changed.
+
+If doctor recommends a migration, preview only:
+
+```bash
+mainline migrate notes --infer --dry-run --json
+```
+
+Show the safe / review-required / unresolved counts to the user before any
+write. Do not run `mainline migrate notes --write` or `--push` unless the user
+explicitly confirms the plan. `--push` changes the shared notes ref and must be
+treated like a high-impact Git operation.
+
 If there is no active intent and the task will make non-trivial changes, start
 one using the user's actual goal:
 

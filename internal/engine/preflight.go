@@ -16,6 +16,7 @@ const (
 	PreflightFindingNotInitialized         = "not_initialized"
 	PreflightFindingIdentityMissing        = "identity_missing"
 	PreflightFindingSyncStale              = "sync_stale"
+	PreflightFindingNotesRewriteDrift      = "notes_rewrite_drift"
 	PreflightFindingBranchDrift            = "branch_drift"
 	PreflightFindingActiveBaseBehind       = "active_intent_base_behind"
 	PreflightFindingDirtyWithoutCommitDiff = "dirty_without_commit_diff"
@@ -66,6 +67,9 @@ type PreflightFacts struct {
 	CurrentFiles    []string `json:"current_files,omitempty"`
 	CommitDiffFiles []string `json:"commit_diff_files,omitempty"`
 	ProposedCount   int      `json:"proposed_count,omitempty"`
+
+	NotesRewriteDrift        bool `json:"notes_rewrite_drift,omitempty"`
+	UnreachableMainlineNotes int  `json:"unreachable_mainline_notes,omitempty"`
 }
 
 type PreflightFinding struct {
@@ -186,6 +190,10 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 		res.Facts.MainHead = in.status.MainHead
 		res.Facts.SyncStale = in.status.SyncStale
 		res.Facts.ProposedCount = in.status.ProposedCount
+		if in.status.NotesHealth != nil && in.status.NotesHealth.LikelyHistoryRewrite {
+			res.Facts.NotesRewriteDrift = true
+			res.Facts.UnreachableMainlineNotes = in.status.NotesHealth.UnreachableMainlineNotes
+		}
 		if in.status.ActiveIntent != nil {
 			res.Facts.ActiveIntentID = in.status.ActiveIntent.IntentID
 			res.Facts.ActiveBase = in.status.ActiveIntent.BaseCommit
@@ -218,6 +226,10 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 	if in.status != nil && in.status.SyncStale {
 		addFinding(PreflightFindingSyncStale, PreflightLevelWarn,
 			"Team view is stale; refresh before trusting collaboration state.", nil)
+	}
+	if in.status != nil && in.status.NotesHealth != nil && in.status.NotesHealth.LikelyHistoryRewrite {
+		addFinding(PreflightFindingNotesRewriteDrift, PreflightLevelWarn,
+			"Mainline notes look detached from main after a history rewrite or force-push; inspect before trusting proposal or coverage state.", nil)
 	}
 	if in.status != nil && len(in.upstreamCommits) > 0 {
 		addFinding(PreflightFindingBranchDrift, PreflightLevelWarn,
@@ -394,6 +406,8 @@ func preflightRecommendations(res *PreflightResult) []string {
 			add("mainline init --actor-name \"<your name>\"")
 		case PreflightFindingSyncStale:
 			add("mainline sync")
+		case PreflightFindingNotesRewriteDrift:
+			add("mainline doctor --notes --json")
 		case PreflightFindingBranchDrift, PreflightFindingActiveBaseBehind:
 			add("review synced main changes; rebase or merge if they affect this work")
 		case PreflightFindingDirtyWithoutCommitDiff:

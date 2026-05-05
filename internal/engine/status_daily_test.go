@@ -250,6 +250,53 @@ func TestStatus_ActionableItemsBuildsTopInboxWithoutSignalNoise(t *testing.T) {
 	}
 }
 
+func TestStatus_ActionableItemsPrioritizeNotesRewriteDrift(t *testing.T) {
+	status := &StatusResult{
+		Initialized:        true,
+		IdentityConfigured: true,
+		NotesHealth: &StatusNotesHealth{
+			LikelyHistoryRewrite:     true,
+			UnreachableMainlineNotes: 238,
+			RecommendedCommand:       "mainline doctor --notes --json",
+		},
+		Coverage: &StatusCoverageSummary{
+			UncoveredCount: 3,
+		},
+		ProposalHealth: &StatusProposalHealth{
+			StaleAfterHours: 72,
+			SuspiciousCount: 1,
+		},
+	}
+
+	items := buildStatusActionItems(status)
+	if len(items) < 3 {
+		t.Fatalf("expected notes, coverage, and proposal actions, got %#v", items)
+	}
+	if items[0].Kind != "notes_rewrite" {
+		t.Fatalf("notes rewrite drift should be first because it can invalidate derived queues, got %#v", items)
+	}
+	if items[0].RecommendedCommand != "mainline doctor --notes --json" {
+		t.Fatalf("notes action should point at read-only doctor, got %#v", items[0])
+	}
+}
+
+func TestStatus_SuggestionsIncludeNotesDoctor(t *testing.T) {
+	status := &StatusResult{
+		Initialized:        true,
+		IdentityConfigured: true,
+		NotesHealth: &StatusNotesHealth{
+			LikelyHistoryRewrite:     true,
+			UnreachableMainlineNotes: 10,
+		},
+	}
+
+	suggestions := buildStatusSuggestions(status)
+	joined := strings.Join(suggestions, "\n")
+	if !strings.Contains(joined, "mainline doctor --notes --json") {
+		t.Fatalf("expected notes doctor suggestion, got %v", suggestions)
+	}
+}
+
 func TestStatus_ActionableItemsKeepSetupExclusive(t *testing.T) {
 	items := buildStatusActionItems(&StatusResult{Initialized: false})
 	if len(items) != 1 {

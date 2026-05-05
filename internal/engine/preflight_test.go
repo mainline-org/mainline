@@ -31,6 +31,35 @@ func TestPreflightCleanRepoNoActiveIntentIsOK(t *testing.T) {
 	}
 }
 
+func TestPreflightWarnsOnNotesRewriteDrift(t *testing.T) {
+	res := buildPreflightResult(preflightInput{
+		status: &StatusResult{
+			Initialized:        true,
+			IdentityConfigured: true,
+			NotesHealth: &StatusNotesHealth{
+				LikelyHistoryRewrite:     true,
+				UnreachableMainlineNotes: 42,
+			},
+		},
+	})
+
+	if res.Level != PreflightLevelWarn || !res.OKToContinue {
+		t.Fatalf("notes drift should be a warning, got %+v", res)
+	}
+	if !hasPreflightFinding(res, PreflightFindingNotesRewriteDrift) {
+		t.Fatalf("expected notes rewrite finding, got %+v", res.Findings)
+	}
+	found := false
+	for _, next := range res.RecommendedNext {
+		if next == "mainline doctor --notes --json" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected notes doctor recommendation, got %+v", res.RecommendedNext)
+	}
+}
+
 func TestPreflightBlocksDirtyFileOverlapWithProposedIntent(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()

@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 20 -->
+<!-- mainline-agents-md-version: 21 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -66,6 +66,28 @@ when possible — it becomes the headline in `mainline log`):
 ```
 mainline start "<short description of the user's goal>" --json
 ```
+
+If `mainline status --json` includes
+`notes_health.likely_history_rewrite: true`, or the user mentions a
+recent force-push, rebase, filter-repo rewrite, author rewrite,
+contributors cleanup, remote rollback, or suddenly wrong proposed /
+coverage state, run the read-only notes diagnosis before trusting
+those queues:
+
+```
+mainline doctor --notes --json
+```
+
+If doctor recommends migration, run only the preview first:
+
+```
+mainline migrate notes --infer --dry-run --json
+```
+
+Show the safe / review-required / unresolved counts to the user.
+Do not run `mainline migrate notes --write` or `--push` unless the
+user explicitly confirms the plan; `--push` changes the shared notes
+ref and is a high-impact Git operation.
 
 ### Intent-first workflow (the load-bearing rule)
 
