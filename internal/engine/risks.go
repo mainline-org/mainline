@@ -12,7 +12,7 @@ import (
 // Risk lifecycle engine
 // -----------------------------------------------------------
 //
-// Risks are explicit review warnings written through `mainline risk add`.
+// Risks are explicit review warnings written through `mainline risks add`.
 // Older seal-summary risk strings remain readable for audit/diagnostics,
 // but they do not enter active queues.
 // Before v0.4 they were write-once: no IDs, no resolution, no

@@ -35,7 +35,7 @@ names, and file paths stay in their original form.
 
 Seal records decisions by default. Do not add `summary.risks`,
 `summary.followups`, or `summary.anti_patterns` to a seal payload.
-Use explicit `mainline risk add`, `mainline followup add`, or
+Use explicit `mainline risks add`, `mainline followups add`, or
 interactive human-confirmed `mainline guard add` for durable signals.
 
 ### If `mainline hooks` is installed for your agent

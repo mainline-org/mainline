@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// `mainline risks` — list and manage risks across the sealed catalog.
+// `mainline risks` — add, list, and resolve explicit risks.
 
 var (
 	risksFileFilter string
@@ -16,11 +16,11 @@ var (
 
 var risksCmd = &cobra.Command{
 	Use:   "risks",
-	Short: "List open explicit risks",
+	Short: "Manage explicit risks",
 	Long: `List risks with lifecycle status.
 
 By default shows only open risks. Use --all to include resolved and expired.
-Risks are created with "mainline risk add".
+Risks are created with "mainline risks add".
 
 Risk lifecycle:
   open      — no resolution event; source intent is active

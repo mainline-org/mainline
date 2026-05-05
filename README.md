@@ -518,8 +518,8 @@ A sealed Mainline intent contains:
 Durable action signals live outside the default seal path:
 
 - `mainline guard add` — interactive human-confirmed constraints future agents must obey.
-- `mainline risk add` — structured reviewer-facing failure modes with trigger/impact and mitigation/validation/owner.
-- `mainline followup add` — explicit deferred work with user/reference/cut-scope provenance.
+- `mainline risks add` — structured reviewer-facing failure modes with trigger/impact and mitigation/validation/owner.
+- `mainline followups add` — explicit deferred work with user/reference/cut-scope provenance.
 
 Mainline does not try to preserve every token of an AI session.
 It preserves the durable decision record future agents and reviewers need.
@@ -661,8 +661,8 @@ Reviewer and maintainer extras:
 | `mainline trace <id>` | Turn timeline (start/append/seal/abandon/supersede with elapsed time) |
 | `mainline lint [<id>]` | Advisory seal-quality checks (boilerplate, missing decisions, broken refs). Never blocks. |
 | `mainline guard add` | Interactively add a human-promoted constraint |
-| `mainline risk add` | Add a structured explicit risk |
-| `mainline followup add` | Add an explicit deferred work item |
+| `mainline risks add` | Add a structured explicit risk |
+| `mainline followups add` | Add an explicit deferred work item |
 | `mainline risks` | List open risks; `mainline risks resolve <id>` closes one manually |
 | `mainline followups` | List open follow-ups; `mainline followups resolve <id>` marks one completed manually |
 | `mainline check --prepare` | Phase 2 task package; auto-syncs first |

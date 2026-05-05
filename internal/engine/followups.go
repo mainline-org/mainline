@@ -15,7 +15,7 @@ import (
 // -----------------------------------------------------------
 //
 // Follow-ups are explicit future-work items written through
-// `mainline followup add`. Older seal-summary follow-up strings remain
+// `mainline followups add`. Older seal-summary follow-up strings remain
 // readable for audit/diagnostics, but they do not enter active queues.
 
 var followupIDPattern = regexp.MustCompile(`^int_[0-9a-f]+#\d+$`)

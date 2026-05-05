@@ -237,8 +237,8 @@ Default seal contract:
   summary.risks, summary.followups, or summary.anti_patterns.
 - If a human explicitly promotes a signal, create it outside seal:
   mainline guard add   (human-confirmed constraints)
-  mainline risk add    (structured reviewer-facing failure modes)
-  mainline followup add (explicitly deferred work with provenance)
+  mainline risks add   (structured reviewer-facing failure modes)
+  mainline followups add (explicitly deferred work with provenance)
 
 Required structure:
 1. summary: title, what, why, user_goal, decisions, rejected alternatives, review_notes
@@ -250,8 +250,8 @@ Field decision tree:
 - "We chose X because Y" or "we shipped with limitation X" -> decisions
 - "We considered B but ruled it out" -> rejected
 - "Reviewer should focus on Z", validation notes, or scope explanation -> review_notes
-- "This may fail when X" -> do not put it in seal; use mainline risk add only when it meets the explicit risk rules.
-- "Do X later" -> do not put it in seal; use mainline followup add only when the user/reference/cut-scope provenance exists.
+- "This may fail when X" -> do not put it in seal; use mainline risks add only when it meets the explicit risk rules.
+- "Do X later" -> do not put it in seal; use mainline followups add only when the user/reference/cut-scope provenance exists.
 - "Future work MUST NOT do X" -> do not put it in seal; a human must run mainline guard add.
 
 Return ONLY valid JSON matching the SealResult schema.`
@@ -331,7 +331,7 @@ func validateSealActionSignalContract(sr *domain.SealResult) error {
 		domain.ErrSealFailed,
 		fmt.Sprintf("seal cannot create durable action signals: %s", strings.Join(fields, ", ")),
 		"use review_notes for ephemeral reviewer context",
-		"use `mainline risk add`, `mainline followup add`, or human-confirmed `mainline guard add` for promoted signals",
+		"use `mainline risks add`, `mainline followups add`, or human-confirmed `mainline guard add` for promoted signals",
 	)
 }
 

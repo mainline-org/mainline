@@ -14,11 +14,11 @@ var (
 
 var followupsCmd = &cobra.Command{
 	Use:   "followups",
-	Short: "List open explicit follow-ups",
+	Short: "Manage explicit follow-ups",
 	Long: `List follow-ups with lifecycle status.
 
 By default shows only open follow-ups. Use --all to include resolved and expired.
-Follow-ups are created with "mainline followup add".
+Follow-ups are created with "mainline followups add".
 
 Follow-up lifecycle:
   open      - no resolution event; source intent is active
