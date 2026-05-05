@@ -3,7 +3,7 @@
 [![CI](https://github.com/mainline-org/mainline/actions/workflows/ci.yml/badge.svg)](https://github.com/mainline-org/mainline/actions/workflows/ci.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![PBT](https://img.shields.io/badge/PBT-property--based%20testing-blueviolet)](#property-based-testing)
-[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/License-PolyForm%20Shield%201.0.0-blue.svg)](./LICENSE)
+[![License: layered](https://img.shields.io/badge/License-Apache--2.0%20%2F%20CC--BY--4.0%20%2F%20Commercial-blue.svg)](#license)
 
 - Website: https://mainline.sh
 - Docs: https://mainline.sh/docs/
@@ -18,11 +18,13 @@ is* before they edit it.
 
 **Status:** public alpha. The core CLI, hooks, Hub, and release packaging are
 usable, but schemas and workflow guidance may still change while we harden the
-source-available public experience.
+public developer experience.
 
-**License:** source-available under PolyForm Shield 1.0.0. Mainline is not
-currently OSI-approved open source. Competing products or services require a
-commercial license available only from the Mainline copyright holder.
+**License model:** Mainline is moving to a layered licensing structure:
+Apache-2.0 for the CLI core, agent integrations, and SDK/library surfaces;
+CC-BY-4.0 or Apache-2.0 for specs, docs, and examples; reserved trademarks for
+the Mainline name and brand; commercial terms for hosted cloud; and closed
+hosted telemetry and index infrastructure.
 
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
@@ -1032,15 +1034,21 @@ part of the working product; remaining v0.4 work is public-launch polish.
 
 ## License
 
-Mainline is source-available under [PolyForm Shield License 1.0.0](./LICENSE).
-This is not currently an OSI-approved open-source license.
+Mainline is moving to a layered licensing model. The goal is to make the local
+developer and agent surfaces easy to adopt while keeping hosted-service
+infrastructure and brand rights protected.
 
-You may use, study, modify, and distribute Mainline for permitted
-non-competing purposes under PolyForm Shield 1.0.0. Competing products or
-services require a separate commercial license available only from the Mainline
-copyright holder.
+| Area | Recommended terms | Purpose |
+|---|---|---|
+| CLI core | Apache-2.0 | Enterprise-friendly, platform-friendly adoption. |
+| Agent skill, hooks, and adapters | Apache-2.0 | Let coding agents, IDEs, and automation platforms integrate Mainline freely. |
+| SDKs and libraries | Apache-2.0 | Maximize ecosystem adoption and implementation reuse. |
+| Intent Record Spec | CC-BY-4.0 or Apache-2.0 | Allow citation, implementation, redistribution, and compatible independent implementations. |
+| Docs and examples | CC-BY-4.0 or Apache-2.0 | Encourage copying, teaching, quoting, and propagation. |
+| Logo, name, and brand | Trademark reserved | Prevent another project or service from presenting itself as the official Mainline. |
+| Hosted cloud | Commercial terms | Keep the hosted product and managed service as the commercial surface. |
+| Telemetry and hosted index infrastructure | Not open source | Preserve the hosted service's future infrastructure advantage. |
 
-The copyright holder retains commercial licensing rights. Once user needs and
-the commercial model are clearer, parts of the CLI core may move to an
-OSI-approved license such as AGPL or Apache; Hub, hosted, and enterprise
-features may remain commercial.
+The open local surfaces should be easy for enterprises, agent vendors, and
+developer platforms to embed. The hosted surfaces remain separate commercial
+products.

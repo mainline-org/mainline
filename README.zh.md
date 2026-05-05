@@ -3,7 +3,7 @@
 [![CI](https://github.com/mainline-org/mainline/actions/workflows/ci.yml/badge.svg)](https://github.com/mainline-org/mainline/actions/workflows/ci.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![PBT](https://img.shields.io/badge/PBT-property--based%20testing-blueviolet)](#property-based-testing)
-[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/License-PolyForm%20Shield%201.0.0-blue.svg)](./LICENSE)
+[![License: layered](https://img.shields.io/badge/License-Apache--2.0%20%2F%20CC--BY--4.0%20%2F%20Commercial-blue.svg)](#授权结构)
 
 - 官网：https://mainline.sh
 - 文档：https://mainline.sh/docs/
@@ -16,14 +16,13 @@ Mainline 不是 Git 替代品、PR 系统或 session recorder。它是一个
 Git-native memory layer：在 agent 改代码前，先告诉它代码为什么是现在这样。
 
 **状态：public alpha。** 核心 CLI、hooks、Hub 和 release packaging 已可用，
-但 schema 和 workflow guidance 仍可能随着 source-available 公开体验打磨而调整。
+但 schema 和 workflow guidance 仍可能随着公开开发者体验打磨而调整。
 
-**License：** Mainline 采用 PolyForm Shield 1.0.0 的 source-available 授权。
-它当前不是 OSI-approved open source。竞争性产品或服务需要向 Mainline
-copyright holder 获取单独商业授权；商业授权只由 Mainline copyright holder
-提供。后续等用户需求和商业模式更清楚后，CLI core 的一部分可能迁到
-AGPL、Apache 或其他 OSI-approved license；Hub、hosted 和 enterprise
-features 可能保持商业化。
+**License model：** Mainline 正在迁到分层授权结构：CLI core、agent skill /
+hooks / adapters、SDK / libraries 走 Apache-2.0；Intent Record Spec、docs
+和 examples 走 CC-BY-4.0 或 Apache-2.0；logo、name 和 brand 保留商标权；
+hosted cloud 走商业条款；telemetry 和 hosted index infrastructure 不开源，
+作为 hosted service 的长期基础设施优势。
 
 Mainline 让 coding agent 在理解当前代码之前，先理解历史上的 *why*。
 
@@ -559,6 +558,27 @@ mainline eval agent --runner ./scripts/eval-runner-copilot.py \
 
 完整方法论、live 结果和限制条件 →
 [docs/eval-results.zh.md](./docs/eval-results.zh.md)
+
+---
+
+## 授权结构
+
+Mainline 的授权目标是：本地开发者和 agent 集成面尽量开放，方便企业、
+平台和各类 coding agent 采用；hosted service、商标和品牌边界保持可控。
+
+| 部分 | 推荐条款 | 目的 |
+|---|---|---|
+| CLI core | Apache-2.0 | 企业友好、平台友好，降低采用门槛。 |
+| Agent skill / hooks / adapters | Apache-2.0 | 方便各类 agent、IDE 和自动化平台集成 Mainline。 |
+| SDK / libraries | Apache-2.0 | 最大化生态采用和实现复用。 |
+| Intent Record Spec | CC-BY-4.0 或 Apache-2.0 | 允许引用、实现、传播，并支持兼容的独立实现。 |
+| Docs / examples | CC-BY-4.0 或 Apache-2.0 | 鼓励复制、教学、引用和传播。 |
+| Logo / name / brand | 保留商标权 | 防止其他项目或服务把自己包装成官方 Mainline。 |
+| Hosted cloud | 商业条款 | 作为托管产品和 managed service 的商业化入口。 |
+| Telemetry / hosted index infrastructure | 不开源 | 保留 hosted service 未来的基础设施壁垒。 |
+
+本地开放面应该足够宽，方便企业、agent vendor 和 developer platform 嵌入。
+托管服务、telemetry 和 hosted index 则作为单独的商业产品边界。
 
 ---
 
