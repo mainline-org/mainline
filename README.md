@@ -284,7 +284,7 @@ writable PATH directory among `/usr/local/bin`, `/opt/homebrew/bin`, and
 Pin a version or choose an install directory with environment variables:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_VERSION=v0.4.0 bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_VERSION=v0.4.2 bash
 curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_INSTALL_DIR="$HOME/.local/bin" bash
 ```
 

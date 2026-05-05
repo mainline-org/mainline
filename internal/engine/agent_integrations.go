@@ -60,7 +60,7 @@ func (s *Service) installDefaultSkill() SkillInstallResult {
 		source = "./skills/mainline"
 	}
 
-	res.Command = []string{"npx", "--yes", "skills", "add", source}
+	res.Command = defaultSkillInstallCommand(source)
 	npx, err := exec.LookPath("npx")
 	if err != nil {
 		res.Skipped = true
@@ -69,7 +69,7 @@ func (s *Service) installDefaultSkill() SkillInstallResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, npx, "--yes", "skills", "add", source)
+	cmd := exec.CommandContext(ctx, npx, res.Command[1:]...)
 	cmd.Dir = s.Git.RepoRoot
 	out, err := cmd.CombinedOutput()
 	res.Output = trimCommandOutput(string(out))
@@ -83,6 +83,16 @@ func (s *Service) installDefaultSkill() SkillInstallResult {
 	}
 	res.Installed = true
 	return res
+}
+
+func defaultSkillInstallCommand(source string) []string {
+	return []string{
+		"npx", "--yes", "skills", "add", source,
+		"--skill", "mainline",
+		"--agent", "codex", "claude-code", "cursor",
+		"--global",
+		"--yes",
+	}
 }
 
 func trimCommandOutput(out string) string {

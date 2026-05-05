@@ -445,13 +445,13 @@ Do not rewrite published history unless the user explicitly asks.
 Install this skill with `npx skills` for the target agent:
 
 ```bash
-npx skills add mainline-org/mainline --skill mainline -a codex
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex --global --yes
 ```
 
 For local development:
 
 ```bash
-npx skills add ./skills/mainline -a codex
+npx --yes skills add ./skills/mainline --skill mainline --agent codex --global --yes
 ```
 
 The durable purpose of the skill is to teach agents to install, initialize,
