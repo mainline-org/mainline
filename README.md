@@ -15,6 +15,7 @@
 Mainline is not a Git replacement, a PR system, or a session recorder. It is
 a Git-native memory layer that tells coding agents *why the code is the way it
 is* before they edit it.
+<img width="827" height="360" alt="image" src="https://github.com/user-attachments/assets/116be861-0506-438b-be87-19e4dcd4f69d" />
 
 **Status:** public alpha. The core CLI, hooks, Hub, and release packaging are
 usable, but schemas and workflow guidance may still change while we harden the
