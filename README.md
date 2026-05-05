@@ -553,15 +553,15 @@ to include product screenshots in docs or release notes.
 
 Mainline stores data in two places, both in your git remote:
 
-1. **Per-actor logs** (git branches) — Each developer has their own append-only event log: `refs/heads/_mainline/actor/<id>`. This stores intent metadata. Only the actor writes to their own log.
+1. **Per-actor logs** (custom Git refs) — Each developer has their own append-only event log: `refs/mainline/actors/<id>/log`. This stores intent metadata. Only the actor writes to their own log. These refs intentionally live outside `refs/heads/` so Git hosts do not show them as recently pushed branches.
 2. **Pin notes** (git notes) — When code is merged to main, a note on the merge commit links it to the intent: `refs/notes/mainline/intents`. Anyone can write a pin note when they confirm a merge.
 
 These serve different purposes: the actor log is what you've claimed; the pin note is what's actually on main. Mainline's view is computed from both.
 
 ```
 Per-actor logs                 Pin notes
-refs/heads/                    refs/notes/
-_mainline/actor/<id>           mainline/intents
+refs/mainline/                 refs/notes/
+actors/<id>/log                mainline/intents
        │                              │
        │  IntentSealedEvent           │  CommitNote
        │  IntentAbandonedEvent        │   { intents: [...],
@@ -825,7 +825,8 @@ No. Mainline does not capture transcripts, tool calls, token usage, or session t
 **Q: Where is Mainline data stored?**
 
 Mainline's durable team data lives in Git, not in a hosted service. Per-actor
-intent events are stored in Git refs under `refs/heads/_mainline/actor/<id>`,
+intent events are stored in custom Git refs under
+`refs/mainline/actors/<id>/log`,
 and merged-code pins are stored in Git notes under
 `refs/notes/mainline/intents`. `.ml-cache/` is a local working cache for drafts,
 rebuilt views, hook state, and temporary seal files; it is gitignored and must
@@ -923,7 +924,7 @@ Mainline has one durable storage layer and one local cache layer:
   sessions/
 
 git refs (in your remote):
-  refs/heads/_mainline/actor/<id>     # Per-actor append-only event log
+  refs/mainline/actors/<id>/log        # Per-actor append-only event log
   refs/notes/mainline/intents          # Pin notes on main commits
 ```
 

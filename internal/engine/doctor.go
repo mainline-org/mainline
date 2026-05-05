@@ -565,16 +565,16 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 	// Refspec checks (only meaningful when the configured remote exists)
 	fetchKey := "remote." + remote + ".fetch"
 	pushKey := "remote." + remote + ".push"
+	refspecIssue := "remote refspecs incomplete — run 'mainline init --rewire' (or 'mainline doctor --setup --fix')"
 	if rep.HasRemote {
 		fetch := s.Git.ConfigGet(fetchKey)
 		push := s.Git.ConfigGet(pushKey)
 		rep.NotesFetchOK = strings.Contains(fetch, "refs/notes/mainline")
 		rep.NotesPushOK = strings.Contains(push, "refs/notes/mainline")
-		rep.ActorFetchOK = strings.Contains(fetch, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
-		rep.ActorPushOK = strings.Contains(push, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
+		rep.ActorFetchOK = strings.Contains(fetch, strings.TrimPrefix(domain.ActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote), "+"))
+		rep.ActorPushOK = strings.Contains(push, domain.ActorLogPushRefspec(cfg.Mainline.ActorLogPrefix))
 		if !rep.NotesFetchOK || !rep.NotesPushOK || !rep.ActorFetchOK || !rep.ActorPushOK {
-			rep.Issues = append(rep.Issues,
-				"remote refspecs incomplete — run 'mainline init --rewire' (or 'mainline doctor --setup --fix')")
+			rep.Issues = append(rep.Issues, refspecIssue)
 		}
 	} else {
 		rep.Issues = append(rep.Issues, fmt.Sprintf(
@@ -593,11 +593,24 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 		push := s.Git.ConfigGet(pushKey)
 		rep.NotesFetchOK = strings.Contains(fetch, "refs/notes/mainline")
 		rep.NotesPushOK = strings.Contains(push, "refs/notes/mainline")
-		rep.ActorFetchOK = strings.Contains(fetch, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
-		rep.ActorPushOK = strings.Contains(push, "refs/heads/"+cfg.Mainline.ActorLogPrefix)
+		rep.ActorFetchOK = strings.Contains(fetch, strings.TrimPrefix(domain.ActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote), "+"))
+		rep.ActorPushOK = strings.Contains(push, domain.ActorLogPushRefspec(cfg.Mainline.ActorLogPrefix))
+		if rep.NotesFetchOK && rep.NotesPushOK && rep.ActorFetchOK && rep.ActorPushOK {
+			rep.Issues = removeIssue(rep.Issues, refspecIssue)
+		}
 	}
 
 	return &DoctorResult{Setup: rep}, nil
+}
+
+func removeIssue(issues []string, target string) []string {
+	filtered := issues[:0]
+	for _, issue := range issues {
+		if issue != target {
+			filtered = append(filtered, issue)
+		}
+	}
+	return filtered
 }
 
 func fileExists(path string) bool {

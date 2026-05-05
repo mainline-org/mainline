@@ -1117,3 +1117,8 @@ func (g *Git) ConfigGet(key string) string {
 	}
 	return strings.TrimSpace(out)
 }
+
+func (g *Git) ConfigUnsetAll(key, valueRegex string) error {
+	_, err := g.run("config", "--unset-all", key, valueRegex)
+	return err
+}

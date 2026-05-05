@@ -1,5 +1,17 @@
 package domain
 
+import (
+	"fmt"
+	"strings"
+)
+
+const (
+	// DefaultActorLogPrefix keeps Mainline actor logs out of refs/heads
+	// so Git hosts do not surface them as recently pushed branches.
+	DefaultActorLogPrefix = "refs/mainline/actors"
+	LegacyActorLogPrefix  = "_mainline/actor"
+)
+
 // TeamConfig is stored at .mainline/config.toml, committed to repo.
 type TeamConfig struct {
 	Mainline MainlineSection `toml:"mainline"`
@@ -31,7 +43,7 @@ type TeamConfig struct {
 type MainlineSection struct {
 	SchemaVersion     int    `toml:"schema_version"`
 	MainBranch        string `toml:"main_branch"`
-	ActorLogPrefix    string `toml:"actor_log_prefix"`    // refs/heads/_mainline/actor
+	ActorLogPrefix    string `toml:"actor_log_prefix"`    // refs/mainline/actors
 	RequireSealBefore string `toml:"require_seal_before"` // push|merge|never
 	// Remote is the git remote name mainline reads/writes notes and
 	// actor-log refs to. Defaults to "origin" — what `git clone`
@@ -61,6 +73,90 @@ type MainlineSkipSection struct {
 
 type MainlineCoverageSection struct {
 	BaselineCommit string `toml:"baseline_commit,omitempty"`
+}
+
+func NormalizeActorLogPrefix(prefix string) string {
+	prefix = strings.TrimSpace(strings.TrimSuffix(prefix, "/"))
+	switch prefix {
+	case "", LegacyActorLogPrefix, "refs/heads/" + LegacyActorLogPrefix:
+		return DefaultActorLogPrefix
+	default:
+		return prefix
+	}
+}
+
+func ActorLogRef(actorID, prefix string) string {
+	prefix = NormalizeActorLogPrefix(prefix)
+	switch {
+	case prefix == DefaultActorLogPrefix:
+		return fmt.Sprintf("%s/%s/log", prefix, actorID)
+	case strings.HasPrefix(prefix, "refs/"):
+		return fmt.Sprintf("%s/%s", prefix, actorID)
+	default:
+		return fmt.Sprintf("refs/heads/%s/%s", prefix, actorID)
+	}
+}
+
+func ActorLogFetchRefspec(prefix, remote string) string {
+	prefix = NormalizeActorLogPrefix(prefix)
+	switch {
+	case prefix == DefaultActorLogPrefix:
+		return fmt.Sprintf("+%s/*/log:refs/remotes/%s/mainline/actors/*/log", prefix, remote)
+	case strings.HasPrefix(prefix, "refs/"):
+		return fmt.Sprintf("+%s/*:refs/remotes/%s/%s/*",
+			prefix, remote, strings.TrimPrefix(prefix, "refs/"))
+	default:
+		return fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*", prefix, remote, prefix)
+	}
+}
+
+func ActorLogPushRefspec(prefix string) string {
+	prefix = NormalizeActorLogPrefix(prefix)
+	switch {
+	case prefix == DefaultActorLogPrefix:
+		return prefix + "/*/log:" + prefix + "/*/log"
+	case strings.HasPrefix(prefix, "refs/"):
+		return prefix + "/*:" + prefix + "/*"
+	default:
+		return fmt.Sprintf("refs/heads/%s/*:refs/heads/%s/*", prefix, prefix)
+	}
+}
+
+func ActorLogLocalListPrefix(prefix string) string {
+	prefix = NormalizeActorLogPrefix(prefix)
+	if strings.HasPrefix(prefix, "refs/") {
+		return prefix
+	}
+	return "refs/heads/" + prefix
+}
+
+func ActorLogRemoteListPrefix(prefix, remote string) string {
+	prefix = NormalizeActorLogPrefix(prefix)
+	switch {
+	case prefix == DefaultActorLogPrefix:
+		return fmt.Sprintf("refs/remotes/%s/mainline/actors", remote)
+	case strings.HasPrefix(prefix, "refs/"):
+		return fmt.Sprintf("refs/remotes/%s/%s", remote, strings.TrimPrefix(prefix, "refs/"))
+	default:
+		return fmt.Sprintf("refs/remotes/%s/%s", remote, prefix)
+	}
+}
+
+func LegacyActorLogRef(actorID string) string {
+	return fmt.Sprintf("refs/heads/%s/%s", LegacyActorLogPrefix, actorID)
+}
+
+func LegacyActorLogFetchRefspec(remote string) string {
+	return fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*",
+		LegacyActorLogPrefix, remote, LegacyActorLogPrefix)
+}
+
+func LegacyActorLogLocalListPrefix() string {
+	return "refs/heads/" + LegacyActorLogPrefix
+}
+
+func LegacyActorLogRemoteListPrefix(remote string) string {
+	return fmt.Sprintf("refs/remotes/%s/%s", remote, LegacyActorLogPrefix)
 }
 
 type SyncSection struct {
@@ -192,7 +288,7 @@ func DefaultTeamConfig() TeamConfig {
 		Mainline: MainlineSection{
 			SchemaVersion:     1,
 			MainBranch:        "main",
-			ActorLogPrefix:    "_mainline/actor",
+			ActorLogPrefix:    DefaultActorLogPrefix,
 			RequireSealBefore: "push",
 			Remote:            "origin",
 			Skip: MainlineSkipSection{

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mainline-org/mainline/internal/domain"
 )
 
 // configureRemoteRefspecs is the canonical place where notes / actor-log
@@ -18,13 +20,13 @@ func TestConfigureRemoteRefspecsNoopWithoutOrigin(t *testing.T) {
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	added := svc.configureRemoteRefspecs("_mainline/actor")
+	added := svc.configureRemoteRefspecs(domain.DefaultActorLogPrefix)
 	if added != nil {
 		t.Errorf("no origin → expected nil added, got %v", added)
 	}
 }
 
-func TestConfigureRemoteRefspecsAddsAllFourThenIsIdempotent(t *testing.T) {
+func TestConfigureRemoteRefspecsAddsSetupRefspecsThenIsIdempotent(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
@@ -34,14 +36,14 @@ func TestConfigureRemoteRefspecsAddsAllFourThenIsIdempotent(t *testing.T) {
 		t.Fatalf("git remote add: %v", err)
 	}
 
-	added := svc.configureRemoteRefspecs("_mainline/actor")
-	if len(added) != 4 {
-		t.Fatalf("first call should add 4 refspecs (notes fetch+push, actor fetch+push), got %d: %v",
+	added := svc.configureRemoteRefspecs(domain.DefaultActorLogPrefix)
+	if len(added) != 5 {
+		t.Fatalf("first call should add 5 refspec entries (notes fetch+push, actor fetch+push, legacy fetch), got %d: %v",
 			len(added), added)
 	}
 
 	// Second call — must add nothing.
-	again := svc.configureRemoteRefspecs("_mainline/actor")
+	again := svc.configureRemoteRefspecs(domain.DefaultActorLogPrefix)
 	if len(again) != 0 {
 		t.Errorf("second call should be no-op, got %d additions: %v", len(again), again)
 	}
@@ -49,13 +51,46 @@ func TestConfigureRemoteRefspecsAddsAllFourThenIsIdempotent(t *testing.T) {
 	// Sanity: actual git config now contains both ref namespaces.
 	fetch := svc.Git.ConfigGet("remote.origin.fetch")
 	push := svc.Git.ConfigGet("remote.origin.push")
-	for _, want := range []string{"refs/notes/mainline", "refs/heads/_mainline/actor"} {
+	for _, want := range []string{"refs/notes/mainline", "refs/mainline/actors"} {
 		if !strings.Contains(fetch, want) {
 			t.Errorf("remote.origin.fetch missing %q: %s", want, fetch)
 		}
 		if !strings.Contains(push, want) {
 			t.Errorf("remote.origin.push missing %q: %s", want, push)
 		}
+	}
+	if !strings.Contains(fetch, "refs/heads/_mainline/actor") {
+		t.Errorf("remote.origin.fetch should keep legacy actor logs readable: %s", fetch)
+	}
+	if strings.Contains(push, "refs/heads/_mainline/actor") {
+		t.Errorf("remote.origin.push should not push legacy branch actor logs: %s", push)
+	}
+}
+
+func TestConfigureRemoteRefspecsRemovesLegacyActorPush(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	if _, err := svc.Git.Run("remote", "add", "origin", "git@example.com:fake/fake.git"); err != nil {
+		t.Fatalf("git remote add: %v", err)
+	}
+	legacyPush := "refs/heads/" + domain.LegacyActorLogPrefix + "/*:refs/heads/" + domain.LegacyActorLogPrefix + "/*"
+	if err := svc.Git.ConfigAdd("remote.origin.push", legacyPush); err != nil {
+		t.Fatalf("seed legacy push refspec: %v", err)
+	}
+
+	added := svc.configureRemoteRefspecs(domain.DefaultActorLogPrefix)
+	push := svc.Git.ConfigGet("remote.origin.push")
+	if strings.Contains(push, legacyPush) {
+		t.Fatalf("legacy actor branch push refspec should be removed, got %q", push)
+	}
+	if !strings.Contains(push, domain.ActorLogPushRefspec(domain.DefaultActorLogPrefix)) {
+		t.Fatalf("hidden actor push refspec missing after rewrite, got %q", push)
+	}
+	if !strings.Contains(strings.Join(added, "\n"), "remove push: "+legacyPush) {
+		t.Fatalf("rewrite should report legacy push removal, got %v", added)
 	}
 }
 
@@ -85,8 +120,8 @@ func TestRewireFillsRefspecsAfterLateOrigin(t *testing.T) {
 	if !r.HadRemote {
 		t.Error("Rewire should report HadRemote=true after origin was added")
 	}
-	if len(r.RefspecsAdded) != 4 {
-		t.Errorf("Rewire should have added 4 refspecs, got %d", len(r.RefspecsAdded))
+	if len(r.RefspecsAdded) != 5 {
+		t.Errorf("Rewire should have added 5 refspec entries, got %d", len(r.RefspecsAdded))
 	}
 }
 
@@ -239,11 +274,14 @@ func TestDoctorSetupFixWiresRefspecs(t *testing.T) {
 	}
 	if !res.Setup.NotesFetchOK || !res.Setup.ActorFetchOK ||
 		!res.Setup.NotesPushOK || !res.Setup.ActorPushOK {
-		t.Errorf("after --fix all four refspec OK booleans should be true: %+v", res.Setup)
+		t.Errorf("after --fix all refspec OK booleans should be true: %+v", res.Setup)
 	}
-	if len(res.Setup.Fixed) != 4 {
-		t.Errorf("--fix should report 4 refspecs added, got %d: %v",
+	if len(res.Setup.Fixed) != 5 {
+		t.Errorf("--fix should report 5 refspec entries added, got %d: %v",
 			len(res.Setup.Fixed), res.Setup.Fixed)
+	}
+	if strings.Contains(strings.Join(res.Setup.Issues, "\n"), "remote refspecs incomplete") {
+		t.Fatalf("--fix should clear stale refspec issue after rewiring, got %v", res.Setup.Issues)
 	}
 }
 
@@ -268,9 +306,9 @@ func TestConfigureRemoteRefspecsHonoursNonOriginRemote(t *testing.T) {
 		t.Fatalf("git remote add upstream: %v", err)
 	}
 
-	added := svc.configureRemoteRefspecs("_mainline/actor")
-	if len(added) != 4 {
-		t.Fatalf("expected 4 refspecs added on the upstream remote, got %d: %v",
+	added := svc.configureRemoteRefspecs(domain.DefaultActorLogPrefix)
+	if len(added) != 5 {
+		t.Fatalf("expected 5 refspec entries added on the upstream remote, got %d: %v",
 			len(added), added)
 	}
 
@@ -282,7 +320,7 @@ func TestConfigureRemoteRefspecsHonoursNonOriginRemote(t *testing.T) {
 	// upstream must carry the mainline refspecs.
 	upstreamFetch := svc.Git.ConfigGet("remote.upstream.fetch")
 	if !strings.Contains(upstreamFetch, "refs/notes/mainline") ||
-		!strings.Contains(upstreamFetch, "refs/heads/_mainline/actor") {
+		!strings.Contains(upstreamFetch, "refs/mainline/actors") {
 		t.Errorf("upstream.fetch should carry both mainline refspecs, got %q", upstreamFetch)
 	}
 }

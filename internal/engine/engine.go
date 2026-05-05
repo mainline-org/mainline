@@ -285,10 +285,12 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 	}, nil
 }
 
-// configureRemoteRefspecs ensures origin's fetch/push refspecs include
-// both the notes ref (refs/notes/mainline/*) and the actor-log namespace
-// (refs/heads/<prefix>/*). Each refspec is added at most once — a re-run
-// is a no-op. Silently does nothing when origin is not configured yet.
+// configureRemoteRefspecs ensures the configured remote's fetch/push
+// refspecs include both the notes ref (refs/notes/mainline/*) and the
+// actor-log namespace. Actor logs live outside refs/heads by default so
+// Git hosts do not surface them as recently pushed branches. Each refspec
+// is added at most once; a re-run is a no-op. Silently does nothing when
+// the configured remote is not present yet.
 //
 // MVP-readiness fix (PR fix/mvp-install-setup): this used to live
 // inline in Init and only fired once. If a user ran `mainline init`
@@ -321,15 +323,27 @@ func (s *Service) configureRemoteRefspecs(actorLogPrefix string) []string {
 		added = append(added, "push: "+notesPush)
 	}
 
-	actorFetch := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*",
-		actorLogPrefix, remote, actorLogPrefix)
-	if !strings.Contains(s.Git.ConfigGet(fetchKey), "refs/heads/"+actorLogPrefix) {
+	actorFetch := domain.ActorLogFetchRefspec(actorLogPrefix, remote)
+	if !strings.Contains(s.Git.ConfigGet(fetchKey), strings.TrimPrefix(actorFetch, "+")) {
 		_ = s.Git.ConfigAdd(fetchKey, actorFetch)
 		added = append(added, "fetch: "+actorFetch)
 	}
-	actorPush := fmt.Sprintf("refs/heads/%s/*:refs/heads/%s/*",
-		actorLogPrefix, actorLogPrefix)
-	if !strings.Contains(s.Git.ConfigGet(pushKey), "refs/heads/"+actorLogPrefix) {
+	// Keep reading legacy branch-backed actor logs during migration,
+	// but stop configuring pushes to refs/heads/_mainline/actor/*.
+	legacyFetch := domain.LegacyActorLogFetchRefspec(remote)
+	if !strings.Contains(s.Git.ConfigGet(fetchKey), strings.TrimPrefix(legacyFetch, "+")) {
+		_ = s.Git.ConfigAdd(fetchKey, legacyFetch)
+		added = append(added, "fetch: "+legacyFetch)
+	}
+	legacyPush := fmt.Sprintf("refs/heads/%s/*:refs/heads/%s/*",
+		domain.LegacyActorLogPrefix, domain.LegacyActorLogPrefix)
+	if strings.Contains(s.Git.ConfigGet(pushKey), legacyPush) {
+		_ = s.Git.ConfigUnsetAll(pushKey, "refs/heads/"+domain.LegacyActorLogPrefix+"/.*")
+		added = append(added, "remove push: "+legacyPush)
+	}
+
+	actorPush := domain.ActorLogPushRefspec(actorLogPrefix)
+	if !strings.Contains(s.Git.ConfigGet(pushKey), actorPush) {
 		_ = s.Git.ConfigAdd(pushKey, actorPush)
 		added = append(added, "push: "+actorPush)
 	}

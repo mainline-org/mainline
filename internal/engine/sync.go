@@ -55,11 +55,11 @@ func (s *Service) Sync() (*SyncResult, error) {
 	fetched := false
 	if s.Git.HasRemote(remote) {
 		s.progress("fetching")
-		// One fetch, three refspecs: main branch + every actor log +
-		// the notes ref (rc3: notes are the source of truth for merged
-		// status). A single `git fetch` shares one ssh handshake with
-		// the remote — three separate fetches cost three round-trips
-		// (~3s each on github), which dominated sync wall time.
+		// One fetch, all required refspecs: main branch, current actor-log
+		// refs, legacy actor-log branch refs, and the notes ref (rc3:
+		// notes are the source of truth for merged status). A single
+		// `git fetch` shares one ssh handshake with the remote; separate
+		// fetches cost multiple round-trips, which dominated sync wall time.
 		//
 		// Actor logs and notes ref are FORCE-fetched (`+refspec`).
 		// Both have a single source-of-truth — the owning actor for
@@ -74,14 +74,15 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// turns. Main branch is intentionally NOT force-fetched
 		// because rewrites to main are a separate safety concern
 		// the user resolves explicitly via git.
-		actorRefspec := fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*",
-			cfg.Mainline.ActorLogPrefix, remote, cfg.Mainline.ActorLogPrefix)
+		actorRefspec := domain.ActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote)
+		legacyActorRefspec := domain.LegacyActorLogFetchRefspec(remote)
 		// Network fetch is best-effort: a transient network failure
 		// should let the rest of sync run against local refs (the
 		// freshness window from PR #20 already handles staleness).
 		_ = s.Git.Fetch(remote,
 			cfg.Mainline.MainBranch,
 			actorRefspec,
+			legacyActorRefspec,
 			"+refs/notes/mainline/*:refs/notes/mainline/*",
 		)
 		fetched = true
@@ -475,8 +476,10 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 	remote := s.remoteName()
 	refPrefixes := []string{
-		fmt.Sprintf("refs/heads/%s", prefix),
-		fmt.Sprintf("refs/remotes/%s/%s", remote, prefix),
+		domain.ActorLogLocalListPrefix(prefix),
+		domain.ActorLogRemoteListPrefix(prefix, remote),
+		domain.LegacyActorLogLocalListPrefix(),
+		domain.LegacyActorLogRemoteListPrefix(remote),
 	}
 
 	// Phase 1: gather the unique actor-log refs in the same order

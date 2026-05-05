@@ -42,7 +42,7 @@ func TestPropertyRebuildViewStatusStateMachine(t *testing.T) {
 
 		intentID := fmt.Sprintf("int_%s", rapid.StringMatching(`[a-f0-9]{8}`).Draw(rt, "id"))
 		actorID := "actor_test"
-		prefix := "_mainline/actor"
+		prefix := domain.DefaultActorLogPrefix
 
 		// Generate a random sequence of events for ONE intent
 		nEvents := rapid.IntRange(1, 6).Draw(rt, "nEvents")
@@ -173,7 +173,7 @@ func TestPropertyRebuildViewIntentIsolation(t *testing.T) {
 		}
 
 		actorID := "actor_test"
-		prefix := "_mainline/actor"
+		prefix := domain.DefaultActorLogPrefix
 
 		// Create two intents with different event sequences
 		intentA := "int_aaaa0001"
@@ -247,7 +247,7 @@ func TestPropertyRebuildViewCheckJudgmentLastWriteWins(t *testing.T) {
 		}
 
 		actorID := "actor_test"
-		prefix := "_mainline/actor"
+		prefix := domain.DefaultActorLogPrefix
 		intentID := "int_check_lww"
 
 		// Seal the intent first
@@ -330,7 +330,7 @@ func TestPropertyRebuildViewOrphanEventsIgnored(t *testing.T) {
 		}
 
 		actorID := "actor_test"
-		prefix := "_mainline/actor"
+		prefix := domain.DefaultActorLogPrefix
 		intentID := "int_orphan"
 
 		// Write non-sealed events without a prior sealed event
@@ -347,7 +347,7 @@ func TestPropertyRebuildViewOrphanEventsIgnored(t *testing.T) {
 				BaseEvent: domain.BaseEvent{
 					EventID: "evt_orphan", SchemaVersion: 1,
 					EventType: domain.EventIntentAbandoned,
-					ActorID: actorID, Timestamp: "2026-01-01T00:00:00Z",
+					ActorID:   actorID, Timestamp: "2026-01-01T00:00:00Z",
 				},
 				IntentID: intentID,
 			})
@@ -356,7 +356,7 @@ func TestPropertyRebuildViewOrphanEventsIgnored(t *testing.T) {
 				BaseEvent: domain.BaseEvent{
 					EventID: "evt_orphan", SchemaVersion: 1,
 					EventType: domain.EventIntentSuperseded,
-					ActorID: actorID, Timestamp: "2026-01-01T00:00:00Z",
+					ActorID:   actorID, Timestamp: "2026-01-01T00:00:00Z",
 				},
 				IntentID:     intentID,
 				SupersededBy: "int_other",
@@ -366,7 +366,7 @@ func TestPropertyRebuildViewOrphanEventsIgnored(t *testing.T) {
 				BaseEvent: domain.BaseEvent{
 					EventID: "evt_orphan", SchemaVersion: 1,
 					EventType: domain.EventIntentMergeAcknowledged,
-					ActorID: actorID, Timestamp: "2026-01-01T00:00:00Z",
+					ActorID:   actorID, Timestamp: "2026-01-01T00:00:00Z",
 				},
 				IntentID:    intentID,
 				MergeCommit: "merge_abc",

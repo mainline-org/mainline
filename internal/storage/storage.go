@@ -140,6 +140,7 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 	if cfg.Mainline.Remote == "" {
 		cfg.Mainline.Remote = "origin"
 	}
+	cfg.Mainline.ActorLogPrefix = domain.NormalizeActorLogPrefix(cfg.Mainline.ActorLogPrefix)
 	// Hooks section defaults: when the [hooks] block is absent we
 	// treat hooks as enabled-with-everything-on so the first-time
 	// `mainline hooks install` user gets the documented behaviour.
@@ -457,7 +458,7 @@ func (s *Store) ReadTurns(intentID string) ([]domain.Turn, error) {
 
 // ActorLogRef returns the git ref for an actor's log.
 func (s *Store) ActorLogRef(actorID, prefix string) string {
-	return fmt.Sprintf("refs/heads/%s/%s", prefix, actorID)
+	return domain.ActorLogRef(actorID, prefix)
 }
 
 const actorLogAppendMaxAttempts = 128
@@ -483,7 +484,11 @@ func (s *Store) AppendActorLogEvent(actorID, prefix string, event interface{}) e
 
 	var lastUpdateErr error
 	for attempt := 0; attempt < actorLogAppendMaxAttempts; attempt++ {
-		parentCommit := s.Git.ReadRef(ref)
+		currentCommit := s.Git.ReadRef(ref)
+		parentCommit := currentCommit
+		if parentCommit == "" {
+			parentCommit = s.actorLogMigrationParent(actorID, prefix)
+		}
 
 		// Create a new commit on the latest observed parent. If another
 		// process advances the actor log first, the CAS update fails and
@@ -493,7 +498,7 @@ func (s *Store) AppendActorLogEvent(actorID, prefix string, event interface{}) e
 			return fmt.Errorf("commit tree: %w", err)
 		}
 
-		if err := s.Git.UpdateRefIfEquals(ref, commitHash, parentCommit); err == nil {
+		if err := s.Git.UpdateRefIfEquals(ref, commitHash, currentCommit); err == nil {
 			return nil
 		} else {
 			lastUpdateErr = err
@@ -502,6 +507,28 @@ func (s *Store) AppendActorLogEvent(actorID, prefix string, event interface{}) e
 	}
 
 	return fmt.Errorf("update ref after %d attempts: %w", actorLogAppendMaxAttempts, lastUpdateErr)
+}
+
+func (s *Store) actorLogMigrationParent(actorID, prefix string) string {
+	if domain.NormalizeActorLogPrefix(prefix) != domain.DefaultActorLogPrefix {
+		return ""
+	}
+	if head := s.Git.ReadRef(domain.LegacyActorLogRef(actorID)); head != "" {
+		return head
+	}
+	refs, err := s.Git.ListRefs("refs/remotes")
+	if err != nil {
+		return ""
+	}
+	suffix := "/" + domain.LegacyActorLogPrefix + "/" + actorID
+	for _, ref := range refs {
+		if strings.HasSuffix(ref, suffix) {
+			if head := s.Git.ReadRef(ref); head != "" {
+				return head
+			}
+		}
+	}
+	return ""
 }
 
 // ReadActorLogEvents reads all events from an actor's log.

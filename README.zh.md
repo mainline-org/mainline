@@ -462,7 +462,9 @@ Session-memory 工具记录 AI coding session 里的 prompts、responses、snaps
 **Q: Mainline 数据存在哪里？**
 
 Mainline 的长期团队数据存在 Git 里，不依赖 hosted service。每个 actor 的
-intent event log 存在 `refs/heads/_mainline/actor/<id>`；代码合并后的
+intent event log 存在 `refs/mainline/actors/<id>/log` 这种 custom Git ref，
+刻意不放在 `refs/heads/` 下面，所以 GitHub 不会把它当成最近 push 的分支；
+代码合并后的
 intent pin 存在 Git notes：`refs/notes/mainline/intents`。`.ml-cache/` 只是
 本地工作缓存，用来放 draft、重建后的 view、hook 状态和临时 seal 文件；
 它已经被 gitignore，不能提交。`.mainline/config.toml` 是团队配置，会提交；
