@@ -14,6 +14,9 @@ var doctorStaleAfter time.Duration
 var doctorSetup bool
 var doctorProposals bool
 var doctorStaleProposedAfter time.Duration
+var doctorNotes bool
+var doctorNotesCommitMap string
+var doctorNotesInfer bool
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -29,7 +32,10 @@ is not picking up team activity.
 
 --proposals mode diagnoses proposed intents that may need follow-up.
 It never writes lifecycle events; use the suggested mainline abandon
-or pin commands after confirming the recommendation.`,
+or pin commands after confirming the recommendation.
+
+--notes mode diagnoses git-notes rewrite drift after history rewrites
+or force-pushes. It is read-only; use migrate notes for repairs.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -43,6 +49,9 @@ or pin commands after confirming the recommendation.`,
 			Setup:              doctorSetup,
 			Proposals:          doctorProposals,
 			StaleProposedAfter: doctorStaleProposedAfter,
+			Notes:              doctorNotes,
+			NotesCommitMapPath: doctorNotesCommitMap,
+			NotesInfer:         doctorNotesInfer,
 		})
 		if err != nil {
 			outputError(err)
@@ -60,6 +69,10 @@ or pin commands after confirming the recommendation.`,
 		}
 		if result.Proposals != nil {
 			renderProposalReport(result.Proposals)
+			return
+		}
+		if result.Notes != nil {
+			renderNotesReport(result.Notes)
 			return
 		}
 
@@ -95,6 +108,42 @@ or pin commands after confirming the recommendation.`,
 		}
 		renderHistoricalSignalsReport(result.Historical)
 	},
+}
+
+func renderNotesReport(r *engine.DoctorNotesReport) {
+	fmt.Println("Notes check:")
+	fmt.Printf("  main:  %s", r.MainRef)
+	if r.MainHead != "" {
+		fmt.Printf(" @ %s", shortHash(r.MainHead))
+	}
+	fmt.Println()
+	if r.NotesRef != "" {
+		fmt.Printf("  notes: %s\n", shortHash(r.NotesRef))
+	}
+	fmt.Printf("  notes total:                 %d\n", r.NotesTotal)
+	fmt.Printf("  reachable from main:         %d\n", r.ReachableNotes)
+	fmt.Printf("  unreachable from main:       %d\n", r.UnreachableNotes)
+	fmt.Printf("  unreachable mainline notes:  %d\n", r.UnreachableMainlineNotes)
+	if r.InvalidMainlineNotes > 0 {
+		fmt.Printf("  invalid mainline notes:      %d\n", r.InvalidMainlineNotes)
+	}
+	if r.ProposedCount > 0 {
+		fmt.Printf("  proposed intents:            %d\n", r.ProposedCount)
+	}
+	if r.SuspiciousProposedCount > 0 {
+		fmt.Printf("  suspicious proposed intents: %d\n", r.SuspiciousProposedCount)
+	}
+	if r.LikelyHistoryRewrite {
+		fmt.Println("\nLikely history rewrite / force-push notes drift detected.")
+		if r.RecommendedCommand != "" {
+			fmt.Printf("Run `%s` to preview a repair plan.\n", r.RecommendedCommand)
+		}
+	} else {
+		fmt.Println("\nNo notes rewrite drift detected.")
+	}
+	if r.MigrationPlan != nil {
+		renderNotesMigrationPlan(r.MigrationPlan)
+	}
 }
 
 func renderHistoricalSignalsReport(r *engine.DoctorHistoricalSignalsReport) {
@@ -205,4 +254,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorSetup, "setup", false, "run install / wiring sanity checks (refspec, identity, .gitignore)")
 	doctorCmd.Flags().BoolVar(&doctorProposals, "proposals", false, "diagnose proposed intents that may need cleanup")
 	doctorCmd.Flags().DurationVar(&doctorStaleProposedAfter, "stale-proposed-after", engine.DefaultStaleProposedAfter, "mark proposed intents suspicious after this duration")
+	doctorCmd.Flags().BoolVar(&doctorNotes, "notes", false, "diagnose git-notes rewrite drift after history rewrites")
+	doctorCmd.Flags().StringVar(&doctorNotesCommitMap, "commit-map", "", "git-filter-repo commit-map for notes rewrite diagnosis")
+	doctorCmd.Flags().BoolVar(&doctorNotesInfer, "infer", false, "infer notes migrations by tree hash and patch-id in --notes mode")
 }

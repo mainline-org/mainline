@@ -223,6 +223,7 @@ func init() {
 	// (auto-pin in sync, auto-publish in seal, GitHub PR for merge)
 	// covers the normal case.
 	pinCmd.GroupID = groupAdvanced.ID
+	migrateCmd.GroupID = groupAdvanced.ID
 	mergeCmd.GroupID = groupAdvanced.ID
 	publishCmd.GroupID = groupAdvanced.ID
 	prDescriptionCmd.GroupID = groupAdvanced.ID
@@ -265,7 +266,7 @@ func init() {
 		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, prCommentCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
-		traceCmd, agentsCmd,
+		traceCmd, agentsCmd, migrateCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
 		hubCmd, lintCmd, evalCmd, guardCmd, risksCmd, followupsCmd, versionCmd,
 	)

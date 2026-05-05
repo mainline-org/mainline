@@ -516,6 +516,54 @@ func (g *Git) CommitTreeHash(commitHash string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// CommitTreeHashesForRef returns tree hashes for every commit reachable
+// from ref, keyed by commit hash. It uses one git log invocation so callers
+// do not need to pass a huge argv list for long histories.
+func (g *Git) CommitTreeHashesForRef(ref string) (map[string]string, error) {
+	out, err := g.run("log", "--format=%H %T", ref)
+	if err != nil {
+		return nil, err
+	}
+	trees := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 2 {
+			trees[parts[0]] = parts[1]
+		}
+	}
+	return trees, nil
+}
+
+// PatchID returns git's stable patch-id for a regular commit. Merge commits
+// often have no regular patch in `git show`, so callers should gate on parent
+// count before using this as a rewrite-recovery signal.
+func (g *Git) PatchID(commitHash string) (string, error) {
+	patch, err := g.run("show", "--format=", "--patch", commitHash)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(patch) == "" {
+		return "", nil
+	}
+	cmd := exec.Command("git", "patch-id", "--stable")
+	cmd.Dir = g.RepoRoot
+	cmd.Stdin = strings.NewReader(patch)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git patch-id --stable: %s (stderr: %s)", err, stderr.String())
+	}
+	fields := strings.Fields(stdout.String())
+	if len(fields) == 0 {
+		return "", nil
+	}
+	return fields[0], nil
+}
+
 // HasRemote checks if a remote exists.
 func (g *Git) HasRemote(name string) bool {
 	out, _ := g.run("remote")
@@ -656,6 +704,13 @@ const NotesRef = "refs/notes/mainline/intents"
 // NotesAdd attaches a note to a commit under the mainline notes ref.
 func (g *Git) NotesAdd(commitHash, content string) error {
 	_, err := g.run("notes", "--ref=mainline/intents", "add", "-f", "-m", content, commitHash)
+	return err
+}
+
+// NotesRemove removes the note attached to commitHash under the mainline
+// notes ref.
+func (g *Git) NotesRemove(commitHash string) error {
+	_, err := g.run("notes", "--ref=mainline/intents", "remove", commitHash)
 	return err
 }
 
