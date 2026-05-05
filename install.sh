@@ -18,18 +18,6 @@ have() {
   command -v "$1" >/dev/null 2>&1
 }
 
-fetch() {
-  if have curl; then
-    curl -fsSL "$1"
-    return
-  fi
-  if have wget; then
-    wget -qO- "$1"
-    return
-  fi
-  fail "需要 curl 或 wget"
-}
-
 download_to() {
   if have curl; then
     curl -fsSL "$1" -o "$2"
@@ -70,20 +58,6 @@ detect_arch() {
   esac
 }
 
-resolve_version() {
-  if [ -n "$VERSION" ]; then
-    printf '%s' "$VERSION"
-    return
-  fi
-
-  latest_json="$(fetch "https://api.github.com/repos/$REPO/releases/latest")"
-  tag="$(printf '%s' "$latest_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-  if [ -z "$tag" ]; then
-    fail "无法解析最新 release 版本"
-  fi
-  printf '%s' "$tag"
-}
-
 default_install_dir() {
   if [ -n "$INSTALL_DIR" ]; then
     printf '%s' "$INSTALL_DIR"
@@ -103,30 +77,39 @@ default_install_dir() {
 main() {
   os="$(detect_os)"
   arch="$(detect_arch)"
-  version="$(resolve_version)"
   install_dir="$(default_install_dir)"
 
-  archive="mainline_${version#v}_${os}_${arch}.tar.gz"
-  base_url="https://github.com/$REPO/releases/download/$version"
+  archive=""
+  base_url="https://github.com/$REPO/releases/latest/download"
+  if [ -n "$VERSION" ]; then
+    archive="mainline_${VERSION#v}_${os}_${arch}.tar.gz"
+    base_url="https://github.com/$REPO/releases/download/$VERSION"
+  fi
 
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' EXIT
 
-  archive_path="$tmpdir/$archive"
   checksums_path="$tmpdir/checksums.txt"
+
+  download_to "$base_url/checksums.txt" "$checksums_path"
+  if [ -z "$archive" ]; then
+    archive="$(awk -v os="$os" -v arch="$arch" '$2 ~ "^mainline_[^_]+_" os "_" arch "\\.tar\\.gz$" { print $2; exit }' "$checksums_path")"
+    [ -n "$archive" ] || fail "release checksums 中没有当前平台的 archive"
+  fi
+
+  archive_path="$tmpdir/$archive"
 
   log "Downloading $archive"
   download_to "$base_url/$archive" "$archive_path"
-  download_to "$base_url/checksums.txt" "$checksums_path"
 
   expected="$(awk -v name="$archive" '$2 == name { print $1 }' "$checksums_path")"
   [ -n "$expected" ] || fail "release checksums 中没有 $archive"
 
-  actual="$(compute_sha256 "$archive_path")"
+  actual="$(LC_ALL=C LANG=C compute_sha256 "$archive_path")"
   [ "$expected" = "$actual" ] || fail "checksum 校验失败"
 
   mkdir -p "$tmpdir/unpack" "$install_dir"
-  tar -xzf "$archive_path" -C "$tmpdir/unpack"
+  LC_ALL=C LANG=C tar -xzf "$archive_path" -C "$tmpdir/unpack"
   install -m 0755 "$tmpdir/unpack/mainline" "$install_dir/mainline"
 
   log "Installed mainline to $install_dir/mainline"

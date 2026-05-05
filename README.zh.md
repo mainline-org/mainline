@@ -194,7 +194,7 @@ curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.
 也可以指定版本或安装目录：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_VERSION=v0.4.0 bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_VERSION=v0.4.2 bash
 curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | MAINLINE_INSTALL_DIR="$HOME/.local/bin" bash
 ```
 
