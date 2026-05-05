@@ -1,0 +1,1 @@
+{"schema_version":1,"kind":"mainline.commit_note","intents":[{"intent_id":"int_7ea5e792","seal_result_hash":"sha256:77b72b54d7165a6a5a0e9f47e36d498b2adb1a67fe981bff0d51e16d3e48c62c"}],"added_at":"2026-05-05T16:27:17Z","added_by":"actor_5477cd83","via":"pin_auto","match_strategy":"commit_hash","reconciled_at":"2026-05-05T16:27:17Z","reconciled_by":"actor_5477cd83"}
