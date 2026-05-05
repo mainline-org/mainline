@@ -303,9 +303,9 @@ Those are durable action signals, not completeness fields.
 
 Use explicit signal commands only when the source is real:
 
-- `mainline risk add` only for a concrete failure mode with trigger or
+- `mainline risks add` only for a concrete failure mode with trigger or
   impact, plus mitigation / validation / owner.
-- `mainline followup add` only when the user explicitly deferred the
+- `mainline followups add` only when the user explicitly deferred the
   work, an external issue/ticket/PR exists, or this PR explicitly cut
   real scope.
 - Do not create constraints yourself. `mainline guard add` is

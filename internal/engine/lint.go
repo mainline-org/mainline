@@ -347,7 +347,7 @@ func sealActionSignalLintIssues(sr *domain.SealResult) []LintIssue {
 			Code:     "seal_action_signal_risk",
 			Severity: "error",
 			Field:    "summary.risks",
-			Message:  "seal cannot create risks; use `mainline risk add` with a structured failure mode",
+			Message:  "seal cannot create risks; use `mainline risks add` with a structured failure mode",
 		})
 	}
 	if len(sr.Summary.Followups) > 0 {
@@ -355,7 +355,7 @@ func sealActionSignalLintIssues(sr *domain.SealResult) []LintIssue {
 			Code:     "seal_action_signal_followup",
 			Severity: "error",
 			Field:    "summary.followups",
-			Message:  "seal cannot create follow-ups; use `mainline followup add` with explicit provenance",
+			Message:  "seal cannot create follow-ups; use `mainline followups add` with explicit provenance",
 		})
 	}
 	return out

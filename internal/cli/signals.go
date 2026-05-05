@@ -20,22 +20,10 @@ var guardCmd = &cobra.Command{
 
 Constraints are high-authority action signals. They are not created by
 seal output; add them only when a human explicitly confirms the rule.`,
-}
-
-var riskCmd = &cobra.Command{
-	Use:   "risk",
-	Short: "Create explicit review-facing risks",
-	Long: `Create explicit risks with a concrete failure mode.
-
-Use "mainline risks" to list and resolve existing risks.`,
-}
-
-var followupCmd = &cobra.Command{
-	Use:   "followup",
-	Short: "Create explicit deferred work items",
-	Long: `Create explicit follow-ups with provenance.
-
-Use "mainline followups" to list and resolve existing follow-ups.`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		_ = cmd.Help()
+	},
 }
 
 var (
@@ -212,7 +200,7 @@ func init() {
 	riskAddCmd.Flags().StringVar(&riskAddMitigation, "mitigation", "", "mitigation")
 	riskAddCmd.Flags().StringVar(&riskAddValidation, "validation", "", "validation evidence")
 	riskAddCmd.Flags().StringVar(&riskAddOwner, "owner", "", "owner")
-	riskCmd.AddCommand(riskAddCmd)
+	risksCmd.AddCommand(riskAddCmd)
 
 	followupAddCmd.Flags().StringVar(&followupAddIntent, "intent", "", "source intent id (defaults to active draft)")
 	followupAddCmd.Flags().StringArrayVar(&followupAddFiles, "file", nil, "file path the follow-up applies to")
@@ -221,5 +209,5 @@ func init() {
 	followupAddCmd.Flags().StringVar(&followupAddReference, "reference", "", "required for external_reference")
 	followupAddCmd.Flags().StringVar(&followupAddOwner, "owner", "", "owner")
 	followupAddCmd.Flags().StringVar(&followupAddDue, "due", "", "due date")
-	followupCmd.AddCommand(followupAddCmd)
+	followupsCmd.AddCommand(followupAddCmd)
 }

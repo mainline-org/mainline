@@ -380,8 +380,8 @@ session state。”
 ### Reviewer 怎么判断 intent 可信
 
 可信的 sealed intent 应有具体 `what` 和 `why`、带 rationale 的 decisions、
-必要时的 rejected alternatives、明确 files / subsystems / tags、诚实 risks、
-validation notes，以及对 inherited constraints 的显式 acknowledgement。
+必要时的 rejected alternatives、明确 files / subsystems / tags、诚实的
+validation / review notes，以及对 inherited constraints 的显式 acknowledgement。
 
 Boilerplate summary、模糊 risk、缺失 fingerprint、没有回应 anti-pattern，
 都是 review smell。
@@ -391,17 +391,21 @@ Reviewer 最核心的问题是：未来 agent 能不能在编辑前读这条 int
 
 ## Mainline 记录什么
 
-一个 sealed intent 包含：
+一个 sealed intent 默认包含：
 
 - **Why** — 这次工程工作为什么存在。
 - **Decisions** — 团队最终做了哪些决策，带 rationale 和 rejected alternatives。
-- **Risks** — reviewer 需要知道的软风险。
-- **Follow-ups** — 明确留到后续处理的工作项，可被后续 intent 标记完成。
-- **Anti-patterns** — 未来 agent 必须避免的硬约束。
-- **Inherited constraints** — 来自历史 intent 的文件级约束。
+- **Validation 和 review notes** — reviewer 在当前 PR 需要知道的验证与范围说明。
+- **Explicit signals** — 通过专门命令提升出来的 constraints、risks、follow-ups。
 - **Lifecycle** — merged、abandoned、superseded、reverted。
 - **References** — 可选链接，如 issue、PR、doc、CI run 或外部 session。
 - **Commit pins** — intent 和实现 commit 的绑定。
+
+Durable action signals 不走默认 seal 路径：
+
+- `mainline guard add` — 人工确认的约束，未来 agent 必须遵守。
+- `mainline risks add` — 带 trigger / impact / mitigation / validation / owner 的结构化风险。
+- `mainline followups add` — 有明确来源的延期工作。
 
 Mainline 不试图保存 AI session 的每一个 token。
 它保存未来 agent 和 reviewer 真正需要的长期决策记录。

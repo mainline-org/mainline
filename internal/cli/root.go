@@ -251,8 +251,6 @@ func init() {
 	// of the default daily agent loop. Seal records decisions by
 	// default; constraints/risks/follow-ups require these commands.
 	guardCmd.GroupID = groupAdvanced.ID
-	riskCmd.GroupID = groupAdvanced.ID
-	followupCmd.GroupID = groupAdvanced.ID
 	risksCmd.GroupID = groupAdvanced.ID
 	followupsCmd.GroupID = groupAdvanced.ID
 
@@ -269,7 +267,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
-		hubCmd, lintCmd, evalCmd, guardCmd, riskCmd, followupCmd, risksCmd, followupsCmd, versionCmd,
+		hubCmd, lintCmd, evalCmd, guardCmd, risksCmd, followupsCmd, versionCmd,
 	)
 }
 

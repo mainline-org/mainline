@@ -48,7 +48,7 @@ An intent record is the structured answer to:
 | **Intent** | A unit of engineering work with a declared goal, summary, decisions, fingerprint, and lifecycle. |
 | **Sealed intent** | An intent whose summary and fingerprint are frozen. Immutable after seal. |
 | **Decision** | A recorded choice: what was chosen, why, and what was rejected. |
-| **Risk** | An explicit reviewer-facing failure mode created through `mainline risk add`. Advisory; may become irrelevant over time. |
+| **Risk** | An explicit reviewer-facing failure mode created through `mainline risks add`. Advisory; may become irrelevant over time. |
 | **Constraint** | A human-promoted rule created through interactive `mainline guard add`. Future agents must see and obey it. |
 | **Historical seal field** | A read-only field on older sealed intents. Kept on the intent detail for audit, but ignored by active signal queues. |
 | **Inherited constraint** | An explicit constraint that applies to the current change because of file overlap. |
@@ -125,9 +125,9 @@ intent.
 | `user_goal` | string | | The original user request, if different from `what`. |
 | `decisions` | Decision[] | ✓ | At least one decision. Each records a choice point, what was chosen, and optionally the rationale and rejected alternatives. |
 | `rejected` | RejectedAlternative[] | | Top-level rejected alternatives (beyond per-decision rejects). |
-| `risks` | string[] | | Historical read-only field. New seals MUST leave empty/omit; use `mainline risk add`. |
+| `risks` | string[] | | Historical read-only field. New seals MUST leave empty/omit; use `mainline risks add`. |
 | `anti_patterns` | AntiPattern[] | | Historical read-only field. New seals MUST leave empty/omit; use human-confirmed `mainline guard add`. |
-| `followups` | string[] | | Historical read-only field. New seals MUST leave empty/omit; use `mainline followup add`. |
+| `followups` | string[] | | Historical read-only field. New seals MUST leave empty/omit; use `mainline followups add`. |
 | `review_notes` | string[] | | Ephemeral notes for the PR reviewer. Not inherited, not surfaced in context retrieval. |
 
 ### 6.3 Decision

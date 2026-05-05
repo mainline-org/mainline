@@ -194,9 +194,9 @@ Agents SHOULD:
 
 - Move acceptable trade-offs to `decisions[].chose` with rationale.
 - Move reviewer-only context to `review_notes`.
-- Use `mainline risk add` only for a concrete failure mode with
+- Use `mainline risks add` only for a concrete failure mode with
   trigger or impact, plus mitigation / validation / owner.
-- Use `mainline followup add` only for explicit user deferral, an
+- Use `mainline followups add` only for explicit user deferral, an
   external issue/ticket/PR reference, or a real cut-scope task.
 - Never create constraints; a human must confirm `mainline guard add`.
 

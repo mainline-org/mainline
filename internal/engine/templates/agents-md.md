@@ -284,9 +284,9 @@ the next state in a new turn.
 
    - `review_notes` for ephemeral reviewer context.
    - `decisions` for accepted trade-offs and implementation limits.
-   - `mainline risk add` only when a concrete failure mode also has a
+   - `mainline risks add` only when a concrete failure mode also has a
      trigger or impact, plus mitigation / validation / owner.
-   - `mainline followup add` only when the user explicitly deferred the
+   - `mainline followups add` only when the user explicitly deferred the
      work, an external issue/ticket/PR exists, or this PR explicitly cut
      real scope.
    - `mainline guard add` only through interactive human confirmation.

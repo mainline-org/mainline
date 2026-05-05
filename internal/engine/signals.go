@@ -107,7 +107,7 @@ func (s *Service) AddRisk(in AddRiskInput) (*domain.Risk, error) {
 	if err := domain.ValidateRiskStatement(in.Statement); err != nil {
 		return nil, domain.NewRecoverableError(domain.ErrInvalidInput,
 			err.Error(),
-			`use: mainline risk add --intent <id> "<failure mode>" --trigger "<when>" --mitigation "<how to reduce it>"`,
+			`use: mainline risks add --intent <id> "<failure mode>" --trigger "<when>" --mitigation "<how to reduce it>"`,
 			"if this is only reviewer context, keep it in review_notes instead of creating a risk",
 		)
 	}
@@ -161,7 +161,7 @@ func (s *Service) AddFollowup(in AddFollowupInput) (*domain.Followup, error) {
 	if err := domain.ValidateFollowupStatement(in.Statement); err != nil {
 		return nil, domain.NewRecoverableError(domain.ErrInvalidInput,
 			err.Error(),
-			`use: mainline followup add --intent <id> "<task>" --source explicit_defer --source-note "<who deferred it>"`,
+			`use: mainline followups add --intent <id> "<task>" --source explicit_defer --source-note "<who deferred it>"`,
 			"agent-created maybe-later ideas belong in review_notes or nowhere",
 		)
 	}
