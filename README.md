@@ -6,9 +6,6 @@
 [![License: layered](https://img.shields.io/badge/License-Apache--2.0%20%2F%20CC--BY--4.0%20%2F%20Commercial-blue.svg)](#license)
 
 - Website: https://mainline.sh
-- Docs: https://mainline.sh/docs/
-- Spec: https://mainline.sh/spec/
-- Essay: https://mainline.sh/blog/why-coding-agents-need-repo-memory/
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -16,17 +13,6 @@ Mainline is not a Git replacement, a PR system, or a session recorder. It is
 a Git-native memory layer that tells coding agents *why the code is the way it
 is* before they edit it.
 <img width="2530" height="756" alt="Jietu20260505-232345@2x" src="https://github.com/user-attachments/assets/e337559b-72cd-4fd4-b139-16754cc675f6" />
-
-**Status:** public alpha. The core CLI, hooks, Hub, and release packaging are
-usable, but schemas and workflow guidance may still change while we harden the
-public developer experience.
-
-**License model:** Mainline uses a layered licensing structure: Apache-2.0
-for the CLI core, agent skills, hooks, adapters, SDKs, libraries, and protocol
-specs; CC-BY-4.0 or Apache-2.0 for docs, essays, and examples; reserved
-trademarks for the Mainline name and brand; commercial terms for hosted cloud
-products; and hosted search, indexing, analytics, and cloud infrastructure kept
-outside the open-source distribution.
 
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
