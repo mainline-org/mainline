@@ -1,6 +1,5 @@
-// Package eval is the agent eval harness — Step 5 from
-// docs_for_ai/mainline-spec-v0.2.md. It validates the product
-// thesis: agents that read intent before code make fewer mistakes.
+// Package eval is the agent eval harness. It validates the product thesis:
+// agents that read intent before code make fewer mistakes.
 //
 // The full validation needs an LLM runner that drives both a
 // code-first and an intent-first agent across the same fixtures

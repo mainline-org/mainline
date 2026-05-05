@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// LLM runner — Step 5 LLM-runner layer from
-// docs_for_ai/mainline-spec-v0.2.md.
+// LLM runner for the agent eval harness.
 //
 // What this file ships:
 //

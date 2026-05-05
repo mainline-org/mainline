@@ -8,8 +8,7 @@ import (
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
-// `mainline lint` — deterministic seal-quality checks. Step 3 from
-// docs_for_ai/mainline-spec-v0.2.md.
+// `mainline lint` — deterministic seal-quality checks.
 //
 // Bounded context: lint is the *quality gate* for the input to
 // retrieval. context_retrieval reads sealed intents; if seals are

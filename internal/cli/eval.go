@@ -14,7 +14,7 @@ import (
 	"github.com/mainline-org/mainline/internal/storage"
 )
 
-// `mainline eval` — Step 5 from docs_for_ai/mainline-spec-v0.2.md.
+// `mainline eval` — agent eval harness.
 //
 // v1 ships the substrate: fixture catalog + precondition scorer
 // (does retrieval surface the constraints?). The agent-side

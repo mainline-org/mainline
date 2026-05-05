@@ -10,7 +10,7 @@
 #   judge=./scripts/eval-judge-copilot.py
 #
 # Output:
-#   docs_for_ai/eval-runs/<timestamp>/
+#   docs/eval-runs/<timestamp>/
 #     seed-1-<model>.json
 #     seed-2-<model>.json
 #     ...
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
-OUTPUT_BASE="docs_for_ai/eval-runs/${TIMESTAMP}"
+OUTPUT_BASE="docs/eval-runs/${TIMESTAMP}"
 mkdir -p "$OUTPUT_BASE"
 
 echo "═══ Eval multi-run: ${SEEDS} seeds × $(echo "$MODELS" | tr ',' ' ' | wc -w | tr -d ' ') models ═══"

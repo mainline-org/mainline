@@ -41,8 +41,7 @@ type MainlineSection struct {
 	Remote string `toml:"remote"`
 	// Skip controls v0.3 coverage classification: which commits on
 	// main are treated as deliberately exempt from the
-	// "every commit needs an explaining intent" invariant. See spec
-	// docs_for_ai/mainline-spec-v0.3-coverage-and-snapshot.md §D.
+	// "every commit needs an explaining intent" invariant.
 	Skip MainlineSkipSection `toml:"skip"`
 	// Coverage stores adoption-time coverage settings. BaselineCommit
 	// marks the main-branch HEAD that existed before Mainline was
@@ -233,7 +232,7 @@ func DefaultTeamConfig() TeamConfig {
 			// real conflict cases via grid search"; until that data
 			// exists, prefer false positives (extra phase2 judgment
 			// tasks for the agent) over false negatives (missed
-			// conflicts). See docs_for_ai/mainline-spec-v0.1-rc4-patch.md.
+			// conflicts).
 			Phase1Threshold:    0.10,
 			RequireBeforeMerge: false,
 		},
