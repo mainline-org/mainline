@@ -20,11 +20,12 @@ is* before they edit it.
 usable, but schemas and workflow guidance may still change while we harden the
 public developer experience.
 
-**License model:** Mainline is moving to a layered licensing structure:
-Apache-2.0 for the CLI core, agent integrations, and SDK/library surfaces;
-CC-BY-4.0 or Apache-2.0 for specs, docs, and examples; reserved trademarks for
-the Mainline name and brand; commercial terms for hosted cloud; and closed
-hosted telemetry and index infrastructure.
+**License model:** Mainline uses a layered licensing structure: Apache-2.0
+for the CLI core, agent skills, hooks, adapters, SDKs, libraries, and protocol
+specs; CC-BY-4.0 or Apache-2.0 for docs, essays, and examples; reserved
+trademarks for the Mainline name and brand; commercial terms for hosted cloud
+products; and hosted search, indexing, analytics, and cloud infrastructure kept
+outside the open-source distribution.
 
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
@@ -1034,21 +1035,31 @@ part of the working product; remaining v0.4 work is public-launch polish.
 
 ## License
 
-Mainline is moving to a layered licensing model. The goal is to make the local
-developer and agent surfaces easy to adopt while keeping hosted-service
-infrastructure and brand rights protected.
+Mainline uses a layered licensing model. The goal is to make the local
+developer and agent surfaces easy to adopt, embed, and standardize while
+keeping hosted-service infrastructure and brand rights protected.
 
 | Area | Recommended terms | Purpose |
 |---|---|---|
-| CLI core | Apache-2.0 | Enterprise-friendly, platform-friendly adoption. |
-| Agent skill, hooks, and adapters | Apache-2.0 | Let coding agents, IDEs, and automation platforms integrate Mainline freely. |
+| CLI core | Apache-2.0 | Enterprise-friendly and platform-friendly adoption. |
+| Agent skills, hooks, and adapters | Apache-2.0 | Let coding agents, IDEs, and automation platforms integrate Mainline freely. |
 | SDKs and libraries | Apache-2.0 | Maximize ecosystem adoption and implementation reuse. |
-| Intent Record Spec | CC-BY-4.0 or Apache-2.0 | Allow citation, implementation, redistribution, and compatible independent implementations. |
-| Docs and examples | CC-BY-4.0 or Apache-2.0 | Encourage copying, teaching, quoting, and propagation. |
-| Logo, name, and brand | Trademark reserved | Prevent another project or service from presenting itself as the official Mainline. |
-| Hosted cloud | Commercial terms | Keep the hosted product and managed service as the commercial surface. |
-| Telemetry and hosted index infrastructure | Not open source | Preserve the hosted service's future infrastructure advantage. |
+| Intent Record Spec and Agent Context Protocol | Apache-2.0 | Allow compatible independent implementations and make Mainline a vendor-neutral protocol. |
+| Docs, essays, and examples | CC-BY-4.0 or Apache-2.0 | Encourage copying, teaching, quoting, and propagation with attribution. |
+| Logo, name, compatibility marks, and brand | Trademark reserved | Prevent other projects or services from presenting themselves as the official Mainline. |
+| Hosted cloud, GitHub App, managed PR checks, and team dashboards | Commercial terms | Keep the hosted product and managed service as the commercial surface. |
+| Hosted search, indexing, analytics, and cloud infrastructure | Commercial / not part of the open-source distribution | Preserve the hosted service's operational and infrastructure advantage. |
 
-The open local surfaces should be easy for enterprises, agent vendors, and
-developer platforms to embed. The hosted surfaces remain separate commercial
-products.
+The open local surfaces should be easy for enterprises, agent vendors, IDEs,
+and developer platforms to embed. The hosted surfaces remain separate
+commercial products.
+
+Mainline Core should remain local-first. Repository data should not be sent to
+Mainline Cloud unless a user explicitly connects a hosted service.
+
+The Mainline name and logo are not open-source assets. Third parties may
+describe compatibility with Mainline, for example "Compatible with Mainline",
+"Implements the Mainline Intent Record Spec", or "Works with Mainline". They
+may not present themselves as the official Mainline project or service, or use
+names such as "Official Mainline", "Mainline Cloud", "Mainline Enterprise",
+"Mainline Certified", or similar marks without permission.

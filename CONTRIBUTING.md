@@ -11,15 +11,17 @@ Thanks for helping improve Mainline.
 
 ## Contributor Licensing
 
-Mainline is source-available under PolyForm Shield 1.0.0, with commercial
-licensing reserved by the Mainline copyright holder.
+Mainline uses the layered licensing model described in [LICENSE](./LICENSE).
+Local developer, agent, SDK, and protocol surfaces are intended to be licensed
+under Apache-2.0; documentation and examples are intended to be available under
+CC-BY-4.0 or Apache-2.0; hosted-service infrastructure and brand rights remain
+separate protected surfaces.
 
 By submitting a contribution, you confirm that you have the right to submit it
-and license it to the project. For substantial contributions, maintainers may
-require a Contributor License Agreement that preserves the project's ability to
-offer commercial licenses and to relicense future versions or selected
-components, including a possible future CLI-core move to AGPL, Apache, or
-another OSI-approved license.
+and license it to the project under the applicable license for the area you
+change. For substantial contributions, maintainers may require a Contributor
+License Agreement or Developer Certificate of Origin to keep the licensing
+model clear across open local surfaces and hosted commercial surfaces.
 
 ## Development
 

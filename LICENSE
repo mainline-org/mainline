@@ -1,22 +1,88 @@
-Mainline License
-================
+Mainline Licensing Model
+========================
 
-Mainline is source-available under the PolyForm Shield License 1.0.0.
-
-License text:
-https://polyformproject.org/licenses/shield/1.0.0/
-
-Required notice:
 Copyright (c) 2026 Mainline contributors.
 
-Commercial licensing:
-Competing products or services, and any use not permitted by PolyForm Shield
-1.0.0, require a separate commercial license. Commercial licenses are available
-only from the Mainline copyright holder.
+Mainline uses a layered licensing model. The intent is to make the local
+developer, agent, SDK, and protocol surfaces easy to adopt and standardize,
+while keeping hosted-service infrastructure and brand rights protected.
 
-Future licensing:
-The Mainline copyright holder reserves the right to offer commercial licenses
-and to relicense future versions or selected components under different terms.
-For example, parts of the CLI core may later move to an OSI-approved license
-such as AGPL or Apache once user needs and the commercial model are clearer;
-Hub, hosted, and enterprise features may remain commercial.
+This file describes the default licensing policy for this repository. If a
+specific file, directory, package, or distribution artifact carries a more
+specific license notice, that more specific notice controls that material.
+
+
+Open-source local and protocol surfaces
+---------------------------------------
+
+The following areas are licensed under the Apache License, Version 2.0
+(SPDX-License-Identifier: Apache-2.0), unless a more specific notice says
+otherwise:
+
+- CLI core
+- Agent skills, hooks, and adapters
+- SDKs and libraries
+- Intent Record Spec
+- Agent Context Protocol
+
+Apache License 2.0 text:
+https://www.apache.org/licenses/LICENSE-2.0
+
+
+Documentation, essays, and examples
+-----------------------------------
+
+Documentation, essays, examples, tutorials, and explanatory writing are
+licensed under both:
+
+- Creative Commons Attribution 4.0 International
+  (SPDX-License-Identifier: CC-BY-4.0)
+- Apache License, Version 2.0
+  (SPDX-License-Identifier: Apache-2.0)
+
+You may use these materials under either license.
+
+CC BY 4.0 text:
+https://creativecommons.org/licenses/by/4.0/legalcode
+
+
+Trademarks and brand
+--------------------
+
+The Mainline name, logo, compatibility marks, service names, and brand assets
+are not open-source assets and are not licensed under Apache-2.0 or CC-BY-4.0.
+
+Third parties may truthfully describe compatibility, for example:
+
+- "Compatible with Mainline"
+- "Implements the Mainline Intent Record Spec"
+- "Works with Mainline"
+
+Third parties may not present themselves as the official Mainline project or
+service, or use names such as "Official Mainline", "Mainline Cloud",
+"Mainline Enterprise", "Mainline Certified", or similar marks, without
+permission from the Mainline trademark holder.
+
+
+Hosted commercial surfaces
+--------------------------
+
+Hosted cloud products, the hosted GitHub App, managed PR checks, team
+dashboards, hosted search, hosted indexing, analytics, and cloud
+infrastructure are commercial surfaces and are not part of the open-source
+distribution unless they are explicitly published in this repository under an
+open-source license notice.
+
+
+Local-first data boundary
+-------------------------
+
+Mainline Core is local-first. Repository data should not be sent to Mainline
+Cloud unless a user explicitly connects a hosted service.
+
+
+Previous versions
+-----------------
+
+This license file does not revoke rights granted for earlier published
+versions under the licenses that applied to those versions.
