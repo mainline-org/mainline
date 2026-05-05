@@ -109,13 +109,28 @@ func (s *Service) buildDoctorNotesReport(commitMapPath string, infer bool) (*Doc
 	}
 	report.NotesTotal = len(entries)
 
+	var unreachable []gitops.NoteEntry
 	for _, entry := range entries {
 		if reachable[entry.CommitHash] {
 			report.ReachableNotes++
 			continue
 		}
 		report.UnreachableNotes++
-		raw, _ := s.Git.NotesShow(entry.CommitHash)
+		unreachable = append(unreachable, entry)
+	}
+
+	// Status and preflight call this report on the hot path. Parse
+	// unreachable note blobs through one cat-file --batch process
+	// instead of forking `git notes show` once per stale entry.
+	batch, batchErr := s.Git.OpenCatFileBatch()
+	if batchErr == nil {
+		defer batch.Close()
+	}
+	for _, entry := range unreachable {
+		raw, err := s.readNoteBlob(entry, batch)
+		if err != nil {
+			continue
+		}
 		note, ok := parseMainlineCommitNote(raw)
 		if !ok {
 			if strings.TrimSpace(raw) != "" {
@@ -160,6 +175,18 @@ func (s *Service) buildDoctorNotesReport(commitMapPath string, infer bool) (*Doc
 	}
 
 	return report, nil
+}
+
+func (s *Service) readNoteBlob(entry gitops.NoteEntry, batch *gitops.CatFileBatch) (string, error) {
+	if entry.NoteBlob == "" || batch == nil {
+		raw, err := s.Git.NotesShow(entry.CommitHash)
+		return raw, err
+	}
+	data, err := batch.Read(entry.NoteBlob)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func (s *Service) MigrateNotes(opts NotesMigrationOptions) (*NotesMigrationResult, error) {
