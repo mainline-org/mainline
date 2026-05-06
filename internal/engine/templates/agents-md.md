@@ -314,7 +314,8 @@ the next state in a new turn.
    ```
 
    Submit auto-syncs with the team and runs phase-1 conflict detection
-   against every other proposed/merged intent. If the JSON response
+   against proposed intents and merged intents that landed after your
+   intent base. If the JSON response
    carries a `conflicts` array, **surface those conflicts to the user
    verbatim** before continuing. Do not silently move on.
 

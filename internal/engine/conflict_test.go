@@ -165,6 +165,82 @@ func TestDetectSealedConflictsFlagsOverlappingFingerprints(t *testing.T) {
 	}
 }
 
+func TestDetectSealedConflictsInScopeChecksProposedAndMergedSinceBase(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	overlap := &domain.SemanticFingerprint{
+		Subsystems:   []string{"docs"},
+		FilesTouched: []string{"README.md"},
+		Tags:         []string{"docs"},
+	}
+	view := &domain.MainlineView{Intents: []domain.IntentView{
+		{
+			IntentID:    "int_proposed",
+			Status:      domain.StatusProposed,
+			Fingerprint: overlap,
+		},
+		{
+			IntentID:    "int_merged_after_base",
+			Status:      domain.StatusMerged,
+			Fingerprint: overlap,
+			StatusEvidence: domain.StatusEvidence{
+				MergedMainCommit: "new-main",
+			},
+		},
+		{
+			IntentID:    "int_merged_in_base",
+			Status:      domain.StatusMerged,
+			Fingerprint: overlap,
+			StatusEvidence: domain.StatusEvidence{
+				MergedMainCommit: "old-main",
+			},
+		},
+	}}
+
+	pairs := svc.detectSealedConflictsInScope("int_new", overlap, view, 0.10, mergedConflictScope{
+		known:   true,
+		commits: map[string]bool{"new-main": true},
+	})
+	got := map[string]bool{}
+	for _, p := range pairs {
+		got[p.RemoteIntent] = true
+	}
+	if !got["int_proposed"] {
+		t.Fatalf("expected proposed intent to stay eligible, got %+v", pairs)
+	}
+	if !got["int_merged_after_base"] {
+		t.Fatalf("expected merged-since-base intent to stay eligible, got %+v", pairs)
+	}
+	if got["int_merged_in_base"] {
+		t.Fatalf("historical merged intent already in base must be ignored, got %+v", pairs)
+	}
+}
+
+func TestDetectSealedConflictsUnknownScopeKeepsConservativeMergedCoverage(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	overlap := &domain.SemanticFingerprint{
+		Subsystems:   []string{"docs"},
+		FilesTouched: []string{"README.md"},
+	}
+	view := &domain.MainlineView{Intents: []domain.IntentView{{
+		IntentID:    "int_merged_unknown",
+		Status:      domain.StatusMerged,
+		Fingerprint: overlap,
+	}}}
+
+	pairs := svc.detectSealedConflictsInScope("int_new", overlap, view, 0.10, mergedConflictScope{})
+	if len(pairs) != 1 || pairs[0].RemoteIntent != "int_merged_unknown" {
+		t.Fatalf("unknown scope should preserve conservative merged coverage, got %+v", pairs)
+	}
+}
+
 // detectSealedConflicts must exclude the candidate itself (Invariant)
 // — otherwise a freshly sealed intent would always conflict with itself.
 func TestDetectSealedConflictsExcludesCandidate(t *testing.T) {
@@ -316,29 +392,30 @@ func TestSealSubmitOfflineSkipsSyncAndCheck(t *testing.T) {
 // Invariant #4: any non-empty conflict set still leaves the intent in
 // proposed (sealed). Conflicts are advisory; seal is never blocked.
 //
-// We seed a merged intent through the real pipeline (so sync sees it
-// after rebuild) — synthetic in-memory view writes do not survive
-// the SealSubmit's auto-sync because sync rebuilds from actor logs +
-// notes, not from the cached view.
+// We start the candidate, then seed a merged intent through the real
+// pipeline. The merged intent lands after the candidate base, so the
+// scoped seal-time detector should still warn about it.
 func TestSealSubmitNeverBlockedByConflicts(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	// validSealResult fingerprint is {subsystems:["test"], files:["test.go"]}.
-	// First intent walks the full pipeline → merged with that fingerprint.
-	seedMergedIntent(t, dir, svc, "block-merged", "block_first.go")
-
-	// Second intent overlaps perfectly (same fingerprint via
-	// validSealResult). After sync, detectSealedConflicts should
-	// flag the merged remote. The candidate must still seal.
 	gitCmd(t, dir, "checkout", "main")
 	gitCmd(t, dir, "checkout", "-b", "feature/never-block")
 	start, err := svc.Start("never block", "")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
+
+	// validSealResult fingerprint is {subsystems:["test"], files:["test.go"]}.
+	// This intent lands on main after the candidate's base.
+	seedMergedIntent(t, dir, svc, "block-merged", "block_first.go")
+
+	// The candidate still overlaps perfectly (same fingerprint via
+	// validSealResult). After sync, seal-time detection should flag only
+	// this upstream-merged race, while the candidate still seals.
+	gitCmd(t, dir, "checkout", "feature/never-block")
 	writeFile(t, dir, "test.go", "package main\n// overlap by file path\n")
 	gitCmd(t, dir, "add", "test.go")
 	gitCmd(t, dir, "commit", "-m", "second")
