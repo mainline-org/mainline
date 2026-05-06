@@ -19,6 +19,9 @@ type DoctorOptions struct {
 	StaleAfter         time.Duration
 	Proposals          bool
 	StaleProposedAfter time.Duration
+	Notes              bool
+	NotesCommitMapPath string
+	NotesInfer         bool
 	// Setup, when true, runs install / wiring sanity checks
 	// (remote refspec configuration, identity file present and
 	// readable) instead of the drafts orphan scan. Combined with Fix=true, missing refspec
@@ -35,6 +38,7 @@ type DoctorResult struct {
 	Setup         *DoctorSetupReport             `json:"setup,omitempty"`
 	Proposals     *DoctorProposalReport          `json:"proposals,omitempty"`
 	Historical    *DoctorHistoricalSignalsReport `json:"historical_signals,omitempty"`
+	Notes         *DoctorNotesReport             `json:"notes,omitempty"`
 }
 
 // DoctorSetupReport summarises every install / wiring check the doctor
@@ -126,6 +130,9 @@ func (s *Service) Doctor(opts DoctorOptions) (*DoctorResult, error) {
 			opts.StaleProposedAfter = DefaultStaleProposedAfter
 		}
 		return s.doctorProposals(opts.StaleProposedAfter)
+	}
+	if opts.Notes {
+		return s.doctorNotes(opts.NotesCommitMapPath, opts.NotesInfer)
 	}
 
 	currentBranch, _ := s.Git.CurrentBranch()

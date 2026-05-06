@@ -477,6 +477,11 @@ type StatusResult struct {
 
 	ProposalHealth *StatusProposalHealth `json:"proposal_health,omitempty"`
 
+	// NotesHealth surfaces likely git-notes drift caused by a history rewrite
+	// or force-push. It is read-only and only points at doctor/migrate
+	// commands; status must never repair shared notes refs implicitly.
+	NotesHealth *domain.NotesHealth `json:"notes_health,omitempty"`
+
 	// Suggestions are actionable next-step CLI commands derived
 	// from the rest of StatusResult. The CLI prints them as a
 	// "Suggestions:" block under the main rollup.
@@ -591,6 +596,7 @@ func (s *Service) Status() (*StatusResult, error) {
 	} else {
 		if view, _ := s.Store.ReadMainlineView(); view != nil {
 			result.MainHead = view.MainHead
+			result.NotesHealth = statusNotesHealthFromCached(view.NotesHealth)
 		}
 		// Never synced — treat as stale so the CLI can prompt.
 		result.SyncStale = true
@@ -602,6 +608,9 @@ func (s *Service) Status() (*StatusResult, error) {
 	// nice-to-have, not load-bearing for status.
 	view, _ := s.Store.ReadMainlineView()
 	if view != nil {
+		if view.NotesHealth != nil {
+			result.NotesHealth = statusNotesHealthFromCached(view.NotesHealth)
+		}
 		cfg, _ := s.getTeamConfig()
 		if cfg != nil {
 			window := CoverageWindowSize
@@ -642,6 +651,47 @@ func (s *Service) Status() (*StatusResult, error) {
 	result.ActionableItems = buildStatusActionItems(result)
 
 	return result, nil
+}
+
+func statusNotesHealthFromCached(health *domain.NotesHealth) *domain.NotesHealth {
+	if health == nil || !health.LikelyHistoryRewrite {
+		return nil
+	}
+	out := *health
+	out.LikelyHistoryRewrite = true
+	out.RecommendedCommand = "mainline doctor --notes --json"
+	return &out
+}
+
+func finalizeCachedNotesHealth(health *domain.NotesHealth, view *domain.MainlineView) *domain.NotesHealth {
+	if health == nil {
+		return nil
+	}
+	health.CheckedAt = core.Now()
+	health.ProposedCount = 0
+	if view != nil {
+		for _, iv := range view.Intents {
+			if iv.Status == domain.StatusProposed {
+				health.ProposedCount++
+			}
+		}
+		if proposal := collectStatusProposalHealth(view, DefaultStaleProposedAfter); proposal != nil {
+			health.SuspiciousProposedCount = proposal.SuspiciousCount
+		}
+	}
+	health.LikelyHistoryRewrite = likelyNotesHistoryRewrite(
+		health.NotesTotal,
+		health.ReachableNotes,
+		health.UnreachableMainlineNotes,
+		health.ProposedCount,
+	)
+	if health.LikelyHistoryRewrite {
+		// Cached status should send callers to the read-only diagnosis first.
+		health.RecommendedCommand = "mainline doctor --notes --json"
+	} else {
+		health.RecommendedCommand = ""
+	}
+	return health
 }
 
 func collectStatusProposalHealth(view *domain.MainlineView, staleAfter time.Duration) *StatusProposalHealth {
@@ -847,6 +897,9 @@ func buildStatusSuggestions(r *StatusResult) []string {
 	if r.SyncStale {
 		out = append(out, "mainline sync   # team view is stale")
 	}
+	if r.NotesHealth != nil && r.NotesHealth.LikelyHistoryRewrite {
+		out = append(out, "mainline doctor --notes --json   # inspect possible notes rewrite drift")
+	}
 	if r.Coverage != nil && r.Coverage.UncoveredCount > 0 {
 		out = append(out, "mainline gaps   # uncovered commits with rescue options")
 	}
@@ -922,6 +975,17 @@ func buildStatusActionItems(r *StatusResult) []StatusActionItem {
 				RecommendedCommand: fmt.Sprintf("mainline publish --intent %s", r.ActiveIntent.IntentID),
 			})
 		}
+	}
+
+	if r.NotesHealth != nil && r.NotesHealth.LikelyHistoryRewrite {
+		add(StatusActionItem{
+			Kind:  "notes_rewrite",
+			Title: "Possible history rewrite drift in Mainline notes",
+			Why: fmt.Sprintf("%d Mainline note(s) point at commits no longer reachable from main.",
+				r.NotesHealth.UnreachableMainlineNotes),
+			Risk:               "Proposal, coverage, and context results can be stale or misleading until notes are inspected.",
+			RecommendedCommand: "mainline doctor --notes --json",
+		})
 	}
 
 	if r.Coverage != nil && r.Coverage.UncoveredCount > 0 {

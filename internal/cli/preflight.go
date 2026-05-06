@@ -11,9 +11,9 @@ var preflightCmd = &cobra.Command{
 	Use:   "preflight",
 	Short: "Run a low-noise readiness check before work or seal",
 	Long: `Run a read-only readiness check for common collaboration risks:
-branch drift, stale sync state, proposed intent overlap, upstream merged
-overlap, and dirty-only seal evidence. Business risk is reported through
-level / ok_to_continue, not through the process exit code.`,
+branch drift, stale sync state, notes rewrite drift, proposed intent overlap,
+upstream merged overlap, and dirty-only seal evidence. Business risk is
+reported through level / ok_to_continue, not through the process exit code.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {

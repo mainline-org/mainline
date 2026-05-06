@@ -44,6 +44,11 @@ var syncCmd = &cobra.Command{
 					fmt.Printf("  %s -> %s (%s)\n", p.IntentID, p.Commit, p.MatchStrategy)
 				}
 			}
+			if result.NotesHealth != nil && result.NotesHealth.LikelyHistoryRewrite {
+				fmt.Printf("\n⚠ Mainline notes may have rewrite drift (%d unreachable mainline notes).\n",
+					result.NotesHealth.UnreachableMainlineNotes)
+				fmt.Println("Run `mainline doctor --notes --json` before trusting proposal or coverage state.")
+			}
 			if len(result.NewConflicts) == 0 {
 				if result.NewSealedSeen > 0 {
 					fmt.Println("No new conflicts detected.")
