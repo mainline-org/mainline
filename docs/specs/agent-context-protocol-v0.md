@@ -251,6 +251,11 @@ Phase-1 conflicts are file/subsystem overlap signals (not semantic
 judgments). Phase-2 semantic judgment is invoked deliberately when
 phase-1 flags an overlap.
 
+Seal-time phase-1 conflict detection checks active proposed intents and
+merged intents that landed after the current intent's base commit. Older
+merged intents remain retrieval context unless they carry explicit
+durable signals.
+
 ## 10. What agents do NOT need to run
 
 | Command | Why not |

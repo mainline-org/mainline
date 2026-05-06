@@ -533,7 +533,8 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		// directly — view's snapshot of this intent may not reflect
 		// it yet (actor log replay race).
 		view, _ := s.Store.ReadMainlineView()
-		conflicts := s.detectSealedConflicts(sr.IntentID, &sr.Fingerprint, view, cfg.Check.Phase1Threshold)
+		scope := s.mergedConflictScopeSinceBase(draft.BaseCommit, view)
+		conflicts := s.detectSealedConflictsInScope(sr.IntentID, &sr.Fingerprint, view, cfg.Check.Phase1Threshold, scope)
 		if len(conflicts) > 0 {
 			result.Conflicts = conflicts
 		}

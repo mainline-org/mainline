@@ -219,11 +219,61 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-// detectSealedConflicts is called from SealSubmit. It scores the
-// freshly-sealed fingerprint against every other intent in the view
-// (merged or proposed, candidate excluded) and returns warnings that
-// pass cfg.Check.Phase1Threshold.
+type mergedConflictScope struct {
+	known   bool
+	commits map[string]bool
+}
+
+// mergedConflictScopeSinceBase builds the set of main commits that landed after
+// the candidate intent's base. This lets seal-time conflict detection keep
+// merged-intent race coverage without treating the whole repository history as
+// current conflict material.
+func (s *Service) mergedConflictScopeSinceBase(baseCommit string, view *domain.MainlineView) mergedConflictScope {
+	if baseCommit == "" || view == nil || view.MainHead == "" {
+		return mergedConflictScope{}
+	}
+	if baseCommit == view.MainHead {
+		return mergedConflictScope{known: true, commits: map[string]bool{}}
+	}
+	commits, err := s.Git.RevList(baseCommit + ".." + view.MainHead)
+	if err != nil {
+		return mergedConflictScope{}
+	}
+	out := make(map[string]bool, len(commits))
+	for _, commit := range commits {
+		out[commit] = true
+	}
+	return mergedConflictScope{known: true, commits: out}
+}
+
+func sealedConflictRemoteEligible(iv domain.IntentView, scope mergedConflictScope) bool {
+	switch iv.Status {
+	case domain.StatusProposed:
+		return true
+	case domain.StatusMerged:
+		if !scope.known {
+			// Unknown base or ancestry state: preserve the old conservative
+			// behavior rather than silently missing a recent upstream merge.
+			return true
+		}
+		commit := iv.StatusEvidence.MergedMainCommit
+		return commit != "" && scope.commits[commit]
+	default:
+		return false
+	}
+}
+
+// detectSealedConflicts is called from tests and legacy internal paths. Without
+// a base scope it preserves the conservative historical behavior.
 func (s *Service) detectSealedConflicts(candidateID string, fp *domain.SemanticFingerprint, view *domain.MainlineView, threshold float64) []domain.ConflictPair {
+	return s.detectSealedConflictsInScope(candidateID, fp, view, threshold, mergedConflictScope{})
+}
+
+// detectSealedConflictsInScope is called from SealSubmit. It scores the
+// freshly-sealed fingerprint against every proposed intent plus merged intents
+// that landed after the candidate base (candidate excluded), and returns
+// warnings that pass cfg.Check.Phase1Threshold.
+func (s *Service) detectSealedConflictsInScope(candidateID string, fp *domain.SemanticFingerprint, view *domain.MainlineView, threshold float64, scope mergedConflictScope) []domain.ConflictPair {
 	if fp == nil || view == nil {
 		return nil
 	}
@@ -232,7 +282,7 @@ func (s *Service) detectSealedConflicts(candidateID string, fp *domain.SemanticF
 		if iv.IntentID == candidateID || iv.Fingerprint == nil {
 			continue
 		}
-		if iv.Status != domain.StatusMerged && iv.Status != domain.StatusProposed {
+		if !sealedConflictRemoteEligible(iv, scope) {
 			continue
 		}
 		score := FingerprintOverlap(fp, iv.Fingerprint)
