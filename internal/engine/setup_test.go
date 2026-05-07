@@ -288,6 +288,54 @@ func TestDoctorSetupFixWiresRefspecs(t *testing.T) {
 	}
 }
 
+func TestDoctorSetupFlagsMissingBranchBackedActorFetch(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	svc.Init("agent")
+
+	if _, err := svc.Git.Run("remote", "add", "origin", "git@example.com:fake/fake.git"); err != nil {
+		t.Fatalf("git remote add: %v", err)
+	}
+	if err := svc.Git.ConfigAdd("remote.origin.fetch", "+refs/notes/mainline/*:refs/notes/mainline/*"); err != nil {
+		t.Fatalf("seed notes fetch: %v", err)
+	}
+	if err := svc.Git.ConfigAdd("remote.origin.fetch", domain.ActorLogFetchRefspec(domain.DefaultActorLogPrefix, "origin")); err != nil {
+		t.Fatalf("seed actor fetch: %v", err)
+	}
+	if err := svc.Git.ConfigAdd("remote.origin.fetch", domain.LegacyActorLogFetchRefspec("origin")); err != nil {
+		t.Fatalf("seed legacy actor fetch: %v", err)
+	}
+	if err := svc.Git.ConfigAdd("remote.origin.push", "refs/notes/mainline/*:refs/notes/mainline/*"); err != nil {
+		t.Fatalf("seed notes push: %v", err)
+	}
+	if err := svc.Git.ConfigAdd("remote.origin.push", domain.ActorLogPushRefspec(domain.DefaultActorLogPrefix)); err != nil {
+		t.Fatalf("seed actor push: %v", err)
+	}
+
+	res, err := svc.Doctor(DoctorOptions{Setup: true})
+	if err != nil {
+		t.Fatalf("Doctor --setup: %v", err)
+	}
+	if res.Setup.ActorFetchOK {
+		t.Fatalf("doctor should flag missing branch-backed actor fetch: %+v", res.Setup)
+	}
+	if !strings.Contains(strings.Join(res.Setup.Issues, "\n"), "remote refspecs incomplete") {
+		t.Fatalf("doctor should report incomplete refspecs, got %v", res.Setup.Issues)
+	}
+
+	res, err = svc.Doctor(DoctorOptions{Setup: true, Fix: true})
+	if err != nil {
+		t.Fatalf("Doctor --setup --fix: %v", err)
+	}
+	if !res.Setup.ActorFetchOK {
+		t.Fatalf("doctor --fix should repair branch-backed actor fetch: %+v", res.Setup)
+	}
+	if !strings.Contains(strings.Join(res.Setup.Fixed, "\n"), domain.BranchBackedDefaultActorLogFetchRefspec("origin")) {
+		t.Fatalf("doctor --fix should report branch-backed actor fetch addition, got %v", res.Setup.Fixed)
+	}
+}
+
 // configureRemoteRefspecs respects the team config's remote name —
 // fork-based / non-default-remote workflows must not be hardcoded to
 // "origin". This pins the post-MVP fix that removed the literal

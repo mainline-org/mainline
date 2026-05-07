@@ -328,7 +328,7 @@ func (s *Service) configureRemoteRefspecs(actorLogPrefix string) []string {
 		_ = s.Git.ConfigAdd(fetchKey, actorFetch)
 		added = append(added, "fetch: "+actorFetch)
 	}
-	branchBackedDefaultFetch := domain.BranchBackedDefaultActorLogFetchRefspec(remote)
+	branchBackedDefaultFetch := domain.BranchBackedActorLogFetchRefspec(actorLogPrefix, remote)
 	if !strings.Contains(s.Git.ConfigGet(fetchKey), strings.TrimPrefix(branchBackedDefaultFetch, "+")) {
 		_ = s.Git.ConfigAdd(fetchKey, branchBackedDefaultFetch)
 		added = append(added, "fetch: "+branchBackedDefaultFetch)

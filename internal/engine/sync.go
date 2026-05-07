@@ -76,7 +76,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// because rewrites to main are a separate safety concern
 		// the user resolves explicitly via git.
 		actorRefspec := domain.ActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote)
-		branchBackedDefaultRefspec := domain.BranchBackedDefaultActorLogFetchRefspec(remote)
+		branchBackedActorRefspec := domain.BranchBackedActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote)
 		legacyActorRefspec := domain.LegacyActorLogFetchRefspec(remote)
 		// Network fetch is best-effort: a transient network failure
 		// should let the rest of sync run against local refs (the
@@ -84,7 +84,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 		_ = s.Git.Fetch(remote,
 			cfg.Mainline.MainBranch,
 			actorRefspec,
-			branchBackedDefaultRefspec,
+			branchBackedActorRefspec,
 			legacyActorRefspec,
 			"+refs/notes/mainline/*:refs/notes/mainline/*",
 		)
@@ -485,8 +485,8 @@ func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 	refPrefixes := []string{
 		domain.ActorLogLocalListPrefix(prefix),
 		domain.ActorLogRemoteListPrefix(prefix, remote),
-		domain.BranchBackedDefaultActorLogLocalListPrefix(),
-		domain.BranchBackedDefaultActorLogRemoteListPrefix(remote),
+		domain.BranchBackedActorLogLocalListPrefix(prefix),
+		domain.BranchBackedActorLogRemoteListPrefix(prefix, remote),
 		domain.LegacyActorLogLocalListPrefix(),
 		domain.LegacyActorLogRemoteListPrefix(remote),
 	}
@@ -555,7 +555,31 @@ func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 			events = append(events, event)
 		}
 	}
+	sortEventsByTimestamp(events)
 	return events, nil
+}
+
+func sortEventsByTimestamp(events []json.RawMessage) {
+	sort.SliceStable(events, func(i, j int) bool {
+		left, leftOK := eventTimestamp(events[i])
+		right, rightOK := eventTimestamp(events[j])
+		if !leftOK || !rightOK || left.Equal(right) {
+			return false
+		}
+		return left.Before(right)
+	})
+}
+
+func eventTimestamp(raw json.RawMessage) (time.Time, bool) {
+	var base domain.BaseEvent
+	if err := json.Unmarshal(raw, &base); err != nil || base.Timestamp == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, base.Timestamp)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 func (s *Service) syncedMainRef(mainBranch string) string {
