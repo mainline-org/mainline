@@ -1,1 +1,1 @@
-{"event_id":"evt_36604611","schema_version":1,"event_type":"intent.abandoned","actor_id":"actor_a5057afd","actor_name":"z2z23n0","timestamp":"2026-05-07T16:56:34Z","intent_id":"int_13e65358","reason":"该修复方向错误；空白 merged intent 的根因是 actor log ref 兼容读取问题，已由 v0.4.3 修复。"}
+{"event_id":"evt_1ce4c414","schema_version":1,"event_type":"intent.abandoned","actor_id":"actor_a5057afd","actor_name":"z2z23n0","timestamp":"2026-05-07T16:56:48Z","intent_id":"int_6d4ff1ab","reason":"该修复方向错误；空白 merged intent 的根因是 actor log ref 兼容读取问题，已由 v0.4.3 修复。"}
