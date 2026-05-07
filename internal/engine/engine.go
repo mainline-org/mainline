@@ -328,6 +328,11 @@ func (s *Service) configureRemoteRefspecs(actorLogPrefix string) []string {
 		_ = s.Git.ConfigAdd(fetchKey, actorFetch)
 		added = append(added, "fetch: "+actorFetch)
 	}
+	branchBackedDefaultFetch := domain.BranchBackedDefaultActorLogFetchRefspec(remote)
+	if !strings.Contains(s.Git.ConfigGet(fetchKey), strings.TrimPrefix(branchBackedDefaultFetch, "+")) {
+		_ = s.Git.ConfigAdd(fetchKey, branchBackedDefaultFetch)
+		added = append(added, "fetch: "+branchBackedDefaultFetch)
+	}
 	// Keep reading legacy branch-backed actor logs during migration,
 	// but stop configuring pushes to refs/heads/_mainline/actor/*.
 	legacyFetch := domain.LegacyActorLogFetchRefspec(remote)

@@ -37,8 +37,8 @@ func TestConfigureRemoteRefspecsAddsSetupRefspecsThenIsIdempotent(t *testing.T) 
 	}
 
 	added := svc.configureRemoteRefspecs(domain.DefaultActorLogPrefix)
-	if len(added) != 5 {
-		t.Fatalf("first call should add 5 refspec entries (notes fetch+push, actor fetch+push, legacy fetch), got %d: %v",
+	if len(added) != 6 {
+		t.Fatalf("first call should add 6 refspec entries (notes fetch+push, actor fetch+push, branch-backed rescue fetch, legacy fetch), got %d: %v",
 			len(added), added)
 	}
 
@@ -61,6 +61,9 @@ func TestConfigureRemoteRefspecsAddsSetupRefspecsThenIsIdempotent(t *testing.T) 
 	}
 	if !strings.Contains(fetch, "refs/heads/_mainline/actor") {
 		t.Errorf("remote.origin.fetch should keep legacy actor logs readable: %s", fetch)
+	}
+	if !strings.Contains(fetch, "refs/heads/refs/mainline/actors") {
+		t.Errorf("remote.origin.fetch should keep branch-backed default actor logs readable: %s", fetch)
 	}
 	if strings.Contains(push, "refs/heads/_mainline/actor") {
 		t.Errorf("remote.origin.push should not push legacy branch actor logs: %s", push)
@@ -120,8 +123,8 @@ func TestRewireFillsRefspecsAfterLateOrigin(t *testing.T) {
 	if !r.HadRemote {
 		t.Error("Rewire should report HadRemote=true after origin was added")
 	}
-	if len(r.RefspecsAdded) != 5 {
-		t.Errorf("Rewire should have added 5 refspec entries, got %d", len(r.RefspecsAdded))
+	if len(r.RefspecsAdded) != 6 {
+		t.Errorf("Rewire should have added 6 refspec entries, got %d", len(r.RefspecsAdded))
 	}
 }
 
@@ -276,8 +279,8 @@ func TestDoctorSetupFixWiresRefspecs(t *testing.T) {
 		!res.Setup.NotesPushOK || !res.Setup.ActorPushOK {
 		t.Errorf("after --fix all refspec OK booleans should be true: %+v", res.Setup)
 	}
-	if len(res.Setup.Fixed) != 5 {
-		t.Errorf("--fix should report 5 refspec entries added, got %d: %v",
+	if len(res.Setup.Fixed) != 6 {
+		t.Errorf("--fix should report 6 refspec entries added, got %d: %v",
 			len(res.Setup.Fixed), res.Setup.Fixed)
 	}
 	if strings.Contains(strings.Join(res.Setup.Issues, "\n"), "remote refspecs incomplete") {
@@ -307,8 +310,8 @@ func TestConfigureRemoteRefspecsHonoursNonOriginRemote(t *testing.T) {
 	}
 
 	added := svc.configureRemoteRefspecs(domain.DefaultActorLogPrefix)
-	if len(added) != 5 {
-		t.Fatalf("expected 5 refspec entries added on the upstream remote, got %d: %v",
+	if len(added) != 6 {
+		t.Fatalf("expected 6 refspec entries added on the upstream remote, got %d: %v",
 			len(added), added)
 	}
 

@@ -110,6 +110,23 @@ func ActorLogFetchRefspec(prefix, remote string) string {
 	}
 }
 
+func BranchBackedDefaultActorLogRef(actorID string) string {
+	return fmt.Sprintf("refs/heads/%s/%s", DefaultActorLogPrefix, actorID)
+}
+
+func BranchBackedDefaultActorLogFetchRefspec(remote string) string {
+	return fmt.Sprintf("+refs/heads/%s/*:refs/remotes/%s/%s/*",
+		DefaultActorLogPrefix, remote, DefaultActorLogPrefix)
+}
+
+func BranchBackedDefaultActorLogLocalListPrefix() string {
+	return "refs/heads/" + DefaultActorLogPrefix
+}
+
+func BranchBackedDefaultActorLogRemoteListPrefix(remote string) string {
+	return fmt.Sprintf("refs/remotes/%s/%s", remote, DefaultActorLogPrefix)
+}
+
 func ActorLogPushRefspec(prefix string) string {
 	prefix = NormalizeActorLogPrefix(prefix)
 	switch {

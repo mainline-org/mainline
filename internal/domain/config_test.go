@@ -16,6 +16,12 @@ func TestActorLogDefaultRefsStayOutOfHeads(t *testing.T) {
 	if got := ActorLogFetchRefspec(DefaultActorLogPrefix, "origin"); got != "+refs/mainline/actors/*/log:refs/remotes/origin/mainline/actors/*/log" {
 		t.Fatalf("ActorLogFetchRefspec: %q", got)
 	}
+	if got, want := BranchBackedDefaultActorLogRef("actor_test"), "refs/heads/refs/mainline/actors/actor_test"; got != want {
+		t.Fatalf("BranchBackedDefaultActorLogRef: got %q want %q", got, want)
+	}
+	if got, want := BranchBackedDefaultActorLogFetchRefspec("origin"), "+refs/heads/refs/mainline/actors/*:refs/remotes/origin/refs/mainline/actors/*"; got != want {
+		t.Fatalf("BranchBackedDefaultActorLogFetchRefspec: got %q want %q", got, want)
+	}
 	if got := ActorLogPushRefspec(DefaultActorLogPrefix); got != "refs/mainline/actors/*/log:refs/mainline/actors/*/log" {
 		t.Fatalf("ActorLogPushRefspec: %q", got)
 	}

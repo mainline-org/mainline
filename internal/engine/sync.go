@@ -76,6 +76,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 		// because rewrites to main are a separate safety concern
 		// the user resolves explicitly via git.
 		actorRefspec := domain.ActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote)
+		branchBackedDefaultRefspec := domain.BranchBackedDefaultActorLogFetchRefspec(remote)
 		legacyActorRefspec := domain.LegacyActorLogFetchRefspec(remote)
 		// Network fetch is best-effort: a transient network failure
 		// should let the rest of sync run against local refs (the
@@ -83,6 +84,7 @@ func (s *Service) Sync() (*SyncResult, error) {
 		_ = s.Git.Fetch(remote,
 			cfg.Mainline.MainBranch,
 			actorRefspec,
+			branchBackedDefaultRefspec,
 			legacyActorRefspec,
 			"+refs/notes/mainline/*:refs/notes/mainline/*",
 		)
@@ -483,6 +485,8 @@ func (s *Service) collectAllEvents(prefix string) ([]json.RawMessage, error) {
 	refPrefixes := []string{
 		domain.ActorLogLocalListPrefix(prefix),
 		domain.ActorLogRemoteListPrefix(prefix, remote),
+		domain.BranchBackedDefaultActorLogLocalListPrefix(),
+		domain.BranchBackedDefaultActorLogRemoteListPrefix(remote),
 		domain.LegacyActorLogLocalListPrefix(),
 		domain.LegacyActorLogRemoteListPrefix(remote),
 	}

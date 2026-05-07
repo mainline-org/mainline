@@ -69,6 +69,78 @@ func TestActorLogDefaultRefIsHiddenAndMigratesLegacyParent(t *testing.T) {
 	}
 }
 
+func TestActorLogDefaultRefMigratesBranchBackedDefaultParent(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, err := svc.getTeamConfig()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	branchBackedEvent := actorRefTestEvent("evt_branch_backed", initRes.ActorID, "int_branch_backed")
+	branchBackedCommit := writeActorEventCommit(t, svc, "", branchBackedEvent)
+	branchBackedRef := domain.BranchBackedDefaultActorLogRef(initRes.ActorID)
+	if err := svc.Git.UpdateRef(branchBackedRef, branchBackedCommit); err != nil {
+		t.Fatalf("write branch-backed default ref: %v", err)
+	}
+
+	if err := svc.Store.AppendActorLogEvent(
+		initRes.ActorID,
+		cfg.Mainline.ActorLogPrefix,
+		actorRefTestEvent("evt_hidden", initRes.ActorID, "int_hidden"),
+	); err != nil {
+		t.Fatalf("append hidden event: %v", err)
+	}
+
+	hiddenRef := svc.Store.ActorLogRef(initRes.ActorID, cfg.Mainline.ActorLogPrefix)
+	if parent := firstParent(t, svc, hiddenRef); parent != branchBackedCommit {
+		t.Fatalf("hidden actor log should continue from branch-backed default parent: got %s want %s", parent, branchBackedCommit)
+	}
+}
+
+func TestCollectAllEventsIncludesBranchBackedDefaultRefs(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, err := svc.getTeamConfig()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	branchBackedEvent := actorRefTestEvent("evt_branch_backed", initRes.ActorID, "int_branch_backed")
+	branchBackedCommit := writeActorEventCommit(t, svc, "", branchBackedEvent)
+	branchBackedRef := domain.BranchBackedDefaultActorLogRef(initRes.ActorID)
+	if err := svc.Git.UpdateRef(branchBackedRef, branchBackedCommit); err != nil {
+		t.Fatalf("write branch-backed default ref: %v", err)
+	}
+
+	rawEvents, err := svc.collectAllEvents(cfg.Mainline.ActorLogPrefix)
+	if err != nil {
+		t.Fatalf("collect events: %v", err)
+	}
+	if len(rawEvents) != 1 {
+		t.Fatalf("expected one branch-backed event, got %d", len(rawEvents))
+	}
+	var evt domain.BaseEvent
+	if err := json.Unmarshal(rawEvents[0], &evt); err != nil {
+		t.Fatalf("unmarshal event: %v", err)
+	}
+	if evt.EventID != "evt_branch_backed" {
+		t.Fatalf("event id: got %q want evt_branch_backed", evt.EventID)
+	}
+}
+
 func TestConfiguredPushRefspecPublishesHiddenActorRefsOnly(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
