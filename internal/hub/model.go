@@ -26,13 +26,15 @@ import "github.com/mainline-org/mainline/internal/domain"
 // JSON-serialisable so we can drop a copy at hub/data/intents.json
 // for inspection / future ingestion.
 type HubModel struct {
-	GeneratedAt string          `json:"generated_at"`
-	MainBranch  string          `json:"main_branch"`
-	MainHead    string          `json:"main_head"`
-	Dashboard   HubDashboard    `json:"dashboard"`
-	TeamHealth  HubTeamHealth   `json:"team_health"`
-	Intents     []HubIntent     `json:"intents"`
-	OpenIntents []HubOpenIntent `json:"open_intents,omitempty"`
+	GeneratedAt   string             `json:"generated_at"`
+	MainBranch    string             `json:"main_branch"`
+	MainHead      string             `json:"main_head"`
+	Source        HubSource          `json:"source"`
+	Dashboard     HubDashboard       `json:"dashboard"`
+	TeamHealth    HubTeamHealth      `json:"team_health"`
+	Intents       []HubIntent        `json:"intents"`
+	OpenIntents   []HubOpenIntent    `json:"open_intents,omitempty"`
+	SiblingDrafts []HubWorktreeDraft `json:"sibling_worktree_drafts,omitempty"`
 
 	// Derived indexes. These are pure functions of Intents; they live
 	// on the model so the renderer doesn't have to recompute them and
@@ -54,6 +56,27 @@ type HubModel struct {
 	// /files/<path>.html. Sorted by HighSeverityCount desc then
 	// UnacknowledgedRecentTouches desc.
 	InheritedHotspots []HubInheritedHotspot `json:"inherited_hotspots,omitempty"`
+}
+
+type HubSource struct {
+	RepoPath                         string `json:"repo_path,omitempty"`
+	Branch                           string `json:"branch,omitempty"`
+	LastSyncAt                       string `json:"last_sync_at,omitempty"`
+	CurrentWorktreeDraftsDir         string `json:"current_worktree_drafts_dir,omitempty"`
+	IncludesCurrentWorktreeDrafts    bool   `json:"includes_current_worktree_drafts"`
+	IncludesSiblingWorktreeDraftList bool   `json:"includes_sibling_worktree_draft_list"`
+}
+
+type HubWorktreeDraft struct {
+	ID             string `json:"id"`
+	Goal           string `json:"goal,omitempty"`
+	Status         string `json:"status,omitempty"`
+	GitBranch      string `json:"git_branch,omitempty"`
+	Thread         string `json:"thread,omitempty"`
+	WorktreePath   string `json:"worktree_path"`
+	DraftPath      string `json:"draft_path"`
+	TurnCount      int    `json:"turn_count,omitempty"`
+	LastModifiedAt string `json:"last_modified_at,omitempty"`
 }
 
 // HubInheritedHotspot mirrors domain.InheritedConstraintHotspot. We

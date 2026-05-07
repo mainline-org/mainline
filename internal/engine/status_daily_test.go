@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -73,6 +74,53 @@ func TestStatus_UnsealedDraftsSurfacesOtherBranches(t *testing.T) {
 		if d.IntentID == active.IntentID {
 			t.Errorf("active draft on current branch should NOT appear in UnsealedDrafts (already in ActiveIntent)")
 		}
+	}
+	if len(res.SiblingWorktreeDrafts) != 0 {
+		t.Fatalf("current worktree draft should not appear as sibling draft: %+v", res.SiblingWorktreeDrafts)
+	}
+}
+
+func TestStatus_SurfacesSiblingWorktreeDrafts(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	linked := filepath.Join(t.TempDir(), "linked-status-draft")
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/status-sibling", linked)
+	resolvedLinked, err := filepath.EvalSymlinks(linked)
+	if err != nil {
+		t.Fatalf("resolve linked path: %v", err)
+	}
+	linkedSvc := NewServiceFromRoot(linked)
+	start, err := linkedSvc.Start("sibling status draft", "")
+	if err != nil {
+		t.Fatalf("start linked draft: %v", err)
+	}
+	if err := linkedSvc.Store.AppendTurn(&domain.Turn{
+		IntentID:    start.IntentID,
+		Index:       0,
+		CreatedAt:   "2026-05-07T00:00:00Z",
+		Description: "progress",
+	}); err != nil {
+		t.Fatalf("append linked draft turn: %v", err)
+	}
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if len(res.SiblingWorktreeDrafts) != 1 {
+		t.Fatalf("expected one sibling draft, got %+v", res.SiblingWorktreeDrafts)
+	}
+	d := res.SiblingWorktreeDrafts[0]
+	if d.IntentID != start.IntentID || d.WorktreePath != resolvedLinked || d.TurnCount != 1 {
+		t.Fatalf("bad sibling draft summary: %+v", d)
+	}
+	if !strings.Contains(strings.Join(res.Suggestions, "\n"), resolvedLinked) {
+		t.Fatalf("suggestions should point at sibling worktree: %v", res.Suggestions)
 	}
 }
 

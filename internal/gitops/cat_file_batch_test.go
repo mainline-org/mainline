@@ -132,3 +132,60 @@ func TestCatFileBatch_CloseIdempotent(t *testing.T) {
 		t.Fatalf("second close: %v", err)
 	}
 }
+
+func TestWorktreesListsLinkedWorktree(t *testing.T) {
+	dir := t.TempDir()
+	if err := Init(dir); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	g := NewFromRoot(dir)
+	if _, err := g.Run("config", "user.email", "t@e"); err != nil {
+		t.Fatalf("config email: %v", err)
+	}
+	if _, err := g.Run("config", "user.name", "t"); err != nil {
+		t.Fatalf("config name: %v", err)
+	}
+	if err := g.WriteAndCommitFile("README.md", "# test\n", "initial"); err != nil {
+		t.Fatalf("initial commit: %v", err)
+	}
+
+	linked := filepath.Join(t.TempDir(), "linked")
+	if _, err := g.Run("worktree", "add", "-b", "feature/worktrees", linked); err != nil {
+		t.Fatalf("worktree add: %v", err)
+	}
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve dir: %v", err)
+	}
+	resolvedLinked, err := filepath.EvalSymlinks(linked)
+	if err != nil {
+		t.Fatalf("resolve linked: %v", err)
+	}
+
+	rows, err := g.Worktrees()
+	if err != nil {
+		t.Fatalf("worktrees: %v", err)
+	}
+	var foundCurrent, foundLinked bool
+	for _, row := range rows {
+		path, err := filepath.EvalSymlinks(row.Path)
+		if err != nil {
+			t.Fatalf("resolve worktree path %q: %v", row.Path, err)
+		}
+		switch path {
+		case resolvedDir:
+			foundCurrent = true
+		case resolvedLinked:
+			foundLinked = true
+			if row.Branch != "feature/worktrees" {
+				t.Fatalf("linked branch = %q", row.Branch)
+			}
+			if row.Bare || row.Detached {
+				t.Fatalf("linked worktree should be attached and non-bare: %+v", row)
+			}
+		}
+	}
+	if !foundCurrent || !foundLinked {
+		t.Fatalf("worktree list missing current=%v linked=%v rows=%+v", foundCurrent, foundLinked, rows)
+	}
+}

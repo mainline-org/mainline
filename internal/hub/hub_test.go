@@ -532,6 +532,71 @@ func TestExport_NoIntentsStillWritesIndex(t *testing.T) {
 	}
 }
 
+func TestExport_SurfaceSourceAndSiblingDraftVisibility(t *testing.T) {
+	dir := t.TempDir()
+	repoRoot := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := storage.New(repoRoot, nil)
+	if err := store.WriteMainlineView(makeView()); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(dir, "site")
+	res, err := Export(store, ExportOptions{
+		OutputDir: out,
+		Source: HubSource{
+			RepoPath:                 repoRoot,
+			Branch:                   "main",
+			LastSyncAt:               "2026-05-07T03:00:00Z",
+			CurrentWorktreeDraftsDir: filepath.Join(repoRoot, ".ml-cache", "drafts"),
+		},
+		SiblingDrafts: []HubWorktreeDraft{{
+			ID:             "int_sibling",
+			Goal:           "sibling draft",
+			Status:         "drafting",
+			GitBranch:      "feature/sibling",
+			WorktreePath:   filepath.Join(dir, "repo-sibling"),
+			DraftPath:      filepath.Join(dir, "repo-sibling", ".ml-cache", "drafts", "int_sibling.json"),
+			TurnCount:      2,
+			LastModifiedAt: "2026-05-07T03:10:00Z",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SiblingDraftCount != 1 {
+		t.Fatalf("expected sibling draft count, got %+v", res)
+	}
+	for page, wants := range map[string][]string{
+		"index.html": {"Viewing synced Mainline state", "sibling drafts", "current worktree"},
+		"open.html":  {"Visibility", "sibling draft", "current worktree"},
+	} {
+		body, err := os.ReadFile(filepath.Join(out, page))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(string(body), want) {
+				t.Fatalf("%s missing %q:\n%s", page, want, string(body))
+			}
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(out, "data", "intents.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTrip HubModel
+	if err := json.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatal(err)
+	}
+	if roundTrip.Source.RepoPath != repoRoot || !roundTrip.Source.IncludesCurrentWorktreeDrafts ||
+		!roundTrip.Source.IncludesSiblingWorktreeDraftList || len(roundTrip.SiblingDrafts) != 1 {
+		t.Fatalf("source/sibling metadata missing: %+v", roundTrip.Source)
+	}
+}
+
 func TestBuildOpenIntents_SkipsStaleTerminalDrafts(t *testing.T) {
 	dir := t.TempDir()
 	repoRoot := filepath.Join(dir, "repo")

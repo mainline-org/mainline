@@ -266,7 +266,7 @@ var translations = map[string]map[string]string{
 
 	"actor.heading": {LangEN: "Activity by actor", LangZH: "成员活动"},
 	"actor.lead": {
-		LangEN: "Distribution of in-flight and recently sealed work. Sorted alphabetically — not a leaderboard.",
+		LangEN: "Distribution of in-flight and recently sealed work. Sorted alphabetically; not ranked.",
 		LangZH: "进行中与近期封存工作的分布。按字母序排列，不是排行榜。",
 	},
 	"actor.in_review":          {LangEN: "in review", LangZH: "待审"},

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mainline-org/mainline/internal/domain"
@@ -466,6 +467,45 @@ func TestShowNotFound(t *testing.T) {
 	_, err := svc.Show("int_nonexistent")
 	if err == nil {
 		t.Error("show nonexistent should fail")
+	}
+}
+
+func TestShowNotFoundSurfacesSiblingWorktreeDraft(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("test-agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	linked := filepath.Join(t.TempDir(), "linked-draft")
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/sibling-draft", linked)
+	linkedSvc := NewServiceFromRoot(linked)
+	start, err := linkedSvc.Start("draft from sibling worktree", "")
+	if err != nil {
+		t.Fatalf("start in linked worktree: %v", err)
+	}
+
+	_, err = svc.Show(start.IntentID)
+	if err == nil {
+		t.Fatal("show should fail from the worktree without the draft")
+	}
+	mlErr, ok := err.(*domain.MainlineError)
+	if !ok {
+		t.Fatalf("expected MainlineError, got %T", err)
+	}
+	if !mlErr.Recoverable {
+		t.Fatalf("sibling draft miss should be recoverable: %+v", mlErr)
+	}
+	if !strings.Contains(mlErr.Message, "local draft in another worktree") {
+		t.Fatalf("message should identify sibling draft, got %q", mlErr.Message)
+	}
+	joined := strings.Join(mlErr.SuggestedActions, "\n")
+	for _, want := range []string{linked, ".ml-cache/drafts/" + start.IntentID + ".json", "mainline show " + start.IntentID, "seal/publish"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("suggestions missing %q:\n%s", want, joined)
+		}
 	}
 }
 

@@ -70,6 +70,56 @@ func (g *Git) CommonDir() (string, error) {
 	return filepath.Clean(filepath.Join(g.RepoRoot, path)), nil
 }
 
+// WorktreeInfo is one row from `git worktree list --porcelain`.
+type WorktreeInfo struct {
+	Path     string
+	Head     string
+	Branch   string
+	Bare     bool
+	Detached bool
+}
+
+// Worktrees returns every linked worktree for the current clone.
+func (g *Git) Worktrees() ([]WorktreeInfo, error) {
+	out, err := g.run("worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var rows []WorktreeInfo
+	var cur *WorktreeInfo
+	flush := func() {
+		if cur != nil && cur.Path != "" {
+			rows = append(rows, *cur)
+		}
+		cur = nil
+	}
+	scanner := bufio.NewScanner(strings.NewReader(out))
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			flush()
+			cur = &WorktreeInfo{Path: strings.TrimSpace(strings.TrimPrefix(line, "worktree "))}
+		case cur == nil:
+			continue
+		case strings.HasPrefix(line, "HEAD "):
+			cur.Head = strings.TrimSpace(strings.TrimPrefix(line, "HEAD "))
+		case strings.HasPrefix(line, "branch "):
+			branch := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
+			cur.Branch = strings.TrimPrefix(branch, "refs/heads/")
+		case line == "bare":
+			cur.Bare = true
+		case line == "detached":
+			cur.Detached = true
+		}
+	}
+	flush()
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 func run(dir string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir

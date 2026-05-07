@@ -19,8 +19,10 @@ import (
 // renders the partial-data wording on coverage cards / page rather
 // than fake zero counts.
 type ExportOptions struct {
-	OutputDir    string
-	CoverageRows []CoverageInputCommit
+	OutputDir     string
+	CoverageRows  []CoverageInputCommit
+	Source        HubSource
+	SiblingDrafts []HubWorktreeDraft
 	// CoverageWindow is the engine's window size (commits scanned).
 	// Echoed into HubCoverageDetail.WindowSize so the page can show
 	// "last N commits on main" honestly.
@@ -30,13 +32,14 @@ type ExportOptions struct {
 // ExportResult summarises what landed on disk. Returned to the CLI
 // for human / JSON output.
 type ExportResult struct {
-	OutputDir   string `json:"output_dir"`
-	IntentCount int    `json:"intent_count"`
-	OpenCount   int    `json:"open_count"`
-	FileCount   int    `json:"file_count"`
-	ActorCount  int    `json:"actor_count"`
-	RiskCount   int    `json:"risk_count"`
-	IndexPath   string `json:"index_path"`
+	OutputDir         string `json:"output_dir"`
+	IntentCount       int    `json:"intent_count"`
+	OpenCount         int    `json:"open_count"`
+	SiblingDraftCount int    `json:"sibling_worktree_draft_count"`
+	FileCount         int    `json:"file_count"`
+	ActorCount        int    `json:"actor_count"`
+	RiskCount         int    `json:"risk_count"`
+	IndexPath         string `json:"index_path"`
 }
 
 // Export builds the HubModel from the local synced view and writes
@@ -57,6 +60,10 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	}
 	model := buildHubModel(view)
 	model.OpenIntents = buildOpenIntents(store, view)
+	model.Source = hubSourceWithDefaults(store, opts.Source)
+	model.Source.IncludesCurrentWorktreeDrafts = true
+	model.Source.IncludesSiblingWorktreeDraftList = model.Source.IncludesSiblingWorktreeDraftList || len(opts.SiblingDrafts) > 0
+	model.SiblingDrafts = append([]HubWorktreeDraft(nil), opts.SiblingDrafts...)
 	enrichIntentsWithTurns(store, model)
 	model.Dashboard = buildDashboard(model)
 	if len(opts.CoverageRows) > 0 {
@@ -77,14 +84,25 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	}
 
 	return &ExportResult{
-		OutputDir:   opts.OutputDir,
-		IntentCount: len(model.Intents),
-		OpenCount:   len(model.OpenIntents),
-		FileCount:   len(model.FileIndex),
-		ActorCount:  len(model.ActorIndex),
-		RiskCount:   len(model.RiskIntents),
-		IndexPath:   filepath.Join(opts.OutputDir, "index.html"),
+		OutputDir:         opts.OutputDir,
+		IntentCount:       len(model.Intents),
+		OpenCount:         len(model.OpenIntents),
+		SiblingDraftCount: len(model.SiblingDrafts),
+		FileCount:         len(model.FileIndex),
+		ActorCount:        len(model.ActorIndex),
+		RiskCount:         len(model.RiskIntents),
+		IndexPath:         filepath.Join(opts.OutputDir, "index.html"),
 	}, nil
+}
+
+func hubSourceWithDefaults(store *storage.Store, source HubSource) HubSource {
+	if store == nil {
+		return source
+	}
+	if source.CurrentWorktreeDraftsDir == "" && source.RepoPath != "" {
+		source.CurrentWorktreeDraftsDir = filepath.Join(source.RepoPath, ".ml-cache", "drafts")
+	}
+	return source
 }
 
 // buildHubModel is the pure model-derivation step: given a view,
