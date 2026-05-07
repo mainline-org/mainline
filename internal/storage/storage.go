@@ -510,8 +510,12 @@ func (s *Store) AppendActorLogEvent(actorID, prefix string, event interface{}) e
 }
 
 func (s *Store) actorLogMigrationParent(actorID, prefix string) string {
-	if domain.NormalizeActorLogPrefix(prefix) != domain.DefaultActorLogPrefix {
+	normalizedPrefix := domain.NormalizeActorLogPrefix(prefix)
+	if !strings.HasPrefix(normalizedPrefix, "refs/") {
 		return ""
+	}
+	if head := s.Git.ReadRef(domain.BranchBackedActorLogRef(actorID, normalizedPrefix)); head != "" {
+		return head
 	}
 	if head := s.Git.ReadRef(domain.LegacyActorLogRef(actorID)); head != "" {
 		return head
@@ -519,6 +523,14 @@ func (s *Store) actorLogMigrationParent(actorID, prefix string) string {
 	refs, err := s.Git.ListRefs("refs/remotes")
 	if err != nil {
 		return ""
+	}
+	branchBackedSuffix := "/" + strings.TrimPrefix(domain.BranchBackedActorLogLocalListPrefix(normalizedPrefix), "refs/heads/") + "/" + actorID
+	for _, ref := range refs {
+		if strings.HasSuffix(ref, branchBackedSuffix) {
+			if head := s.Git.ReadRef(ref); head != "" {
+				return head
+			}
+		}
 	}
 	suffix := "/" + domain.LegacyActorLogPrefix + "/" + actorID
 	for _, ref := range refs {

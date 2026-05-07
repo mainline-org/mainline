@@ -69,6 +69,132 @@ func TestActorLogDefaultRefIsHiddenAndMigratesLegacyParent(t *testing.T) {
 	}
 }
 
+func TestActorLogDefaultRefMigratesBranchBackedDefaultParent(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, err := svc.getTeamConfig()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	branchBackedEvent := actorRefTestEvent("evt_branch_backed", initRes.ActorID, "int_branch_backed")
+	branchBackedCommit := writeActorEventCommit(t, svc, "", branchBackedEvent)
+	branchBackedRef := domain.BranchBackedDefaultActorLogRef(initRes.ActorID)
+	if err := svc.Git.UpdateRef(branchBackedRef, branchBackedCommit); err != nil {
+		t.Fatalf("write branch-backed default ref: %v", err)
+	}
+
+	if err := svc.Store.AppendActorLogEvent(
+		initRes.ActorID,
+		cfg.Mainline.ActorLogPrefix,
+		actorRefTestEvent("evt_hidden", initRes.ActorID, "int_hidden"),
+	); err != nil {
+		t.Fatalf("append hidden event: %v", err)
+	}
+
+	hiddenRef := svc.Store.ActorLogRef(initRes.ActorID, cfg.Mainline.ActorLogPrefix)
+	if parent := firstParent(t, svc, hiddenRef); parent != branchBackedCommit {
+		t.Fatalf("hidden actor log should continue from branch-backed default parent: got %s want %s", parent, branchBackedCommit)
+	}
+}
+
+func TestCollectAllEventsIncludesBranchBackedDefaultRefs(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, err := svc.getTeamConfig()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	branchBackedEvent := actorRefTestEvent("evt_branch_backed", initRes.ActorID, "int_branch_backed")
+	branchBackedCommit := writeActorEventCommit(t, svc, "", branchBackedEvent)
+	branchBackedRef := domain.BranchBackedDefaultActorLogRef(initRes.ActorID)
+	if err := svc.Git.UpdateRef(branchBackedRef, branchBackedCommit); err != nil {
+		t.Fatalf("write branch-backed default ref: %v", err)
+	}
+
+	rawEvents, err := svc.collectAllEvents(cfg.Mainline.ActorLogPrefix)
+	if err != nil {
+		t.Fatalf("collect events: %v", err)
+	}
+	if len(rawEvents) != 1 {
+		t.Fatalf("expected one branch-backed event, got %d", len(rawEvents))
+	}
+	var evt domain.BaseEvent
+	if err := json.Unmarshal(rawEvents[0], &evt); err != nil {
+		t.Fatalf("unmarshal event: %v", err)
+	}
+	if evt.EventID != "evt_branch_backed" {
+		t.Fatalf("event id: got %q want evt_branch_backed", evt.EventID)
+	}
+}
+
+func TestRebuildViewAppliesCrossRefEventsChronologically(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, err := svc.getTeamConfig()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	sealedEvent := actorRefTestSealedEvent(
+		"evt_sealed",
+		initRes.ActorID,
+		"int_cross_ref",
+		"2026-05-05T00:00:00Z",
+	)
+	sealedCommit := writeActorEventCommit(t, svc, "", sealedEvent)
+	if err := svc.Git.UpdateRef(domain.LegacyActorLogRef(initRes.ActorID), sealedCommit); err != nil {
+		t.Fatalf("write legacy sealed ref: %v", err)
+	}
+
+	abandonedEvent := actorRefTestEvent("evt_abandoned", initRes.ActorID, "int_cross_ref")
+	abandonedEvent.Timestamp = "2026-05-05T00:01:00Z"
+	abandonedCommit := writeActorEventCommit(t, svc, "", abandonedEvent)
+	if err := svc.Git.UpdateRef(domain.BranchBackedDefaultActorLogRef(initRes.ActorID), abandonedCommit); err != nil {
+		t.Fatalf("write branch-backed abandoned ref: %v", err)
+	}
+
+	view, err := svc.rebuildView(cfg)
+	if err != nil {
+		t.Fatalf("rebuild view: %v", err)
+	}
+	var found *domain.IntentView
+	for i := range view.Intents {
+		if view.Intents[i].IntentID == "int_cross_ref" {
+			found = &view.Intents[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected cross-ref intent in rebuilt view")
+	}
+	if found.Status != domain.StatusAbandoned {
+		t.Fatalf("cross-ref events should apply chronologically; got status %s", found.Status)
+	}
+	if found.StatusEvidence.AbandonedEventID != "evt_abandoned" {
+		t.Fatalf("abandoned event id: got %q want evt_abandoned", found.StatusEvidence.AbandonedEventID)
+	}
+}
+
 func TestConfiguredPushRefspecPublishesHiddenActorRefsOnly(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -123,6 +249,36 @@ func actorRefTestEvent(eventID, actorID, intentID string) domain.IntentAbandoned
 		},
 		IntentID: intentID,
 		Reason:   "actor ref migration regression",
+	}
+}
+
+func actorRefTestSealedEvent(eventID, actorID, intentID, timestamp string) domain.IntentSealedEvent {
+	return domain.IntentSealedEvent{
+		BaseEvent: domain.BaseEvent{
+			EventID:       eventID,
+			SchemaVersion: 1,
+			EventType:     domain.EventIntentSealed,
+			ActorID:       actorID,
+			ActorName:     "agent",
+			Timestamp:     timestamp,
+		},
+		IntentID:   intentID,
+		Thread:     "fix/actor-ref-test",
+		Goal:       "exercise actor-log ref ordering",
+		GitBranch:  "fix/actor-ref-test",
+		BaseCommit: "base",
+		CodeCommit: "code",
+		Summary: domain.IntentSummary{
+			Title:    "actor ref ordering",
+			What:     "test fixture",
+			Why:      "test fixture",
+			UserGoal: "exercise actor-log ref ordering",
+		},
+		Fingerprint: domain.SemanticFingerprint{
+			FilesTouched: []string{"internal/engine/actor_refs_test.go"},
+		},
+		TurnCount: 1,
+		SealedAt:  timestamp,
 	}
 }
 

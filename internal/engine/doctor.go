@@ -578,7 +578,7 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 		push := s.Git.ConfigGet(pushKey)
 		rep.NotesFetchOK = strings.Contains(fetch, "refs/notes/mainline")
 		rep.NotesPushOK = strings.Contains(push, "refs/notes/mainline")
-		rep.ActorFetchOK = strings.Contains(fetch, strings.TrimPrefix(domain.ActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote), "+"))
+		rep.ActorFetchOK = actorFetchRefspecsOK(fetch, cfg.Mainline.ActorLogPrefix, remote)
 		rep.ActorPushOK = strings.Contains(push, domain.ActorLogPushRefspec(cfg.Mainline.ActorLogPrefix))
 		if !rep.NotesFetchOK || !rep.NotesPushOK || !rep.ActorFetchOK || !rep.ActorPushOK {
 			rep.Issues = append(rep.Issues, refspecIssue)
@@ -600,7 +600,7 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 		push := s.Git.ConfigGet(pushKey)
 		rep.NotesFetchOK = strings.Contains(fetch, "refs/notes/mainline")
 		rep.NotesPushOK = strings.Contains(push, "refs/notes/mainline")
-		rep.ActorFetchOK = strings.Contains(fetch, strings.TrimPrefix(domain.ActorLogFetchRefspec(cfg.Mainline.ActorLogPrefix, remote), "+"))
+		rep.ActorFetchOK = actorFetchRefspecsOK(fetch, cfg.Mainline.ActorLogPrefix, remote)
 		rep.ActorPushOK = strings.Contains(push, domain.ActorLogPushRefspec(cfg.Mainline.ActorLogPrefix))
 		if rep.NotesFetchOK && rep.NotesPushOK && rep.ActorFetchOK && rep.ActorPushOK {
 			rep.Issues = removeIssue(rep.Issues, refspecIssue)
@@ -608,6 +608,19 @@ func (s *Service) doctorSetup(fix bool) (*DoctorResult, error) {
 	}
 
 	return &DoctorResult{Setup: rep}, nil
+}
+
+func actorFetchRefspecsOK(fetchConfig, actorLogPrefix, remote string) bool {
+	for _, refspec := range []string{
+		domain.ActorLogFetchRefspec(actorLogPrefix, remote),
+		domain.BranchBackedActorLogFetchRefspec(actorLogPrefix, remote),
+		domain.LegacyActorLogFetchRefspec(remote),
+	} {
+		if !strings.Contains(fetchConfig, strings.TrimPrefix(refspec, "+")) {
+			return false
+		}
+	}
+	return true
 }
 
 func removeIssue(issues []string, target string) []string {
