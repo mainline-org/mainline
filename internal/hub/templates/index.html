@@ -27,6 +27,12 @@
 </section>
 {{end}}
 
+<section class="notice notice-compact">
+  <strong>Viewing synced Mainline state.</strong>
+  <span>Drafts: current worktree only; sibling drafts are local diagnostics until publish + sync.</span>
+  {{if .SiblingDrafts}}<a href="open.html">Sibling drafts: {{len .SiblingDrafts}}</a>{{end}}
+</section>
+
 <section>
   <h2>{{t .Lang "section.needs_attention"}}</h2>
   {{if not .Dashboard.Focus}}<p class="muted">{{t .Lang "section.needs_attention_empty"}}</p>{{end}}

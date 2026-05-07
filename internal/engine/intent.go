@@ -314,7 +314,23 @@ func (s *Service) Show(intentID string) (*ShowResult, error) {
 		return &ShowResult{View: iv}, nil
 	}
 
-	return nil, domain.NewError(domain.ErrInvalidInput, fmt.Sprintf("intent %s not found", intentID))
+	if siblings := s.findSiblingDrafts(intentID); len(siblings) > 0 {
+		first := siblings[0]
+		return nil, domain.NewRecoverableError(domain.ErrInvalidInput,
+			fmt.Sprintf("intent %s is a local draft in another worktree", intentID),
+			"current worktree: "+s.Git.RepoRoot,
+			"draft path: "+first.DraftPath,
+			fmt.Sprintf("run: cd %s && mainline show %s", first.WorktreePath, intentID),
+			"publish: seal/publish there, then run mainline sync here")
+	}
+
+	actions := []string{
+		"current worktree: " + s.Git.RepoRoot,
+		"checked drafts dir: " + s.StoreDraftsDirForCLI(),
+		"try: run mainline show in the worktree that created the draft",
+		"publish: seal/publish there, then run mainline sync here",
+	}
+	return nil, domain.NewRecoverableError(domain.ErrInvalidInput, fmt.Sprintf("intent %s not found", intentID), actions...)
 }
 
 func (s *Service) readIntentViewByID(intentID string) *domain.IntentView {

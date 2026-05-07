@@ -30,6 +30,15 @@
     <a href="{{.LangRoot}}graph.html"    class="{{if eq .NavActive "graph"}}active{{end}}">{{t .Lang "nav.relationships"}}</a>
     <div class="navgroup">{{t .Lang "nav.data"}}</div>
     <a href="{{.RootPath}}data/intents.json" class="muted">data/intents.json</a>
+    {{if .Source.RepoPath}}
+    <div class="navgroup">Source</div>
+    <div class="source-card">
+      <div><span>repo</span><code title="{{.Source.RepoPath}}">{{.Source.RepoPath}}</code></div>
+      <div><span>branch</span><code>{{.Source.Branch}}</code></div>
+      <div><span>sync</span>{{if .Source.LastSyncAt}}{{timeAgo .Source.LastSyncAt}}{{else}}never{{end}}</div>
+      <div><span>drafts</span>current worktree{{if .Source.IncludesSiblingWorktreeDraftList}} + sibling list{{end}}</div>
+    </div>
+    {{end}}
   </nav>
   <main class="content">{{end}}
 

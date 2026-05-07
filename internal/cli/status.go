@@ -53,6 +53,9 @@ var statusCmd = &cobra.Command{
 				fmt.Println()
 			}
 			fmt.Printf("Branch:    %s\n", result.Branch)
+			if len(result.SiblingWorktreeDrafts) > 0 {
+				fmt.Printf("Worktree:  %s\n", result.RepoRoot)
+			}
 			actorDisplay := result.ActorID
 			if actorDisplay == "" {
 				actorDisplay = "(missing — run `mainline init --actor-name <name>`)"
@@ -114,12 +117,25 @@ var statusCmd = &cobra.Command{
 			// it has content; on a clean repo with no orphans,
 			// status stays as terse as before.
 			if len(result.UnsealedDrafts) > 0 {
-				fmt.Println("\nUnsealed intents (other branches):")
+				fmt.Println("\nLocal drafts in this worktree (other branches):")
 				for _, d := range result.UnsealedDrafts {
 					age := formatElapsed(d.AgeSeconds)
 					fmt.Printf("  %s  [%s on %s]  %s — %d turn(s), %s old\n",
 						d.IntentID, d.Status, d.GitBranch,
 						truncate(d.Goal, 50), d.TurnCount, age)
+				}
+			}
+			if len(result.SiblingWorktreeDrafts) > 0 {
+				fmt.Println("\nSibling worktree drafts:")
+				for i, d := range result.SiblingWorktreeDrafts {
+					if i >= 5 {
+						fmt.Printf("  … %d more\n", len(result.SiblingWorktreeDrafts)-i)
+						break
+					}
+					fmt.Printf("  %s  [%s on %s]  %s — %d turn(s)\n",
+						d.IntentID, d.Status, d.GitBranch,
+						truncate(d.Goal, 50), d.TurnCount)
+					fmt.Printf("    %s\n", d.WorktreePath)
 				}
 			}
 			if len(result.RecentSealed) > 0 {

@@ -1,6 +1,6 @@
 {{define "intents"}}{{template "header" .}}
 <h1>{{t .Lang "intents.heading"}}</h1>
-<p class="lead">{{len .Intents}} {{t .Lang "intents.lead_suffix"}}</p>
+<p class="lead">{{len .Intents}} {{t .Lang "intents.lead_suffix"}} · synced shared state</p>
 {{if not .Intents}}<p class="muted">{{t .Lang "intents.empty"}}</p>{{end}}
 {{if .Intents}}
 <div class="table-scroll">

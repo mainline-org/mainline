@@ -428,6 +428,8 @@ func (s *Service) ensureLocalViews(cfg *domain.TeamConfig) {
 type StatusResult struct {
 	Initialized        bool                `json:"initialized"`
 	IdentityConfigured bool                `json:"identity_configured"`
+	RepoRoot           string              `json:"repo_root,omitempty"`
+	DraftsDir          string              `json:"drafts_dir,omitempty"`
 	Branch             string              `json:"branch,omitempty"`
 	ActorID            string              `json:"actor_id,omitempty"`
 	ActiveIntent       *domain.DraftIntent `json:"active_intent,omitempty"`
@@ -468,6 +470,11 @@ type StatusResult struct {
 	// later — `mainline status` on feature/B never mentioned the
 	// orphan draft on feature/A.
 	UnsealedDrafts []StatusUnsealedDraft `json:"unsealed_drafts,omitempty"`
+
+	// SiblingWorktreeDrafts are local drafts found in other git
+	// worktrees for this clone. They are diagnostics, not shared
+	// Mainline state.
+	SiblingWorktreeDrafts []WorktreeDraft `json:"sibling_worktree_drafts,omitempty"`
 
 	// RecentSealed lists the last few intents that landed on main
 	// — informational, helps a user re-enter "what just happened"
@@ -550,6 +557,8 @@ type StatusActionItem struct {
 func (s *Service) Status() (*StatusResult, error) {
 	result := &StatusResult{
 		Initialized: s.Store.IsInitialized(),
+		RepoRoot:    s.Git.RepoRoot,
+		DraftsDir:   s.StoreDraftsDirForCLI(),
 	}
 	if !result.Initialized {
 		result.ActionableItems = buildStatusActionItems(result)
@@ -645,6 +654,7 @@ func (s *Service) Status() (*StatusResult, error) {
 	// data already in the view + drafts dir; status performs no new
 	// git work beyond what the prior CoverageWindow call did.
 	result.UnsealedDrafts = s.collectUnsealedDrafts(branch, view)
+	result.SiblingWorktreeDrafts = s.SiblingDraftsForCLI()
 	result.RecentSealed = collectRecentSealed(view, statusRecentSealedLimit)
 	result.ProposalHealth = collectStatusProposalHealth(view, DefaultStaleProposedAfter)
 	result.Suggestions = buildStatusSuggestions(result)
@@ -887,6 +897,10 @@ func buildStatusSuggestions(r *StatusResult) []string {
 		d := r.UnsealedDrafts[0]
 		out = append(out,
 			fmt.Sprintf("git checkout %s && mainline status   # resume %s", d.GitBranch, d.IntentID))
+	case len(r.SiblingWorktreeDrafts) > 0:
+		d := r.SiblingWorktreeDrafts[0]
+		out = append(out,
+			fmt.Sprintf("cd %s && mainline status   # inspect local draft %s", d.WorktreePath, d.IntentID))
 	default:
 		// Clean state — prompt for a new intent.
 		out = append(out,

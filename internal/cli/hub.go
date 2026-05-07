@@ -82,12 +82,8 @@ If [dir] is omitted, the site is written to
 		if len(args) == 1 {
 			out = args[0]
 		}
-		covRows, covWin := buildHubCoverageInput(svc)
-		res, err := hub.Export(svc.Store, hub.ExportOptions{
-			OutputDir:      out,
-			CoverageRows:   covRows,
-			CoverageWindow: covWin,
-		})
+		opts := buildHubExportOptions(svc, out)
+		res, err := hub.Export(svc.Store, opts)
 		if err != nil {
 			outputError(err)
 			return
@@ -96,8 +92,8 @@ If [dir] is omitted, the site is written to
 			outputJSON(res)
 		} else {
 			fmt.Printf("Hub exported to %s\n", res.OutputDir)
-			fmt.Printf("  intents: %d\n  files:   %d\n  actors:  %d\n  constraints: %d\n",
-				res.IntentCount, res.FileCount, res.ActorCount, res.RiskCount)
+			fmt.Printf("  intents:        %d\n  local drafts:   %d\n  sibling drafts: %d\n  files:          %d\n  actors:         %d\n  constraints:    %d\n",
+				res.IntentCount, res.OpenCount, res.SiblingDraftCount, res.FileCount, res.ActorCount, res.RiskCount)
 			fmt.Printf("\nOpen %s in a browser, or run `mainline hub open`.\n", res.IndexPath)
 		}
 		if hubExportOpen {
@@ -116,12 +112,8 @@ var hubOpenCmd = &cobra.Command{
 			return
 		}
 		out := defaultHubDir(svc.Git.RepoRoot)
-		covRows, covWin := buildHubCoverageInput(svc)
-		res, err := hub.Export(svc.Store, hub.ExportOptions{
-			OutputDir:      out,
-			CoverageRows:   covRows,
-			CoverageWindow: covWin,
-		})
+		opts := buildHubExportOptions(svc, out)
+		res, err := hub.Export(svc.Store, opts)
 		if err != nil {
 			outputError(err)
 			return
@@ -131,6 +123,46 @@ var hubOpenCmd = &cobra.Command{
 		}
 		openInBrowser(res.IndexPath)
 	},
+}
+
+func buildHubExportOptions(svc *engine.Service, out string) hub.ExportOptions {
+	covRows, covWin := buildHubCoverageInput(svc)
+	branch, _ := svc.Git.CurrentBranch()
+	lastSync, _ := svc.GetLastSyncForCLI()
+	source := hub.HubSource{
+		RepoPath:                         svc.Git.RepoRoot,
+		Branch:                           branch,
+		CurrentWorktreeDraftsDir:         svc.StoreDraftsDirForCLI(),
+		IncludesSiblingWorktreeDraftList: true,
+	}
+	if lastSync != nil {
+		source.LastSyncAt = lastSync.At
+	}
+	return hub.ExportOptions{
+		OutputDir:      out,
+		CoverageRows:   covRows,
+		CoverageWindow: covWin,
+		Source:         source,
+		SiblingDrafts:  hubSiblingDrafts(svc.SiblingDraftsForCLI()),
+	}
+}
+
+func hubSiblingDrafts(in []engine.WorktreeDraft) []hub.HubWorktreeDraft {
+	out := make([]hub.HubWorktreeDraft, 0, len(in))
+	for _, d := range in {
+		out = append(out, hub.HubWorktreeDraft{
+			ID:             d.IntentID,
+			Goal:           d.Goal,
+			Status:         d.Status,
+			GitBranch:      d.GitBranch,
+			Thread:         d.Thread,
+			WorktreePath:   d.WorktreePath,
+			DraftPath:      d.DraftPath,
+			TurnCount:      d.TurnCount,
+			LastModifiedAt: d.LastModifiedAt,
+		})
+	}
+	return out
 }
 
 // openInBrowser asks the OS to open the file. Best-effort: a missing

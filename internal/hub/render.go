@@ -96,6 +96,8 @@ func renderForLang(dir string, m *HubModel, tpl *template.Template, lang string)
 
 	render := func(rel, name string, ctx pageCtx) error {
 		ctx.Lang = lang
+		ctx.Source = m.Source
+		ctx.SiblingDrafts = m.SiblingDrafts
 		// RootPath and OtherLangPath depend on (lang, depth).
 		nested := strings.Contains(rel, "/")
 		ctx.RootPath = rootPathFor(lang, nested)
@@ -305,6 +307,8 @@ type pageCtx struct {
 	InheritedHotspots []HubInheritedHotspot
 	Intents           []HubIntent
 	OpenIntents       []HubOpenIntent
+	SiblingDrafts     []HubWorktreeDraft
+	Source            HubSource
 	FileIndex         []HubFileEntry
 	ReviewRows        []HubIntent
 
