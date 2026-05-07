@@ -23,7 +23,7 @@ func TestActorLogDefaultRefIsHiddenAndMigratesLegacyParent(t *testing.T) {
 	}
 
 	legacyEvent := actorRefTestEvent("evt_legacy", initRes.ActorID, "int_legacy")
-	legacyCommit := writeActorEventCommit(t, svc, "", legacyEvent)
+	legacyCommit := writeActorEventCommit(t, svc, legacyEvent)
 	legacyRef := domain.LegacyActorLogRef(initRes.ActorID)
 	if err := svc.Git.UpdateRef(legacyRef, legacyCommit); err != nil {
 		t.Fatalf("write legacy ref: %v", err)
@@ -84,7 +84,7 @@ func TestActorLogDefaultRefMigratesBranchBackedDefaultParent(t *testing.T) {
 	}
 
 	branchBackedEvent := actorRefTestEvent("evt_branch_backed", initRes.ActorID, "int_branch_backed")
-	branchBackedCommit := writeActorEventCommit(t, svc, "", branchBackedEvent)
+	branchBackedCommit := writeActorEventCommit(t, svc, branchBackedEvent)
 	branchBackedRef := domain.BranchBackedDefaultActorLogRef(initRes.ActorID)
 	if err := svc.Git.UpdateRef(branchBackedRef, branchBackedCommit); err != nil {
 		t.Fatalf("write branch-backed default ref: %v", err)
@@ -119,7 +119,7 @@ func TestCollectAllEventsIncludesBranchBackedDefaultRefs(t *testing.T) {
 	}
 
 	branchBackedEvent := actorRefTestEvent("evt_branch_backed", initRes.ActorID, "int_branch_backed")
-	branchBackedCommit := writeActorEventCommit(t, svc, "", branchBackedEvent)
+	branchBackedCommit := writeActorEventCommit(t, svc, branchBackedEvent)
 	branchBackedRef := domain.BranchBackedDefaultActorLogRef(initRes.ActorID)
 	if err := svc.Git.UpdateRef(branchBackedRef, branchBackedCommit); err != nil {
 		t.Fatalf("write branch-backed default ref: %v", err)
@@ -161,14 +161,14 @@ func TestRebuildViewAppliesCrossRefEventsChronologically(t *testing.T) {
 		"int_cross_ref",
 		"2026-05-05T00:00:00Z",
 	)
-	sealedCommit := writeActorEventCommit(t, svc, "", sealedEvent)
+	sealedCommit := writeActorEventCommit(t, svc, sealedEvent)
 	if err := svc.Git.UpdateRef(domain.LegacyActorLogRef(initRes.ActorID), sealedCommit); err != nil {
 		t.Fatalf("write legacy sealed ref: %v", err)
 	}
 
 	abandonedEvent := actorRefTestEvent("evt_abandoned", initRes.ActorID, "int_cross_ref")
 	abandonedEvent.Timestamp = "2026-05-05T00:01:00Z"
-	abandonedCommit := writeActorEventCommit(t, svc, "", abandonedEvent)
+	abandonedCommit := writeActorEventCommit(t, svc, abandonedEvent)
 	if err := svc.Git.UpdateRef(domain.BranchBackedDefaultActorLogRef(initRes.ActorID), abandonedCommit); err != nil {
 		t.Fatalf("write branch-backed abandoned ref: %v", err)
 	}
@@ -282,7 +282,7 @@ func actorRefTestSealedEvent(eventID, actorID, intentID, timestamp string) domai
 	}
 }
 
-func writeActorEventCommit(t *testing.T, svc *Service, parent string, event any) string {
+func writeActorEventCommit(t *testing.T, svc *Service, event any) string {
 	t.Helper()
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -296,7 +296,7 @@ func writeActorEventCommit(t *testing.T, svc *Service, parent string, event any)
 	if err != nil {
 		t.Fatalf("make tree: %v", err)
 	}
-	commitHash, err := svc.Git.CommitTree(treeHash, parent, "actor-log-event")
+	commitHash, err := svc.Git.CommitTree(treeHash, "", "actor-log-event")
 	if err != nil {
 		t.Fatalf("commit tree: %v", err)
 	}
