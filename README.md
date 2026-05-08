@@ -16,6 +16,8 @@ approaches, reviewer constraints, validation notes, and related in-flight work.
 
 It is not a Git replacement, PR system, session recorder, or productivity
 dashboard. It is repo-local engineering memory that travels with your code.
+It shifts review one level up: code review still matters, but agent-era work
+also needs intent review and intent-aware collaboration before the diff lands.
 
 <img width="2530" height="756" alt="Mainline overview" src="https://github.com/user-attachments/assets/e337559b-72cd-4fd4-b139-16754cc675f6" />
 
@@ -23,16 +25,19 @@ dashboard. It is repo-local engineering memory that travels with your code.
 
 ## The Problem
 
-A team migrates auth from sessions to JWT, but keeps one legacy `/oauth`
-middleware path because OAuth callbacks still need session state until the
-provider migration finishes.
+A billing team moves invoice export to a new `/exports/invoices` API, but keeps
+the old `/reports/invoices.csv` route because three enterprise customers still
+pull it from overnight reconciliation jobs until their migration window closes.
 
-Three weeks later, a coding agent sees mostly JWT-based auth and treats the
-leftover middleware as dead code. Normal login still works, but OAuth callback
-login breaks in production.
+Three weeks later, a coding agent is asked to clean up legacy reporting code.
+The old route has little product traffic, the new API is where active UI code
+points, and the compatibility branch looks removable. The agent deletes it.
+Unit tests pass. The dashboard looks clean. The next morning, customer finance
+jobs fail.
 
 Code alone did not tell the agent the important fact: **do not remove the
-legacy `/oauth` middleware; OAuth callbacks still require session state**.
+legacy CSV invoice export until the enterprise reconciliation migration is
+complete**.
 
 That is the class of problem Mainline solves. AI coding agents are fast, but
 source code does not reliably explain:
@@ -45,6 +50,23 @@ source code does not reliably explain:
 
 RAG can find similar code. Grep can verify what exists now. Mainline gives the
 agent the missing layer: repo-level engineering fact.
+
+## Why Comments Are Not Enough
+
+A code comment can help when the future agent is already reading the exact line.
+It is still worth writing good comments for local invariants.
+
+But comments are a weak place to store repo-level intent:
+
+- the agent may never open the file before planning the change,
+- the decision may span several files, services, or release steps,
+- abandoned approaches often live outside the current code,
+- comments rarely show who is already working on related changes,
+- stale comments do not carry lifecycle, validation, or review context,
+- reviewers need to inspect intent before they inspect the diff.
+
+Mainline keeps those facts as explicit, queryable repo memory instead of hoping
+the next agent happens to read the right comment at the right time.
 
 ## The Solution
 
@@ -65,6 +87,21 @@ The result is simple: the next agent reads the durable memory before it writes a
 diff. If the repo has a known constraint, abandoned approach, or overlapping
 piece of in-flight work, the agent can stop before repeating the mistake.
 
+## Review The Intent
+
+When agents can produce a large diff quickly, reviewing only code is too late
+and too narrow. The higher-leverage review moves earlier:
+
+- review the intent before reviewing the implementation,
+- check whether the goal conflicts with prior decisions,
+- see which constraints and risks the agent believes are active,
+- notice overlapping work before two agents create incompatible PRs,
+- judge whether the validation matches the reason for the change.
+
+Mainline gives humans and agents a shared surface for that review. The question
+is no longer just "does this diff look right?" It is also "is this the right
+change to make, given what this repo already knows?"
+
 ## How It Works
 
 Mainline sits beside your normal Git workflow.
@@ -76,8 +113,10 @@ Mainline sits beside your normal Git workflow.
    `append`.
 5. Before review, the agent seals the intent with decisions, validation notes,
    and a semantic fingerprint.
-6. After merge, `mainline sync` links the merged commit back to the intent.
-7. Humans read the history through the CLI or Hub.
+6. Humans review the intent and collaboration surface before or alongside the
+   code diff.
+7. After merge, `mainline sync` links the merged commit back to the intent.
+8. Future agents read that history before the next risky edit.
 
 Mainline stores durable team data in Git refs and Git notes. Local caches live
 under `.ml-cache/` and can be rebuilt.
