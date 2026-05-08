@@ -309,6 +309,71 @@ func TestPin_BranchInMessage_TreeMismatch(t *testing.T) {
 	}
 }
 
+func TestPin_BranchInMessageSkipsMergeBeforeSeal(t *testing.T) {
+	mergeCommit := "mmmm"
+	entries := []gitops.LogEntry{
+		{
+			Hash:    mergeCommit,
+			Subject: "Merge pull request #50 from org/feature/reused",
+			Date:    "2026-05-08T17:24:12+08:00",
+		},
+	}
+	ctx := &pinContext{
+		treeOf:         map[string]string{mergeCommit: "tree_merge"},
+		intentTreeOf:   map[string]string{},
+		intentSubjects: map[string]string{},
+		entryMessages:  map[string]string{mergeCommit: "Merge pull request #50 from org/feature/reused"},
+		noteCache:      map[string]string{},
+		commitParents:  map[string][]string{mergeCommit: {"parent1", "parent2"}},
+	}
+
+	lateIntent := domain.IntentView{
+		IntentID:   "int_late",
+		Status:     domain.StatusProposed,
+		GitBranch:  "feature/reused",
+		CodeCommit: "not_on_main",
+		SealedAt:   "2026-05-08T17:28:48+08:00",
+	}
+	commit, strategy := findPinMatchBatched(lateIntent, entries, ctx)
+	if commit != "" || strategy != "" {
+		t.Fatalf("intent sealed after PR merge should not pin to old merge commit, got %s via %s",
+			commit, strategy)
+	}
+
+	earlyIntent := lateIntent
+	earlyIntent.IntentID = "int_early"
+	earlyIntent.SealedAt = "2026-05-08T17:20:00+08:00"
+	commit, strategy = findPinMatchBatched(earlyIntent, entries, ctx)
+	if commit != mergeCommit || strategy != "branch_in_message" {
+		t.Fatalf("intent sealed before PR merge should pin by branch message, got %s via %s",
+			commit, strategy)
+	}
+}
+
+func TestSameTreePinTargetsOnlyDirectNeighbors(t *testing.T) {
+	entries := []gitops.LogEntry{
+		{Hash: "merge"},
+		{Hash: "content"},
+		{Hash: "unrelated-same-tree"},
+	}
+	ctx := &pinContext{
+		treeOf: map[string]string{
+			"merge":               "tree_final",
+			"content":             "tree_final",
+			"unrelated-same-tree": "tree_final",
+		},
+		commitParents: map[string][]string{
+			"merge":               {"base", "content"},
+			"unrelated-same-tree": {"other-parent"},
+		},
+	}
+
+	targets := sameTreePinTargets("merge", entries, ctx)
+	if len(targets) != 2 || targets[0] != "merge" || targets[1] != "content" {
+		t.Fatalf("expected only primary + direct same-tree parent, got %#v", targets)
+	}
+}
+
 func TestPin_SquashMerge_TreeHashStillWorks(t *testing.T) {
 	// Verify that simple squash merges (no divergent main) still get
 	// pinned via tree_hash — the existing strategy handles this case.

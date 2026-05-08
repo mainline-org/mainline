@@ -155,6 +155,61 @@ func TestReconcileAutoTreeHashMatch(t *testing.T) {
 	}
 }
 
+func TestSyncAutoPinUsesRemoteTrackingMainWhenLocalMainIsStale(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("agent-A")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, _ := svc.Store.ReadTeamConfig()
+	actorRef := svc.Store.ActorLogRef(initRes.ActorID, cfg.Mainline.ActorLogPrefix)
+
+	remoteDir := t.TempDir()
+	gitCmd(t, remoteDir, "init", "--bare")
+	gitCmd(t, dir, "remote", "add", "origin", remoteDir)
+
+	baseMain := svc.Git.ReadRef("refs/heads/main")
+	gitCmd(t, dir, "push", "origin", "main")
+
+	intentID, _ := seedSealedIntent(t, dir, svc, "remote-main", "remote-main.go")
+	mainCommit := squashMergeNoNote(t, dir, "feature/remote-main",
+		"Merge pull request #77 from org/feature/remote-main")
+
+	gitCmd(t, dir, "push", "origin", "main")
+	gitCmd(t, dir, "push", "origin", actorRef+":"+actorRef)
+	gitCmd(t, dir, "fetch", "origin", "main")
+
+	// Simulate a feature worktree where local main is stale even though the
+	// fetched remote-tracking main contains the merged PR.
+	gitCmd(t, dir, "checkout", "-b", "worktree-after-merge")
+	gitCmd(t, dir, "update-ref", "refs/heads/main", baseMain)
+	if got := svc.Git.ReadRef("refs/heads/main"); got != baseMain {
+		t.Fatalf("local main setup failed: got %s want %s", got, baseMain)
+	}
+	if got := svc.Git.ReadRef("refs/remotes/origin/main"); got != mainCommit {
+		t.Fatalf("origin/main setup failed: got %s want %s", got, mainCommit)
+	}
+
+	syncRes, err := svc.Sync()
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if len(syncRes.AutoPinned) != 1 {
+		t.Fatalf("expected sync to auto-pin from origin/main, got %+v", syncRes.AutoPinned)
+	}
+	if syncRes.AutoPinned[0].IntentID != intentID || syncRes.AutoPinned[0].Commit != mainCommit {
+		t.Fatalf("unexpected pin: %+v want intent=%s commit=%s",
+			syncRes.AutoPinned[0], intentID, mainCommit)
+	}
+	noteRaw, _ := svc.Git.NotesShow(mainCommit)
+	if !strings.Contains(noteRaw, intentID) {
+		t.Fatalf("merge commit missing intent note for %s: %q", intentID, noteRaw)
+	}
+}
+
 // -----------------------------------------------------------
 // Commit-hash strategy
 // -----------------------------------------------------------

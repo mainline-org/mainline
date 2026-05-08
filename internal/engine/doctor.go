@@ -311,7 +311,8 @@ func (s *Service) proposalPinMatches(view *domain.MainlineView) map[string]Pinne
 	if err != nil || cfg == nil {
 		return nil
 	}
-	entries, err := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
+	mainRef := s.syncedMainRef(cfg.Mainline.MainBranch)
+	entries, err := s.Git.LogOneline(mainRef, cfg.Check.Lookback)
 	if err != nil || len(entries) == 0 {
 		return nil
 	}
