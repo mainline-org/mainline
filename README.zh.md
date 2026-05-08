@@ -15,6 +15,8 @@
 Mainline 不是 Git 替代品、PR 系统或 session recorder。它是一个
 Git-native memory layer：在 agent 改代码前，先告诉它代码为什么是现在这样。
 
+<img width="1600" alt="Mainline Hub 展示把认证迁移到 jwt 的 sealed intent" src="docs/assets/readme/mainline-hub-intent-demo-zh.png" />
+
 **状态：public alpha。** 核心 CLI、hooks、Hub 和 release packaging 已可用，
 但 schema 和 workflow guidance 仍可能随着公开开发者体验打磨而调整。
 
