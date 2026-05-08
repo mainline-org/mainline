@@ -13,7 +13,7 @@ Mainline is not a Git replacement, a PR system, or a session recorder. It is
 a Git-native memory layer that tells coding agents *why the code is the way it
 is* before they edit it.
 
-<img width="1600" alt="Mainline Hub showing a sealed intent for migrating auth to JWT" src="docs/assets/readme/mainline-hub-intent-demo-en.png" />
+<img width="1600" alt="Mainline Hub showing a sealed intent for migrating auth to JWT" src="https://github.com/user-attachments/assets/d79f2dc4-8e03-47e2-93cf-b9241ac2741f" />
 
 Mainline gives coding agents the historical *why* before they inspect the current *what*.
 
