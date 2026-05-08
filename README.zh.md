@@ -10,9 +10,12 @@
 
 **代码 review 还不够，AI 时代要先 review 意图。**
 
-AI agent 让代码变得很便宜，也让 review 变得更难。Mainline 在 diff 出现前，
-把这个 repo 的历史决策、约束、废弃方案、验证记录和正在推进的相关工作交给
+Mainline 是一个面向 coding agent 的 Git-native memory layer。它在 diff 出现
+前，把这个 repo 的历史决策、约束、废弃方案、验证记录和正在推进的相关工作交给
 agent 和 reviewer。
+
+AI agent 让代码变得很便宜，也让 review 变得更难。Mainline 让意图先变得可
+review，再让代码进入 review。
 
 先 review 意图，再 review 代码。
 
@@ -91,7 +94,67 @@ Mainline 不是 Git 替代品，不是 PR 系统，不是 session recorder，不
 Mainline 不赌下一次 agent 一定会读到正确注释。它把这些事实变成可检索、可
 review、可协作的 intent layer。
 
-## Mainline 工作流
+## 安装
+
+安装 CLI：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
+mainline doctor --setup
+```
+
+也可以用 Go 安装：
+
+```bash
+go install github.com/mainline-org/mainline@latest
+```
+
+预编译 archive 和 checksums 在
+[GitHub Releases](https://github.com/mainline-org/mainline/releases/latest)。
+
+## 让 Agent 用起来
+
+每个 repo 初始化一次：
+
+```bash
+cd your-repo
+mainline init --actor-name "alice"
+```
+
+`mainline init` 会写入 repo-local Mainline 状态，配置需要的 Git refs，安装
+Mainline skill，并给 Codex、Claude Code、Cursor 等支持的 agent 安装 hooks。
+
+Hooks 会在 session start 跑 `mainline sync` 和 `mainline status`，让 agent 一
+开始就拿到新鲜的 repo 状态。但 hooks 不替 agent 做语义判断。什么时候读
+context、什么时候 append、怎么 seal、是否有 conflict，仍然由 agent 按 Mainline
+skill workflow 执行。
+
+已有项目接入时，`mainline init` 会把当前 `main` HEAD 当作 coverage baseline。
+更早的历史默认 skipped；之后的新 commit 应该有 intent coverage。
+
+## Agent 跑什么
+
+非平凡工作时，agent-facing loop 是：
+
+```bash
+mainline context --current --json
+mainline start "<用户的目标>"
+mainline append "<有意义的进展>"
+mainline seal --prepare --json > .ml-cache/seal.json
+mainline seal --submit --json < .ml-cache/seal.json
+```
+
+`context` 是 pre-edit gate。`start` 认领这一单工作。`append` 记录有工程意义
+的 turn：决策、pivot、完成的 slice，或会改变信心的 validation。`seal` 把这次
+工作变成可 review 的 intent：summary、decisions、rejected alternatives、
+validation notes 和 semantic fingerprint。
+
+架构调整、重构、迁移、删除、auth/billing/permissions/data-model、release/CI，
+以及“这个能不能删？”、“以前试过吗？”这类问题，都应该先跑 Mainline。
+
+Typo、纯格式化、一行明显语法修复，通常不用。
+
+## 工作流位置
 
 Mainline 不替换你的 Git 流程，它贴在旁边：
 
@@ -105,47 +168,41 @@ Mainline 不替换你的 Git 流程，它贴在旁边：
 重点不是多一套仪式。重点是团队 review 的不只是“生成出来的代码”，而是“这件事
 到底该不该这样做”。
 
-## 快速开始
+## CLI 和 Hub
 
-安装 CLI：
+Mainline 有两个入口：
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
-mainline doctor --setup
-```
+- **CLI 做动作：** 初始化 repo、sync 状态、记录 intent、查看历史、发现 gaps、
+  生成 review material。
+- **Hub 用来阅读：** 浏览 intent history、pending work、文件级上下文、coverage
+  gaps、risks 和协作信号。
 
-初始化一个 repo：
-
-```bash
-cd your-repo
-mainline init --actor-name "alice"
-```
-
-先让 agent 产生第一条 intent：
-
-```bash
-mainline context --current --json
-mainline start "<用户的目标>"
-mainline append "<有意义的进展>"
-mainline seal --prepare --json > .ml-cache/seal.json
-mainline seal --submit --json < .ml-cache/seal.json
-```
-
-再打开给人看的阅读界面：
+已经有至少一条 intent 后，打开 Hub：
 
 ```bash
 mainline hub open
+```
+
+人类常用命令：
+
+```bash
+mainline status --actionable
 mainline log
 mainline show <intent_id>
 mainline gaps
 ```
 
-`mainline hub open` 最适合在已经有 intent 之后打开。新仓库刚初始化时，Hub 里
-当然没什么内容；先让 agent 跑完一轮 intent，再打开 Hub 看记录。
+`mainline hub open` 最适合在 agent 已经产生至少一条 intent 之后打开。新仓库刚
+初始化时，Hub 里当然没什么内容；先让 agent 跑完一轮 intent，再打开 Hub 看记录。
 
-日常使用里，Mainline skill 和 hooks 会替支持的 agent 跑这些 agent-facing
-commands。安装细节、完整命令、恢复规则、hooks 行为、配置、存储布局和开发命令，
-放在 [docs/reference.zh.md](./docs/reference.zh.md)。
+静态导出：
+
+```bash
+mainline hub export ./mainline-hub
+```
+
+安装变体、恢复规则、hooks 行为、webhooks、配置、存储布局和开发命令，放在
+[docs/reference.zh.md](./docs/reference.zh.md)。
 
 ## 有效果吗
 
