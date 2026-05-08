@@ -8,22 +8,37 @@
 - Detailed reference: [docs/reference.md](./docs/reference.md)
 - 中文版本: [README.zh.md](./README.zh.md)
 
-**Stop AI coding agents from repeating old engineering mistakes.**
+**We have code review. Now we need intent review.**
 
-Mainline is a Git-native memory layer for coding agents. Before an agent edits
-code, Mainline tells it why the code is the way it is: decisions, abandoned
-approaches, reviewer constraints, validation notes, and related in-flight work.
+AI agents make code cheap to produce and harder to review. Mainline gives
+agents and reviewers repo memory before the diff: prior decisions, constraints,
+abandoned approaches, validation notes, and related in-flight work.
 
-It is not a Git replacement, PR system, session recorder, or productivity
-dashboard. It is repo-local engineering memory that travels with your code.
-It shifts review one level up: code review still matters, but agent-era work
-also needs intent review and intent-aware collaboration before the diff lands.
+Review the intent before you review the code.
 
 <img width="2530" height="756" alt="Mainline overview" src="https://github.com/user-attachments/assets/e337559b-72cd-4fd4-b139-16754cc675f6" />
 
-<img width="1600" alt="Mainline Hub showing a sealed intent for migrating auth to JWT" src="https://github.com/user-attachments/assets/2c740a17-019f-4f16-bd8a-e812d8a78f32" />
+<img width="1600" alt="Mainline Hub showing a sealed engineering intent" src="https://github.com/user-attachments/assets/2c740a17-019f-4f16-bd8a-e812d8a78f32" />
 
 ## The Problem
+
+Code review was built for a world where humans wrote most of the code. The diff
+was expensive, so it was usually small enough for reviewers to infer the intent.
+
+Agent work changes that. A coding agent can produce a wide diff quickly. The
+hard review question moves up a level:
+
+- is this the right problem to solve?
+- did the agent understand the prior decision?
+- is it repeating an abandoned approach?
+- did it miss a reviewer constraint?
+- is another agent already working on a related intent?
+- does the validation actually match the reason for the change?
+
+If reviewers only see the final diff, they are forced to reconstruct intent
+after the work is already shaped.
+
+### A Realistic Failure
 
 A billing team moves invoice export to a new `/exports/invoices` API, but keeps
 the old `/reports/invoices.csv` route because three enterprise customers still
@@ -35,91 +50,59 @@ points, and the compatibility branch looks removable. The agent deletes it.
 Unit tests pass. The dashboard looks clean. The next morning, customer finance
 jobs fail.
 
-Code alone did not tell the agent the important fact: **do not remove the
-legacy CSV invoice export until the enterprise reconciliation migration is
-complete**.
+The important fact was not visible in the diff: **do not remove the legacy CSV
+invoice export until the enterprise reconciliation migration is complete**.
 
-That is the class of problem Mainline solves. AI coding agents are fast, but
-source code does not reliably explain:
+## What Mainline Does
 
-- which approaches were tried and abandoned,
-- which decisions superseded older implementations,
-- which constraints reviewers expect future changes to preserve,
-- which conventions live outside source code,
-- which teammate or agent is already working on a related intent.
+Mainline records the intent behind engineering work and makes it available
+before the next risky edit.
 
-RAG can find similar code. Grep can verify what exists now. Mainline gives the
-agent the missing layer: repo-level engineering fact.
+An intent captures:
+
+- the user goal,
+- why the work exists,
+- decisions and rejected alternatives,
+- validation and review notes,
+- explicit constraints, risks, and follow-ups,
+- related files and subsystems,
+- in-flight overlap with other agents or teammates,
+- the commit that eventually carried the work onto `main`.
+
+Mainline is not a Git replacement, PR system, session recorder, RAG index, or
+productivity dashboard. It is repo-local engineering memory that travels with
+your code through Git refs and Git notes.
 
 ## Why Comments Are Not Enough
 
-A code comment can help when the future agent is already reading the exact line.
-It is still worth writing good comments for local invariants.
+Good comments still matter. If a function has a local invariant, write it down.
 
 But comments are a weak place to store repo-level intent:
 
-- the agent may never open the file before planning the change,
-- the decision may span several files, services, or release steps,
-- abandoned approaches often live outside the current code,
-- comments rarely show who is already working on related changes,
-- stale comments do not carry lifecycle, validation, or review context,
-- reviewers need to inspect intent before they inspect the diff.
+- the agent may plan the change before opening the right file,
+- the decision may span services, release steps, customer migrations, or policy,
+- abandoned approaches often live outside current code,
+- comments rarely show in-flight work from another agent,
+- stale comments do not carry lifecycle, validation, or reviewer context.
 
-Mainline keeps those facts as explicit, queryable repo memory instead of hoping
-the next agent happens to read the right comment at the right time.
+Mainline does not depend on the next agent finding the right comment. It gives
+agents and reviewers a queryable intent layer before the diff.
 
-## The Solution
-
-Mainline records the intent behind engineering work and surfaces it before the
-next risky edit.
-
-An intent answers:
-
-- what changed,
-- why the work existed,
-- which decisions were made,
-- which alternatives were rejected,
-- what was validated,
-- which constraints, risks, or follow-ups should survive the current session,
-- which commit eventually carried the work onto `main`.
-
-The result is simple: the next agent reads the durable memory before it writes a
-diff. If the repo has a known constraint, abandoned approach, or overlapping
-piece of in-flight work, the agent can stop before repeating the mistake.
-
-## Review The Intent
-
-When agents can produce a large diff quickly, reviewing only code is too late
-and too narrow. The higher-leverage review moves earlier:
-
-- review the intent before reviewing the implementation,
-- check whether the goal conflicts with prior decisions,
-- see which constraints and risks the agent believes are active,
-- notice overlapping work before two agents create incompatible PRs,
-- judge whether the validation matches the reason for the change.
-
-Mainline gives humans and agents a shared surface for that review. The question
-is no longer just "does this diff look right?" It is also "is this the right
-change to make, given what this repo already knows?"
-
-## How It Works
+## The Mainline Loop
 
 Mainline sits beside your normal Git workflow.
 
-1. Run `mainline init` once in a repository.
-2. Hooks give supported agents fresh `sync` + `status` context at session start.
-3. Before non-trivial edits, the agent runs `mainline context`.
-4. During the work, the agent records meaningful turns with `start` and
-   `append`.
-5. Before review, the agent seals the intent with decisions, validation notes,
-   and a semantic fingerprint.
-6. Humans review the intent and collaboration surface before or alongside the
-   code diff.
-7. After merge, `mainline sync` links the merged commit back to the intent.
-8. Future agents read that history before the next risky edit.
+1. **Before editing**, the agent reads relevant intent with `mainline context`.
+2. **During the work**, it records meaningful turns with `start` and `append`.
+3. **Before review**, it seals the intent with decisions, validation notes, and
+   a semantic fingerprint.
+4. **During review**, humans inspect the intent and collaboration surface before
+   or alongside the code diff.
+5. **After merge**, `mainline sync` links the merged commit back to the intent.
+6. **Next time**, future agents read that history before they edit.
 
-Mainline stores durable team data in Git refs and Git notes. Local caches live
-under `.ml-cache/` and can be rebuilt.
+The point is not ceremony. The point is that the team can review the intended
+change, not just the generated code.
 
 ## Quick Start
 
@@ -137,22 +120,7 @@ cd your-repo
 mainline init --actor-name "alice"
 ```
 
-Open the human reading surface:
-
-```bash
-mainline hub open
-```
-
-Useful human commands:
-
-```bash
-mainline status --actionable
-mainline log
-mainline show <intent_id>
-mainline gaps
-```
-
-The agent-facing loop is usually run by the Mainline skill and hooks:
+Let your agent create the first intent:
 
 ```bash
 mainline context --current --json
@@ -162,8 +130,21 @@ mainline seal --prepare --json > .ml-cache/seal.json
 mainline seal --submit --json < .ml-cache/seal.json
 ```
 
-Full install options, command reference, recovery rules, hook behavior,
-configuration, storage layout, and development commands live in
+Then open the human reading surface:
+
+```bash
+mainline hub open
+mainline log
+mainline show <intent_id>
+mainline gaps
+```
+
+`mainline hub open` is most useful after at least one intent exists. On a fresh
+repo, run the agent loop first, then open Hub to review what was recorded.
+
+In normal use, the Mainline skill and hooks run the agent-facing commands for
+supported agents. Full install options, command reference, recovery rules, hook
+behavior, configuration, storage layout, and development commands live in
 [docs/reference.md](./docs/reference.md).
 
 ## Does It Work?
@@ -182,9 +163,15 @@ Read the full methodology and caveats in [docs/eval-results.md](./docs/eval-resu
 
 ## When To Use It
 
-Use Mainline before non-trivial agent work: architecture changes, refactors,
-migrations, deletions, auth, billing, permissions, data model work, release/CI
-changes, and questions like "can we delete this?" or "was this tried before?"
+Use Mainline before non-trivial agent work:
+
+- architecture changes,
+- refactors and migrations,
+- deletions,
+- auth, billing, permissions, and data model changes,
+- release and CI changes,
+- questions like "can we delete this?" or "was this tried before?",
+- any work where another agent or teammate might be operating nearby.
 
 Skip it for narrow typo fixes, pure formatting, and one-line obvious syntax
 repairs.
