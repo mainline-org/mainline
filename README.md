@@ -10,9 +10,12 @@
 
 **We have code review. Now we need intent review.**
 
-AI agents make code cheap to produce and harder to review. Mainline gives
-agents and reviewers repo memory before the diff: prior decisions, constraints,
-abandoned approaches, validation notes, and related in-flight work.
+Mainline is a Git-native memory layer for coding agents. It gives agents and
+reviewers repo memory before the diff: prior decisions, constraints, abandoned
+approaches, validation notes, and related in-flight work.
+
+AI agents make code cheap to produce and harder to review. Mainline makes the
+intent reviewable before the generated code lands.
 
 Review the intent before you review the code.
 
@@ -88,7 +91,72 @@ But comments are a weak place to store repo-level intent:
 Mainline does not depend on the next agent finding the right comment. It gives
 agents and reviewers a queryable intent layer before the diff.
 
-## The Mainline Loop
+## Install
+
+Install the CLI:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
+mainline doctor --setup
+```
+
+Other install paths are available in the detailed reference:
+
+```bash
+go install github.com/mainline-org/mainline@latest
+```
+
+Downloadable release archives and checksums are published on
+[GitHub Releases](https://github.com/mainline-org/mainline/releases/latest).
+
+## Getting Your Agent Started
+
+Initialize a repository once:
+
+```bash
+cd your-repo
+mainline init --actor-name "alice"
+```
+
+`mainline init` sets up repo-local Mainline state, configures the Git refs
+Mainline needs, installs the Mainline skill, and installs hooks for supported
+agents such as Codex, Claude Code, and Cursor.
+
+Hooks run `mainline sync` and `mainline status` at session start so the agent
+begins with fresh repo state. The hooks do not decide what to do. The agent
+still reads context, records progress, seals the intent, and surfaces conflicts
+through the Mainline skill workflow.
+
+On an existing repository, `mainline init` treats the current `main` HEAD as the
+coverage baseline. Older history is skipped by default; new commits should have
+intent coverage.
+
+## What Agents Run
+
+For non-trivial work, the agent-facing loop is:
+
+```bash
+mainline context --current --json
+mainline start "<the user's goal>"
+mainline append "<meaningful progress>"
+mainline seal --prepare --json > .ml-cache/seal.json
+mainline seal --submit --json < .ml-cache/seal.json
+```
+
+`context` is the pre-edit gate. `start` claims the unit of work. `append`
+records meaningful turns: decisions, pivots, completed slices, or validation
+that changes confidence. `seal` turns the work into reviewable intent with a
+summary, decisions, rejected alternatives, validation notes, and a semantic
+fingerprint.
+
+Agents should run this before architecture changes, refactors, migrations,
+deletions, auth/billing/permissions/data-model work, release/CI changes, and
+questions like "can we delete this?" or "was this tried before?"
+
+Tiny typo fixes, pure formatting, and one-line obvious syntax repairs can skip
+Mainline.
+
+## Workflow Fit
 
 Mainline sits beside your normal Git workflow.
 
@@ -104,47 +172,42 @@ Mainline sits beside your normal Git workflow.
 The point is not ceremony. The point is that the team can review the intended
 change, not just the generated code.
 
-## Quick Start
+## CLI And Hub
 
-Install the CLI:
+Mainline has two surfaces:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
-mainline doctor --setup
-```
+- **CLI for action:** initialize the repo, sync state, record intent, inspect
+  history, find gaps, and generate review material.
+- **Hub for reading:** browse intent history, pending work, file-level context,
+  coverage gaps, risks, and collaboration signals.
 
-Initialize a repository:
-
-```bash
-cd your-repo
-mainline init --actor-name "alice"
-```
-
-Let your agent create the first intent:
-
-```bash
-mainline context --current --json
-mainline start "<the user's goal>"
-mainline append "<meaningful progress>"
-mainline seal --prepare --json > .ml-cache/seal.json
-mainline seal --submit --json < .ml-cache/seal.json
-```
-
-Then open the human reading surface:
+After at least one intent exists, open Hub:
 
 ```bash
 mainline hub open
+```
+
+Useful human commands:
+
+```bash
+mainline status --actionable
 mainline log
 mainline show <intent_id>
 mainline gaps
 ```
 
-`mainline hub open` is most useful after at least one intent exists. On a fresh
-repo, run the agent loop first, then open Hub to review what was recorded.
+`mainline hub open` is most useful after the agent has produced at least one
+intent. On a fresh repo, run the agent loop first, then open Hub to review what
+was recorded.
 
-In normal use, the Mainline skill and hooks run the agent-facing commands for
-supported agents. Full install options, command reference, recovery rules, hook
-behavior, configuration, storage layout, and development commands live in
+For static export:
+
+```bash
+mainline hub export ./mainline-hub
+```
+
+The detailed reference covers install variants, recovery rules, hook behavior,
+webhooks, configuration, storage layout, and development commands:
 [docs/reference.md](./docs/reference.md).
 
 ## Does It Work?
