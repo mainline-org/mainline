@@ -321,7 +321,8 @@ func (s *Service) Pin() (*PinResult, error) {
 		return &PinResult{}, nil
 	}
 
-	entries, _ := s.Git.LogOneline(cfg.Mainline.MainBranch, cfg.Check.Lookback)
+	mainRef := s.syncedMainRef(cfg.Mainline.MainBranch)
+	entries, _ := s.Git.LogOneline(mainRef, cfg.Check.Lookback)
 
 	hashSeen := map[string]bool{}
 	hashes := make([]string, 0, len(entries))
@@ -468,18 +469,7 @@ func (s *Service) Pin() (*PinResult, error) {
 			continue
 		}
 
-		targets := []string{primary}
-		primaryTree := treeOf[primary]
-		if primaryTree != "" {
-			for _, e := range entries {
-				if e.Hash == primary {
-					continue
-				}
-				if treeOf[e.Hash] == primaryTree {
-					targets = append(targets, e.Hash)
-				}
-			}
-		}
+		targets := sameTreePinTargets(primary, entries, pinCtx)
 
 		hash, _ := core.CanonicalHash(iv)
 		pinnedAny := false
@@ -537,8 +527,10 @@ func (s *Service) Pin() (*PinResult, error) {
 	}
 	if len(unpinned) > 0 {
 		entrySet := make(map[string]bool, len(entries))
+		entryByHash := make(map[string]gitops.LogEntry, len(entries))
 		for _, e := range entries {
 			entrySet[e.Hash] = true
+			entryByHash[e.Hash] = e
 		}
 		branchToMerge := ghMergedPRBranches(s.Git.RepoRoot)
 		for _, iv := range unpinned {
@@ -547,6 +539,9 @@ func (s *Service) Pin() (*PinResult, error) {
 				continue
 			}
 			if !entrySet[mergeCommit] {
+				continue
+			}
+			if !prMergeCandidateAllowed(iv, entryByHash[mergeCommit]) {
 				continue
 			}
 			if alreadyHasIntentCached(pinCtx.noteCache, mergeCommit, iv.IntentID) {
@@ -660,7 +655,7 @@ func findPinMatchBatched(iv domain.IntentView, entries []gitops.LogEntry, ctx *p
 			}
 			for _, entry := range entries {
 				msg := ctx.entryMessages[entry.Hash]
-				if msg != "" && matchesMergeHeader(msg, branch) {
+				if msg != "" && matchesMergeHeader(msg, branch) && prMergeCandidateAllowed(iv, entry) {
 					return entry.Hash, strategy
 				}
 			}
@@ -677,6 +672,52 @@ func findPinMatchBatched(iv domain.IntentView, entries []gitops.LogEntry, ctx *p
 		}
 	}
 	return "", ""
+}
+
+func sameTreePinTargets(primary string, entries []gitops.LogEntry, ctx *pinContext) []string {
+	targets := []string{primary}
+	primaryTree := ctx.treeOf[primary]
+	if primaryTree == "" {
+		return targets
+	}
+	for _, e := range entries {
+		if e.Hash == primary || ctx.treeOf[e.Hash] != primaryTree {
+			continue
+		}
+		if sameTreeDirectNeighbor(primary, e.Hash, ctx.commitParents) {
+			targets = append(targets, e.Hash)
+		}
+	}
+	return targets
+}
+
+func sameTreeDirectNeighbor(a, b string, parents map[string][]string) bool {
+	for _, parent := range parents[a] {
+		if parent == b {
+			return true
+		}
+	}
+	for _, parent := range parents[b] {
+		if parent == a {
+			return true
+		}
+	}
+	return false
+}
+
+func prMergeCandidateAllowed(iv domain.IntentView, entry gitops.LogEntry) bool {
+	if iv.SealedAt == "" || entry.Date == "" {
+		return true
+	}
+	sealedAt, err := time.Parse(time.RFC3339, iv.SealedAt)
+	if err != nil {
+		return true
+	}
+	mergedAt, err := time.Parse(time.RFC3339, entry.Date)
+	if err != nil {
+		return true
+	}
+	return !mergedAt.Before(sealedAt)
 }
 
 // alreadyHasIntentCached checks the note cache instead of forking git.

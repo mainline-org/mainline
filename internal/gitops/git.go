@@ -427,7 +427,7 @@ func (g *Git) Push(remote string, refspecs ...string) error {
 
 // LogOneline returns recent commit summaries.
 func (g *Git) LogOneline(ref string, n int) ([]LogEntry, error) {
-	out, err := g.run("log", "--format=%H|%s|%aI", "-n", strconv.Itoa(n), ref)
+	out, err := g.run("log", "--format=%H|%s|%cI", "-n", strconv.Itoa(n), ref)
 	if err != nil {
 		return nil, err
 	}
