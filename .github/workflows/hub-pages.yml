@@ -1,0 +1,54 @@
+name: Mainline Hub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 2 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: mainline-hub-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Export and deploy Hub
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Mainline
+        run: go build -o mainline .
+
+      - name: Sync Mainline state
+        run: ./mainline sync
+
+      - name: Export Hub
+        run: |
+          ./mainline hub export ./_site --json | tee /tmp/mainline-hub-export.json
+          jq -e '.data.intent_count > 0' /tmp/mainline-hub-export.json
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

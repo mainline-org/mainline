@@ -252,6 +252,18 @@ xdg-open ./mainline-hub/index.html  # Linux
 
 Hub output is generated local state and should not be committed.
 
+### Publishing Hub With GitHub Pages
+
+This repository ships a GitHub Pages workflow at
+`.github/workflows/hub-pages.yml`. It builds the CLI, runs `mainline sync`,
+exports Hub to `_site`, verifies the export has intent data, and deploys the
+static artifact through GitHub Pages.
+
+Use repository settings to set Pages source to **GitHub Actions**. The workflow
+runs on `main` updates, manual dispatch, and a daily schedule. The scheduled run
+is intentional: Mainline intent state also moves through Git refs and notes, so
+the hosted Hub needs a refresh path that is not tied only to code diffs.
+
 ## Daily Commands
 
 Intent inspection has three levels:

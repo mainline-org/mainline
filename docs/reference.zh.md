@@ -223,6 +223,16 @@ xdg-open ./mainline-hub/index.html  # Linux
 
 Hub 输出是本地生成状态，不应提交。
 
+### 用 GitHub Pages 发布 Hub
+
+这个仓库带了 `.github/workflows/hub-pages.yml`。它会 build CLI，跑
+`mainline sync`，把 Hub 导出到 `_site`，确认导出里有 intent 数据，再通过 GitHub
+Pages 部署这份静态 artifact。
+
+在仓库设置里把 Pages source 设成 **GitHub Actions**。workflow 会在 `main` 更新、
+手动触发、每天定时跑一次。这个定时不是装饰：Mainline intent state 也会通过 Git
+refs 和 notes 流动，所以 hosted Hub 需要一条不依赖代码 diff 的刷新路径。
+
 ## 常用命令
 
 Intent inspection 三层：
