@@ -250,6 +250,9 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 			if iv.Status != domain.StatusProposed || iv.Fingerprint == nil {
 				continue
 			}
+			if preflightIsCurrentBranchProposal(in.status, iv) {
+				continue
+			}
 			if preflightFilesOverlap(currentFiles, iv.Fingerprint.FilesTouched) {
 				res.Overlaps = append(res.Overlaps, preflightOverlapFromIntent(
 					PreflightOverlapProposed, PreflightLevelBlock, iv, currentFiles,
@@ -300,6 +303,19 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 	res.Level = aggregatePreflightLevel(res.Findings, res.Overlaps)
 	res.OKToContinue = res.Level != PreflightLevelBlock
 	return res
+}
+
+func preflightIsCurrentBranchProposal(status *StatusResult, iv domain.IntentView) bool {
+	if status == nil || status.Branch == "" || status.LocalHead == "" {
+		return false
+	}
+	if iv.GitBranch != status.Branch || iv.CodeCommit != status.LocalHead {
+		return false
+	}
+	if status.ActorID != "" && iv.ActorID != "" && status.ActorID != iv.ActorID {
+		return false
+	}
+	return true
 }
 
 func preflightOverlapFromIntent(kind, level string, iv domain.IntentView, currentFiles []string) PreflightOverlap {

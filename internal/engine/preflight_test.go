@@ -94,6 +94,37 @@ func TestPreflightBlocksDirtyFileOverlapWithProposedIntent(t *testing.T) {
 	}
 }
 
+func TestPreflightDoesNotBlockCurrentBranchProposedIntent(t *testing.T) {
+	current := []string{"shared.go"}
+	localHead := "local-head"
+	self := preflightIntent("int_self", domain.StatusProposed, current, "")
+	self.GitBranch = "feature/self"
+	self.ActorID = "actor_self"
+	self.CodeCommit = localHead
+
+	res := buildPreflightResult(preflightInput{
+		status: &StatusResult{
+			Initialized:        true,
+			IdentityConfigured: true,
+			Branch:             "feature/self",
+			ActorID:            "actor_self",
+			LocalHead:          localHead,
+			MainHead:           "main-head",
+		},
+		currentFiles:    current,
+		commitDiffFiles: current,
+		proposed:        []domain.IntentView{self},
+		upstreamCommits: map[string]bool{},
+	})
+
+	if res.Level != PreflightLevelOK || !res.OKToContinue {
+		t.Fatalf("current branch's own proposed intent should not block preflight, got %+v", res)
+	}
+	if hasPreflightOverlap(res, PreflightOverlapProposed, "int_self") {
+		t.Fatalf("current branch's own proposed intent must be self-excluded, got %+v", res.Overlaps)
+	}
+}
+
 func TestPreflightDoesNotWarnBranchDriftForNormalFeatureAhead(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
