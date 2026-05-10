@@ -74,6 +74,12 @@ var statusCmd = &cobra.Command{
 			} else {
 				fmt.Println("Intent:    (none active)")
 			}
+			if line := engine.AgentAuthorityPlainLine(result.AgentAuthority); line != "" {
+				fmt.Println(line)
+				for _, warning := range result.AgentAuthority.Warnings {
+					fmt.Printf("  warning: %s\n", warning)
+				}
+			}
 			fmt.Printf("Proposed:  %d intents\n", result.ProposedCount)
 			if result.ProposalHealth != nil {
 				fmt.Printf("           %d older than %dh (oldest %s)\n",

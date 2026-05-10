@@ -141,6 +141,12 @@ func (s *Store) ReadTeamConfig() (*domain.TeamConfig, error) {
 		cfg.Mainline.Remote = "origin"
 	}
 	cfg.Mainline.ActorLogPrefix = domain.NormalizeActorLogPrefix(cfg.Mainline.ActorLogPrefix)
+	if !explicitlyHasKey(data, "[agent]", "autonomy") {
+		cfg.Agent.Autonomy = "handoff"
+	}
+	if !explicitlyHasKey(data, "[agent]", "max_autonomy") {
+		cfg.Agent.MaxAutonomy = "review"
+	}
 	// Hooks section defaults: when the [hooks] block is absent we
 	// treat hooks as enabled-with-everything-on so the first-time
 	// `mainline hooks install` user gets the documented behaviour.

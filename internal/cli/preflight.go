@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mainline-org/mainline/internal/engine"
 )
 
 var preflightCmd = &cobra.Command{
@@ -36,6 +38,12 @@ reported through level / ok_to_continue, not through the process exit code.`,
 			fmt.Print(" (review before continuing)")
 		}
 		fmt.Println()
+		if line := engine.AgentAuthorityPlainLine(result.AgentAuthority); line != "" {
+			fmt.Println(line)
+			for _, warning := range result.AgentAuthority.Warnings {
+				fmt.Printf("  warning: %s\n", warning)
+			}
+		}
 		if result.Facts.Branch != "" {
 			fmt.Printf("Branch:    %s\n", result.Facts.Branch)
 		}

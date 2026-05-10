@@ -7,6 +7,9 @@
   [mainline.skip]
     patterns = ["^Merge pull request ", "^Merge branch ", "^chore: bump version", "^mainline: init"]
 
+[agent]
+  autonomy = "handoff"
+
 [sync]
   auto_sync = true
   interval = "30s"

@@ -105,6 +105,22 @@ func TestInitAndStatus(t *testing.T) {
 		t.Errorf("expected init to record pre-init main HEAD as coverage baseline: got %s, want %s",
 			cfg.Mainline.Coverage.BaselineCommit, initialHead)
 	}
+	if cfg.Agent.Autonomy != AgentAutonomyHandoff {
+		t.Errorf("expected init to write agent autonomy %q, got %q", AgentAutonomyHandoff, cfg.Agent.Autonomy)
+	}
+	if cfg.Agent.MaxAutonomy != AgentAutonomyReview {
+		t.Errorf("expected missing max autonomy to backfill to %q, got %q", AgentAutonomyReview, cfg.Agent.MaxAutonomy)
+	}
+	st, err = svc.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.AgentAuthority == nil {
+		t.Fatal("status should include agent authority")
+	}
+	if got, want := st.AgentAuthority.Effective.Autonomy, AgentAutonomyHandoff; got != want {
+		t.Fatalf("status effective autonomy: got %q want %q", got, want)
+	}
 
 	// Double init should fail
 	_, err = svc.Init("test-agent")

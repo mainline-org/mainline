@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 10 -->
+<!-- mainline-agents-md-version: 11 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -10,6 +10,7 @@ Quick reference:
 
 ```
 mainline status                                      # see your state
+mainline preflight --json                            # readiness + stop line
 
 # Read team intents for context (do this aggressively):
 mainline log --json --limit 30                       # recent intents
@@ -23,6 +24,10 @@ git add ... && git commit -m ...                     # commit code
 mainline seal --prepare > .ml-cache/seal.json        # patch the starter
 mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
 ```
+
+Respect `agent_authority` from status/preflight. `assist` stops before
+commit/seal, `handoff` stops before push/PR, and `review` stops at an
+opened or updated PR; merge/release require explicit user instruction.
 
 Sync, pin, merge are automatic — do not invoke them.
 

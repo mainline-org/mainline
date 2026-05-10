@@ -15,6 +15,7 @@ const (
 // TeamConfig is stored at .mainline/config.toml, committed to repo.
 type TeamConfig struct {
 	Mainline MainlineSection `toml:"mainline"`
+	Agent    AgentSection    `toml:"agent"`
 	Sync     SyncSection     `toml:"sync"`
 	Check    CheckSection    `toml:"check"`
 	Publish  PublishSection  `toml:"publish"`
@@ -236,6 +237,11 @@ type LogSection struct {
 	DefaultLimit int `toml:"default_limit"`
 }
 
+type AgentSection struct {
+	Autonomy    string `toml:"autonomy,omitempty" json:"autonomy,omitempty"`
+	MaxAutonomy string `toml:"max_autonomy,omitempty" json:"max_autonomy,omitempty"`
+}
+
 // HooksSection mirrors the dispatch toggles in internal/hooks. We
 // keep them in domain so config parsing has a single home; the hooks
 // package consumes them via a plain DispatchSettings struct (no
@@ -303,7 +309,8 @@ func DefaultHooksSection() HooksSection {
 
 // LocalConfig is stored at .mainline/local.toml, NOT committed.
 type LocalConfig struct {
-	Actor ActorSection `toml:"actor"`
+	Actor ActorSection  `toml:"actor"`
+	Agent *AgentSection `toml:"agent,omitempty"`
 }
 
 type ActorSection struct {
@@ -343,6 +350,9 @@ func DefaultTeamConfig() TeamConfig {
 					"^mainline: init",
 				},
 			},
+		},
+		Agent: AgentSection{
+			Autonomy: "handoff",
 		},
 		Sync: SyncSection{
 			AutoSync:              true,
