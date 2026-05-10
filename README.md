@@ -5,7 +5,7 @@
 [![License: layered](https://img.shields.io/badge/License-Apache--2.0%20%2F%20CC--BY--4.0%20%2F%20Commercial-blue.svg)](#license)
 
 - Website: https://mainline.sh
-- Hosted Hub: https://mainline-org.github.io/mainline/
+- Hosted Hub: https://mainline.sh/hub/
 - Detailed reference: [docs/reference.md](./docs/reference.md)
 - 中文版本: [README.zh.md](./README.zh.md)
 
@@ -207,15 +207,10 @@ For static export:
 mainline hub export ./mainline-hub
 ```
 
-This repository also publishes a static Hub snapshot with GitHub Pages. The
-workflow is [`.github/workflows/hub-pages.yml`](./.github/workflows/hub-pages.yml):
-it runs on `main` updates, manual dispatch, and a daily schedule so Mainline
-refs and notes can be picked up even when no code changes. After repository
-Pages is set to the **GitHub Actions** source, the default URL is:
-https://mainline-org.github.io/mainline/
+The public hosted Hub for Mainline is https://mainline.sh/hub/.
 
 The detailed reference covers install variants, recovery rules, hook behavior,
-webhooks, configuration, storage layout, and development commands:
+webhooks, configuration, static Hub publishing, storage layout, and development commands:
 [docs/reference.md](./docs/reference.md).
 
 ## Does It Work?

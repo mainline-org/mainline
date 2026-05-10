@@ -5,7 +5,7 @@
 [![License: layered](https://img.shields.io/badge/License-Apache--2.0%20%2F%20CC--BY--4.0%20%2F%20Commercial-blue.svg)](#授权)
 
 - 官网：https://mainline.sh
-- Hosted Hub：https://mainline-org.github.io/mainline/
+- Hosted Hub：https://mainline.sh/hub/
 - 详细文档：[docs/reference.zh.md](./docs/reference.zh.md)
 - English version: [README.md](./README.md)
 
@@ -202,13 +202,9 @@ mainline gaps
 mainline hub export ./mainline-hub
 ```
 
-这个仓库也会用 GitHub Pages 发布一份静态 Hub snapshot。workflow 是
-[`.github/workflows/hub-pages.yml`](./.github/workflows/hub-pages.yml)：它会在
-`main` 更新、手动触发、每天定时跑一次，所以没有代码变更时，Mainline refs 和
-notes 的更新也能被下一轮发布带上。仓库 Pages source 设成 **GitHub Actions**
-后，默认地址是：https://mainline-org.github.io/mainline/
+Mainline 的公开 Hosted Hub 入口是：https://mainline.sh/hub/
 
-安装变体、恢复规则、hooks 行为、webhooks、配置、存储布局和开发命令，放在
+安装变体、恢复规则、hooks 行为、webhooks、配置、静态 Hub 发布、存储布局和开发命令，放在
 [docs/reference.zh.md](./docs/reference.zh.md)。
 
 ## 有效果吗
