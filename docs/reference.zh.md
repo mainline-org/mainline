@@ -86,6 +86,11 @@ mainline init --actor-name "<你的名字>"
 `mainline status`，并把 snapshot 注入上下文。Agent 仍然负责语义判断：什么时候
 start、append 什么、如何 seal、warning 是否代表真实 conflict。
 
+用 `mainline agents update` 刷新 AGENTS.md guidance。全局安装的 Mainline
+skill 需要单独通过 `npx --yes skills update mainline --global --yes` 刷新
+（或重新运行对应的 `skills add` 命令）。`mainline init --rewire` 只修复
+repo setup，不会重装 skill。
+
 已有项目接入 Mainline 时，`mainline init` 会把当前 `main` HEAD 记为 coverage
 baseline。这个 commit 及之前的历史显示为 skipped pre-Mainline history。之后
 进入 `main` 的 commit 仍然需要正常 intent coverage。重要旧 commit 可以补写：

@@ -128,6 +128,13 @@ begins with fresh repo state. The hooks do not decide what to do. The agent
 still reads context, records progress, seals the intent, and surfaces conflicts
 through the Mainline skill workflow.
 
+Existing agent skill installs are updated by the `skills` CLI, not by
+`mainline agents update` or `mainline init --rewire`:
+
+```bash
+npx --yes skills update mainline --global --yes
+```
+
 On an existing repository, `mainline init` treats the current `main` HEAD as the
 coverage baseline. Older history is skipped by default; new commits should have
 intent coverage.

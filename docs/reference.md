@@ -94,6 +94,11 @@ At every supported session start, hooks run `mainline sync` and
 still makes the semantic decisions: when to start, what to append, how to seal,
 and whether a warning is a real conflict.
 
+Refresh AGENTS.md guidance with `mainline agents update`. Refresh the globally
+installed Mainline skill separately with `npx --yes skills update mainline
+--global --yes` (or rerun the matching `skills add` command). `mainline init
+--rewire` repairs repo setup and does not reinstall skills.
+
 When you adopt Mainline in an existing repository, `mainline init` records the
 current `main` HEAD as the coverage baseline. Commits at or before that point
 show as skipped pre-Mainline history. Future commits still need normal intent

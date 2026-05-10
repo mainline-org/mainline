@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 22 -->
+<!-- mainline-agents-md-version: 23 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -67,11 +67,14 @@ Two clarifications:
 mainline preflight --json
 ```
 
-Read `agent_authority` from `preflight` or `status` before deciding closeout.
-If `current.allowed_boundary` is `inspect_or_stop`, stop or ask for human
-judgment before advancing the lifecycle. Otherwise advance only to the allowed
-boundary unless the current user instruction explicitly lowers or raises the
-stop line within the team's configured ceiling.
+Read `.data.agent_authority` from `preflight --json` or `status --json`
+before deciding closeout. If `current.allowed_boundary` is `inspect_or_stop`,
+stop or ask for human judgment before advancing the lifecycle. Otherwise advance
+only to the allowed boundary unless the current user instruction explicitly
+lowers or raises the stop line within the team's configured ceiling. Examples:
+"先给建议" lowers to `assist`; "提交当前工作区" / "收口" maps to `handoff`;
+"直接 PR" / "可以提了吧" maps to `review`; merge/release remains a separate
+explicit delivery task, not autonomy.
 
 If there is no `active_intent`, start one (use the user's goal verbatim
 when possible — it becomes the headline in `mainline log`):

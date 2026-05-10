@@ -1,6 +1,6 @@
 ---
 name: mainline
-description: "Use for any coding-agent work in a Git repository that uses or may need Mainline intent tracking: before reading or editing code, fixing bugs, adding features, refactoring, deleting code, changing tests or CI, committing, pushing, opening PRs, reviewing intent conflicts, or setting up Mainline CLI/hooks/agent guidance."
+description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, stop lines, allowed_boundary, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, or setup."
 ---
 
 # Mainline
@@ -140,9 +140,11 @@ context surface just to be safe. If it returns `warn` or `block`, read the
 targeted follow-up commands it points to (`show`, `trace`, `context
 --files/--query`, or `check`).
 
-Also read `agent_authority` when it is present. It is advisory, but it is the
-team-visible stop-line contract for how far the agent may advance without a
-fresh human instruction:
+Also read `agent_authority` when it is present. CLI JSON wraps command
+payloads under `.data`, so the runtime path is usually
+`.data.agent_authority`; examples and tests may show the unwrapped engine field
+as `agent_authority`. It is advisory, but it is the team-visible stop-line
+contract for how far the agent may advance without a fresh human instruction:
 
 - `assist` / `before_commit`: analyze, edit, and verify, then stop before
   commit, seal, publish, push, or PR unless the user explicitly asks for
@@ -318,13 +320,25 @@ but it does not by itself mean the work is ready to submit as team memory.
 
 Use `agent_authority` plus the current user instruction to decide the closeout
 boundary. Do not treat "work is implemented" as automatic permission to advance
-past that boundary.
+past that boundary. Current-instruction overrides are interpreted by the agent
+for this turn only; never write them to `.mainline/config.toml` or
+`.mainline/local.toml`.
 
 1. Establish collaboration context with `mainline preflight --json`.
-2. Decide the effective stop line and any current user override.
+2. Read `.data.agent_authority.current.allowed_boundary` and decide any current
+   user override.
 3. Do the work and verify it.
 4. Advance only to the allowed boundary.
 5. Stop on hard gates.
+
+Current instruction override examples:
+
+| User wording | Treat as |
+|---|---|
+| "先给建议" / "别直接改" / "不要提交" / read-only review | lower to `assist` |
+| "提交当前工作区" / "收口" / "commit and seal" / "seal 一下" | set boundary to `handoff` |
+| "直接 PR" / "可以提了吧" / "push and open PR" | raise to `review`, capped by team `max_autonomy` |
+| "merge 这个 PR" / "发布" / post-merge cleanup | explicit delivery task, not autonomy; do only if directly requested and other hard gates allow it |
 
 Vague continuation instructions such as "继续" or "auto next" only advance to
 PR in effective `review` autonomy when implementation is complete, verification
@@ -454,6 +468,8 @@ asks you to change it.
 Effective `handoff` autonomy stops before pushing a code branch or opening /
 updating a PR. Effective `review` autonomy may push a non-main branch and open
 or update a PR, but it still stops before merge, release, or post-merge cleanup.
+If the current branch is `main`, create or switch to a non-main branch before
+pushing or opening PR; `review` autonomy never authorizes `git push origin main`.
 
 Before any remote branch push or PR creation that the user requested and the
 stop line permits, ensure the intent is proposed or publishable:
@@ -534,17 +550,26 @@ Do not rewrite published history unless the user explicitly asks.
 
 ## Skill Distribution
 
-Install this skill with `npx skills` for the target agent:
+Install this skill with `npx skills` for supported target agents:
 
 ```bash
-npx --yes skills add mainline-org/mainline --skill mainline --agent codex --global --yes
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor --global --yes
 ```
 
-For local development:
+For local development from this repository:
 
 ```bash
-npx --yes skills add ./skills/mainline --skill mainline --agent codex --global --yes
+npx --yes skills add ./skills/mainline --skill mainline --agent codex claude-code cursor --global --yes
 ```
 
-The durable purpose of the skill is to teach agents to install, initialize,
-use, publish, and review Mainline intent data correctly.
+`mainline init` best-effort installs the default skill and hooks. Existing
+global skill installs are not refreshed by `mainline agents update` or
+`mainline init --rewire`; refresh them explicitly with:
+
+```bash
+npx --yes skills update mainline --global --yes
+```
+
+If update cannot determine the source, rerun the matching `skills add` command
+above. The durable purpose of the skill is to teach agents to install,
+initialize, use, publish, and review Mainline intent data correctly.

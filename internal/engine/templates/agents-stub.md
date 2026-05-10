@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 11 -->
+<!-- mainline-agents-md-version: 12 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -25,9 +25,11 @@ mainline seal --prepare > .ml-cache/seal.json        # patch the starter
 mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
 ```
 
-Respect `agent_authority` from status/preflight. `assist` stops before
+Respect `.data.agent_authority` from status/preflight. `assist` stops before
 commit/seal, `handoff` stops before push/PR, and `review` stops at an
-opened or updated PR; merge/release require explicit user instruction.
+opened or updated PR. Current user wording can lower or raise within the team
+ceiling: "先给建议" => assist, "提交/收口" => handoff, "直接 PR" => review;
+merge/release require explicit user instruction.
 
 Sync, pin, merge are automatic — do not invoke them.
 
