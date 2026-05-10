@@ -29,6 +29,12 @@ func TestPreflightCleanRepoNoActiveIntentIsOK(t *testing.T) {
 	if len(res.Findings) != 0 || len(res.Overlaps) != 0 {
 		t.Fatalf("clean repo should be quiet: findings=%+v overlaps=%+v", res.Findings, res.Overlaps)
 	}
+	if res.AgentAuthority == nil {
+		t.Fatal("preflight should include agent authority")
+	}
+	if got, want := res.AgentAuthority.Current.AllowedBoundary, AgentBoundaryProposedIntent; got != want {
+		t.Fatalf("preflight current boundary: got %q want %q", got, want)
+	}
 }
 
 func TestPreflightWarnsOnNotesRewriteDrift(t *testing.T) {
@@ -57,6 +63,32 @@ func TestPreflightWarnsOnNotesRewriteDrift(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected notes doctor recommendation, got %+v", res.RecommendedNext)
+	}
+}
+
+func TestPreflightBlockLowersAgentAuthorityBoundary(t *testing.T) {
+	authority := buildAgentAuthority(&domain.TeamConfig{
+		Agent: domain.AgentSection{Autonomy: AgentAutonomyReview, MaxAutonomy: AgentAutonomyReview},
+	}, nil)
+	res := buildPreflightResult(preflightInput{
+		status: &StatusResult{
+			Initialized:        true,
+			IdentityConfigured: false,
+			AgentAuthority:     authority,
+		},
+	})
+
+	if res.Level != PreflightLevelBlock || res.OKToContinue {
+		t.Fatalf("expected identity block, got %+v", res)
+	}
+	if res.AgentAuthority == nil {
+		t.Fatal("expected authority in preflight result")
+	}
+	if res.AgentAuthority.Effective.Autonomy != AgentAutonomyReview {
+		t.Fatalf("effective autonomy should remain review, got %+v", res.AgentAuthority.Effective)
+	}
+	if res.AgentAuthority.Current.AllowedBoundary != AgentBoundaryInspectOrStop {
+		t.Fatalf("blocked boundary should be inspect_or_stop, got %+v", res.AgentAuthority.Current)
 	}
 }
 

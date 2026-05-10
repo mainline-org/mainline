@@ -494,6 +494,11 @@ type StatusResult struct {
 	// commands; status must never repair shared notes refs implicitly.
 	NotesHealth *domain.NotesHealth `json:"notes_health,omitempty"`
 
+	// AgentAuthority is the advisory stop-line contract agents use
+	// to decide how far they may advance the work lifecycle before
+	// stopping for human judgment.
+	AgentAuthority *AgentAuthority `json:"agent_authority,omitempty"`
+
 	// Suggestions are actionable next-step CLI commands derived
 	// from the rest of StatusResult. The CLI prints them as a
 	// "Suggestions:" block under the main rollup.
@@ -570,6 +575,10 @@ func (s *Service) Status() (*StatusResult, error) {
 		return result, nil
 	}
 
+	cfg, _ := s.getTeamConfig()
+	localCfg, _ := s.Store.ReadLocalConfig()
+	result.AgentAuthority = buildAgentAuthority(cfg, localCfg)
+
 	branch, _ := s.Git.CurrentBranch()
 	result.Branch = branch
 
@@ -597,7 +606,6 @@ func (s *Service) Status() (*StatusResult, error) {
 	if ls, _ := s.Store.ReadLastSync(); ls != nil {
 		result.LastSync = ls
 		result.MainHead = ls.MainHead
-		cfg, _ := s.getTeamConfig()
 		threshold := int64(86400)
 		if cfg != nil && cfg.Sync.StaleThresholdSeconds > 0 {
 			threshold = cfg.Sync.StaleThresholdSeconds

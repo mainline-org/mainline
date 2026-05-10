@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 21 -->
+<!-- mainline-agents-md-version: 22 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -13,6 +13,13 @@ review. The agent is expected to both **read** team intents (for context)
 and **write** its own intent (for the work it's doing). Both halves
 matter — intents capture *why* changes were made, which is information
 the diff alone cannot give you.
+
+Respect agent autonomy stop lines surfaced by `mainline status` and
+`mainline preflight`. Autonomy is advisory; hard gates and current user
+instructions take priority. `assist` stops before commit/seal, `handoff`
+stops after commit/seal/proposed intent and before push/PR, and `review`
+stops at an opened or updated PR. Review autonomy does not include merge,
+release, or post-merge cleanup.
 
 > **v0.3 invariant**: every commit on `main` is in exactly one of three
 > states — `covered` (sealed intent claims it), `skipped` (`Mainline-Skip:`
@@ -57,8 +64,14 @@ Two clarifications:
 ### At the start of a task
 
 ```
-mainline status --json
+mainline preflight --json
 ```
+
+Read `agent_authority` from `preflight` or `status` before deciding closeout.
+If `current.allowed_boundary` is `inspect_or_stop`, stop or ask for human
+judgment before advancing the lifecycle. Otherwise advance only to the allowed
+boundary unless the current user instruction explicitly lowers or raises the
+stop line within the team's configured ceiling.
 
 If there is no `active_intent`, start one (use the user's goal verbatim
 when possible — it becomes the headline in `mainline log`):

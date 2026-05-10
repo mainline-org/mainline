@@ -49,6 +49,7 @@ type PreflightResult struct {
 	Level           string             `json:"level"`
 	OKToContinue    bool               `json:"ok_to_continue"`
 	Facts           PreflightFacts     `json:"facts"`
+	AgentAuthority  *AgentAuthority    `json:"agent_authority,omitempty"`
 	Findings        []PreflightFinding `json:"findings,omitempty"`
 	Overlaps        []PreflightOverlap `json:"overlaps,omitempty"`
 	RecommendedNext []string           `json:"recommended_next,omitempty"`
@@ -299,9 +300,12 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 	}
 
 	res.Overlaps = compactPreflightOverlaps(res.Overlaps)
-	res.RecommendedNext = preflightRecommendations(res)
 	res.Level = aggregatePreflightLevel(res.Findings, res.Overlaps)
 	res.OKToContinue = res.Level != PreflightLevelBlock
+	if in.status != nil && in.status.AgentAuthority != nil {
+		res.AgentAuthority = agentAuthorityWithPreflightBoundary(in.status.AgentAuthority, !res.OKToContinue)
+	}
+	res.RecommendedNext = preflightRecommendations(res)
 	return res
 }
 
@@ -435,6 +439,18 @@ func preflightRecommendations(res *PreflightResult) []string {
 	}
 	if len(res.Overlaps) > 0 {
 		add("if overlap is real, run mainline check or ask for human judgment before continuing")
+	}
+	if res.AgentAuthority != nil {
+		switch {
+		case res.AgentAuthority.Current.BlockedByPreflight:
+			add("resolve preflight findings before advancing beyond inspection")
+		case res.AgentAuthority.Current.AllowedBoundary == AgentBoundaryBeforeCommit:
+			add("assist boundary: stop before commit/seal unless the user explicitly asks for handoff")
+		case res.AgentAuthority.Current.AllowedBoundary == AgentBoundaryProposedIntent:
+			add("handoff boundary: stop before push/PR unless the user explicitly asks for review")
+		case res.AgentAuthority.Current.AllowedBoundary == AgentBoundaryOpenedPR:
+			add("review boundary: use a non-main branch and stop before merge/release")
+		}
 	}
 	return dedupeStrings(out)
 }

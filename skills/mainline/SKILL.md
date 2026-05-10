@@ -140,6 +140,24 @@ context surface just to be safe. If it returns `warn` or `block`, read the
 targeted follow-up commands it points to (`show`, `trace`, `context
 --files/--query`, or `check`).
 
+Also read `agent_authority` when it is present. It is advisory, but it is the
+team-visible stop-line contract for how far the agent may advance without a
+fresh human instruction:
+
+- `assist` / `before_commit`: analyze, edit, and verify, then stop before
+  commit, seal, publish, push, or PR unless the user explicitly asks for
+  handoff.
+- `handoff` / `proposed_intent`: commit scoped work and seal when ready, then
+  stop before pushing a code branch or opening/updating a PR unless the user
+  explicitly asks for review.
+- `review` / `opened_pr`: advance to external review on a non-main branch with
+  a generated Mainline PR body, then stop before merge, release, or post-merge
+  cleanup.
+
+Hard gates and current user instructions take priority. If `preflight` lowers
+`agent_authority.current.allowed_boundary` to `inspect_or_stop`, stop or ask
+for human judgment before lifecycle advancement.
+
 `notes_health.likely_history_rewrite` on `status` or `preflight` is cached by
 the most recent sync, not recomputed on every hot-path command. If the user
 mentions a recent force-push, rebase, filter-repo rewrite, author rewrite,
@@ -296,6 +314,24 @@ Keep the intent drafting while exploring, proving an idea, or while the branch
 is likely to be rebased, amended, or rescoped. A local commit is useful evidence,
 but it does not by itself mean the work is ready to submit as team memory.
 
+## Stop-Line Workflow
+
+Use `agent_authority` plus the current user instruction to decide the closeout
+boundary. Do not treat "work is implemented" as automatic permission to advance
+past that boundary.
+
+1. Establish collaboration context with `mainline preflight --json`.
+2. Decide the effective stop line and any current user override.
+3. Do the work and verify it.
+4. Advance only to the allowed boundary.
+5. Stop on hard gates.
+
+Vague continuation instructions such as "继续" or "auto next" only advance to
+PR in effective `review` autonomy when implementation is complete, verification
+has passed, no unresolved design questions remain, and commit/seal/PR is the
+next natural boundary. Otherwise continue the next unfinished implementation or
+design step.
+
 ## Commit Workflow
 
 Mainline does not prescribe how a repository stages changes, writes commits, or
@@ -317,6 +353,10 @@ before continuing.
 Before sealing, there must be a commit for Mainline to reference. Mainline does
 not create that commit for you.
 
+If effective autonomy is `assist`, stop here after reporting the diff and
+verification status. The user may then explicitly ask you to commit and seal,
+which is a current-instruction handoff.
+
 If the user asks for a commit or PR and the branch has no active intent, create
 or backfill one before committing unless the change is truly mechanical and the
 repository policy marks it skipped.
@@ -326,6 +366,9 @@ repository policy marks it skipped.
 Only seal when the work is ready for handoff, review, PR, push, or another
 team-visible memory boundary. Do not seal merely because a local experiment or
 intermediate commit exists.
+
+Do not seal in effective `assist` autonomy unless the user has explicitly asked
+for a handoff such as "commit and seal", "提交当前工作区", or "收口".
 
 When the repository has the intended commit and the work is ready for that
 handoff boundary, prepare the seal:
@@ -408,8 +451,12 @@ Mainline does not require a Git push, a pull request, or GitHub. Preserve the
 repository's existing review and release workflow unless the user explicitly
 asks you to change it.
 
-Before any remote branch push or PR creation that the user requested, ensure
-the intent is proposed or publishable:
+Effective `handoff` autonomy stops before pushing a code branch or opening /
+updating a PR. Effective `review` autonomy may push a non-main branch and open
+or update a PR, but it still stops before merge, release, or post-merge cleanup.
+
+Before any remote branch push or PR creation that the user requested and the
+stop line permits, ensure the intent is proposed or publishable:
 
 ```bash
 mainline status --json
