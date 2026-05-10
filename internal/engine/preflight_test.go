@@ -94,6 +94,138 @@ func TestPreflightBlocksDirtyFileOverlapWithProposedIntent(t *testing.T) {
 	}
 }
 
+func TestPreflightDoesNotBlockCurrentBranchProposedIntent(t *testing.T) {
+	current := []string{"shared.go"}
+	localHead := "local-head"
+	self := preflightIntent("int_self", domain.StatusProposed, current, "")
+	self.GitBranch = "feature/self"
+	self.ActorID = "actor_self"
+	self.CodeCommit = localHead
+
+	res := buildPreflightResult(preflightInput{
+		status: &StatusResult{
+			Initialized:        true,
+			IdentityConfigured: true,
+			Branch:             "feature/self",
+			ActorID:            "actor_self",
+			LocalHead:          localHead,
+			MainHead:           "main-head",
+		},
+		currentFiles:    current,
+		commitDiffFiles: current,
+		proposed:        []domain.IntentView{self},
+		upstreamCommits: map[string]bool{},
+	})
+
+	if res.Level != PreflightLevelOK || !res.OKToContinue {
+		t.Fatalf("current branch's own proposed intent should not block preflight, got %+v", res)
+	}
+	if hasPreflightOverlap(res, PreflightOverlapProposed, "int_self") {
+		t.Fatalf("current branch's own proposed intent must be self-excluded, got %+v", res.Overlaps)
+	}
+}
+
+func TestPreflightCurrentBranchProposalDoesNotHideOtherProposedOverlap(t *testing.T) {
+	current := []string{"shared.go"}
+	localHead := "local-head"
+	self := preflightIntent("int_self", domain.StatusProposed, current, "")
+	self.GitBranch = "feature/self"
+	self.ActorID = "actor_self"
+	self.CodeCommit = localHead
+
+	other := preflightIntent("int_other", domain.StatusProposed, current, "")
+	other.GitBranch = "feature/other"
+	other.ActorID = "actor_other"
+	other.CodeCommit = "other-head"
+
+	res := buildPreflightResult(preflightInput{
+		status: &StatusResult{
+			Initialized:        true,
+			IdentityConfigured: true,
+			Branch:             "feature/self",
+			ActorID:            "actor_self",
+			LocalHead:          localHead,
+			MainHead:           "main-head",
+		},
+		currentFiles:    current,
+		commitDiffFiles: current,
+		proposed:        []domain.IntentView{self, other},
+		upstreamCommits: map[string]bool{},
+	})
+
+	if res.Level != PreflightLevelBlock || res.OKToContinue {
+		t.Fatalf("other proposed overlap must still block, got %+v", res)
+	}
+	if hasPreflightOverlap(res, PreflightOverlapProposed, "int_self") {
+		t.Fatalf("self proposal should be excluded, got %+v", res.Overlaps)
+	}
+	if !hasPreflightOverlap(res, PreflightOverlapProposed, "int_other") {
+		t.Fatalf("other proposed overlap should remain visible, got %+v", res.Overlaps)
+	}
+}
+
+func TestPreflightBlocksProposedOverlapWhenCurrentBranchSignalsDoNotAllMatch(t *testing.T) {
+	current := []string{"shared.go"}
+	status := &StatusResult{
+		Initialized:        true,
+		IdentityConfigured: true,
+		Branch:             "feature/self",
+		ActorID:            "actor_self",
+		LocalHead:          "local-head",
+		MainHead:           "main-head",
+	}
+
+	cases := []struct {
+		name       string
+		gitBranch  string
+		codeCommit string
+		actorID    string
+	}{
+		{
+			name:       "different branch",
+			gitBranch:  "feature/other",
+			codeCommit: status.LocalHead,
+			actorID:    status.ActorID,
+		},
+		{
+			name:       "different code commit",
+			gitBranch:  status.Branch,
+			codeCommit: "other-head",
+			actorID:    status.ActorID,
+		},
+		{
+			name:       "different actor",
+			gitBranch:  status.Branch,
+			codeCommit: status.LocalHead,
+			actorID:    "actor_other",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			other := preflightIntent("int_other", domain.StatusProposed, current, "")
+			other.GitBranch = tc.gitBranch
+			other.ActorID = tc.actorID
+			other.CodeCommit = tc.codeCommit
+
+			res := buildPreflightResult(preflightInput{
+				status:          status,
+				currentFiles:    current,
+				commitDiffFiles: current,
+				proposed:        []domain.IntentView{other},
+				upstreamCommits: map[string]bool{},
+			})
+
+			if res.Level != PreflightLevelBlock || res.OKToContinue {
+				t.Fatalf("non-self proposed overlap should block, got %+v", res)
+			}
+			if !hasPreflightOverlap(res, PreflightOverlapProposed, "int_other") {
+				t.Fatalf("expected proposed overlap with int_other, got %+v", res.Overlaps)
+			}
+		})
+	}
+}
+
 func TestPreflightDoesNotWarnBranchDriftForNormalFeatureAhead(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
