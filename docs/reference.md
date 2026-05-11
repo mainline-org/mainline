@@ -94,6 +94,15 @@ At every supported session start, hooks run `mainline sync` and
 still makes the semantic decisions: when to start, what to append, how to seal,
 and whether a warning is a real conflict.
 
+Refresh AGENTS.md guidance with `mainline agents update`. Refresh the globally
+installed Mainline skill separately with `npx --yes skills update mainline
+--global --yes` (or rerun the matching `skills add` command). `mainline init
+--rewire` repairs repo setup and does not reinstall skills.
+
+The distribution surfaces are intentionally split: AGENTS guidance carries the
+repo-local runtime contract, while the global skill carries the full workflow
+manual. Updating one does not imply the other was refreshed.
+
 When you adopt Mainline in an existing repository, `mainline init` records the
 current `main` HEAD as the coverage baseline. Commits at or before that point
 show as skipped pre-Mainline history. Future commits still need normal intent
@@ -139,17 +148,21 @@ one file.
 ### What Agents Run
 
 ```bash
-mainline context --current --json
-mainline start "<the user's goal>"
-mainline append "<meaningful turn>"
+mainline preflight --json
+mainline start "<the user's goal>" --json
+mainline append "<meaningful turn>" --json
 mainline seal --prepare --json > .ml-cache/seal.json
 mainline seal --submit --json < .ml-cache/seal.json
 ```
 
-`context` is the pre-edit gate. `start` claims a real unit of engineering work.
-`append` records meaningful progress. `seal --prepare` freezes the evidence that
-will be submitted. `seal --submit` records the final intent and surfaces lint or
-conflict summaries.
+`preflight` is the readiness and stop-line gate. It tells the agent whether to
+continue, inspect overlaps, or stop before lifecycle advancement. `start` claims
+a real unit of engineering work. `append` records meaningful progress.
+`seal --prepare` freezes the evidence that will be submitted. `seal --submit`
+records the final intent and surfaces lint or conflict summaries.
+
+Review autonomy may push a non-main branch and open or update a PR. It never
+authorizes pushing `main`, merging, releasing, or deploying.
 
 Append at the granularity of engineering meaning: a design choice, a completed
 slice, a pivot, or validation that changes confidence. Do not append every shell

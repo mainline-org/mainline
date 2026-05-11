@@ -1,6 +1,6 @@
 ---
 name: mainline
-description: "Use for any coding-agent work in a Git repository that uses or may need Mainline intent tracking: before reading or editing code, fixing bugs, adding features, refactoring, deleting code, changing tests or CI, committing, pushing, opening PRs, reviewing intent conflicts, or setting up Mainline CLI/hooks/agent guidance."
+description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, max_autonomy, stop lines, allowed_boundary, inspect_or_stop, before_commit/proposed_intent/opened_pr, current-instruction overrides, commit/seal handoff, push/PR review boundaries, merge/release/deploy boundaries, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, PR descriptions, or setup."
 ---
 
 # Mainline
@@ -17,6 +17,32 @@ If the current session already contains a `mainline:context` block injected by
 Mainline hooks, treat that hook context as already loaded. Do not re-run generic
 bootstrap context commands just to duplicate it. Run task-specific context
 commands only when needed.
+
+## Stop-Line Quick Matrix
+
+Use this as the first-pass boundary decision; detailed workflows below explain
+how to execute each boundary.
+
+Interpret the latest user instruction semantically, not by keyword matching.
+
+| Instruction class | Effective boundary | Do not cross without a new explicit request |
+|---|---|---|
+| Advice-only / read-only | `assist` | edits, commits, seals, metadata publish, push, or PR |
+| Finish local work / commit / seal / handoff | `handoff` | code branch push or PR |
+| Push branch / open or update PR | `review`, capped by team `max_autonomy` | push to `main`, merge, release, deploy, or post-merge cleanup |
+| Continue next task | keep the current effective boundary | lifecycle advancement unless it is naturally next and permitted |
+| Merge / release / deploy / package publish / post-merge cleanup | explicit delivery task, not autonomy | ambiguous target or missing repository workflow checks |
+
+Vocabulary guardrails:
+
+- `mainline publish` publishes Mainline intent metadata / actor-log state. It is
+  distinct from pushing a Git branch, opening a PR, merging, package publishing,
+  deployment, or product release. If the user says "publish" without a clear
+  object, identify the target before acting.
+- Git branch push, PR creation, PR merge, and product release/deploy are
+  separate delivery steps. Do not collapse them into one "publish" action.
+- A file overlap is only a signal. It becomes a conflict workflow only after
+  inspection shows it is real and potentially contradictory.
 
 ## Language Rule (load-bearing)
 
@@ -47,7 +73,10 @@ Use this skill for any task in a Git repository when one of these is true:
 - The repository has `.mainline/config.toml`, `.ml-cache/`, a Mainline block in
   AGENTS.md, Mainline refs, or existing Mainline commands in project docs.
 - The user mentions Mainline, intents, conflict checks, agent guidance, hooks,
-  sealing, proposals, coverage, gaps, or uncovered commits.
+  sealing, proposals, coverage, gaps, uncovered commits, agent autonomy,
+  `agent_authority`, `max_autonomy`, stop lines, `allowed_boundary`,
+  `inspect_or_stop`, current-instruction overrides, handoff / review / delivery
+  boundaries, or auto-submit / auto-commit / auto-seal behavior.
 - You are about to edit code, refactor, delete code, change tests or CI, commit,
   push, create a PR, review a PR, or investigate whether prior work already made
   a decision in a repository known to use Mainline.
@@ -140,9 +169,11 @@ context surface just to be safe. If it returns `warn` or `block`, read the
 targeted follow-up commands it points to (`show`, `trace`, `context
 --files/--query`, or `check`).
 
-Also read `agent_authority` when it is present. It is advisory, but it is the
-team-visible stop-line contract for how far the agent may advance without a
-fresh human instruction:
+Also read `agent_authority` when it is present. CLI JSON wraps command
+payloads under `.data`, so the runtime path is usually
+`.data.agent_authority`; examples and tests may show the unwrapped engine field
+as `agent_authority`. It is advisory, but it is the team-visible stop-line
+contract for how far the agent may advance without a fresh human instruction:
 
 - `assist` / `before_commit`: analyze, edit, and verify, then stop before
   commit, seal, publish, push, or PR unless the user explicitly asks for
@@ -154,9 +185,26 @@ fresh human instruction:
   a generated Mainline PR body, then stop before merge, release, or post-merge
   cleanup.
 
-Hard gates and current user instructions take priority. If `preflight` lowers
-`agent_authority.current.allowed_boundary` to `inspect_or_stop`, stop or ask
-for human judgment before lifecycle advancement.
+Hard gates and current user instructions take priority. Team `max_autonomy` is
+a ceiling: a current user instruction can lower the stop line or raise it up to
+that ceiling, but it cannot authorize a boundary above the team cap. Never
+write a one-turn override into `.mainline/config.toml` or
+`.mainline/local.toml`.
+
+If `preflight` lowers `.data.agent_authority.current.allowed_boundary` to
+`inspect_or_stop`, do not advance the lifecycle blindly. Inspect the named
+findings / overlaps first. Classify each overlap:
+
+- Same branch, same goal, or explicit follow-up → record the relationship.
+- Adjacent / complementary protocol or documentation work → record why it is not
+  contradictory.
+- Upstream drift that changes the same behavior → rebase / merge / inspect
+  before implementation or closeout.
+- Real and potentially contradictory semantic conflict → run `mainline check` or
+  ask for human judgment.
+
+Do not run `mainline check` just because files overlap. Do not ignore an
+overlap silently; record the classification in the next append / seal.
 
 `notes_health.likely_history_rewrite` on `status` or `preflight` is cached by
 the most recent sync, not recomputed on every hot-path command. If the user
@@ -318,19 +366,35 @@ but it does not by itself mean the work is ready to submit as team memory.
 
 Use `agent_authority` plus the current user instruction to decide the closeout
 boundary. Do not treat "work is implemented" as automatic permission to advance
-past that boundary.
+past that boundary. Current-instruction overrides are interpreted by the agent
+for this turn only; never write them to `.mainline/config.toml` or
+`.mainline/local.toml`.
 
 1. Establish collaboration context with `mainline preflight --json`.
-2. Decide the effective stop line and any current user override.
+2. Read `.data.agent_authority.current.allowed_boundary` and decide any current
+   user override.
 3. Do the work and verify it.
 4. Advance only to the allowed boundary.
 5. Stop on hard gates.
 
-Vague continuation instructions such as "继续" or "auto next" only advance to
-PR in effective `review` autonomy when implementation is complete, verification
-has passed, no unresolved design questions remain, and commit/seal/PR is the
-next natural boundary. Otherwise continue the next unfinished implementation or
-design step.
+The effective boundary is the lower of team policy, hard gates, and the current
+instruction. A direct user request can raise a turn to `review` only when
+`.data.agent_authority.team.max_autonomy` permits it; merge, release, and
+post-merge cleanup remain explicit delivery tasks, not autonomy.
+
+Current instruction override classes:
+
+| Instruction class | Treat as |
+|---|---|
+| Advice-only / read-only | lower to `assist` |
+| Finish local work / commit / seal / handoff | set boundary to `handoff` |
+| Push branch / open or update PR | raise to `review`, capped by team `max_autonomy` |
+| Merge / release / deploy / package publish / post-merge cleanup | explicit delivery task, not autonomy; identify the target and proceed only if directly requested and other hard gates allow it |
+
+Vague continuation instructions only advance to PR in effective `review`
+autonomy when implementation is complete, verification has passed, no
+unresolved design questions remain, and commit/seal/PR is the next natural
+boundary. Otherwise continue the next unfinished implementation or design step.
 
 ## Commit Workflow
 
@@ -368,7 +432,7 @@ team-visible memory boundary. Do not seal merely because a local experiment or
 intermediate commit exists.
 
 Do not seal in effective `assist` autonomy unless the user has explicitly asked
-for a handoff such as "commit and seal", "提交当前工作区", or "收口".
+for a handoff, commit, or seal boundary.
 
 When the repository has the intended commit and the work is ready for that
 handoff boundary, prepare the seal:
@@ -446,6 +510,9 @@ retry later:
 mainline publish --intent <intent_id> --json
 ```
 
+This is metadata publish, not product release or deploy. It only retries
+publishing the sealed Mainline intent state.
+
 Do not use `mainline abandon` as a routine repair path for seal wording, lint
 warnings, or commit-hash drift after rebase/amend. Use abandon for cancellation
 or rejection of the work; if a submitted seal looks wrong, report the problem
@@ -460,6 +527,8 @@ asks you to change it.
 Effective `handoff` autonomy stops before pushing a code branch or opening /
 updating a PR. Effective `review` autonomy may push a non-main branch and open
 or update a PR, but it still stops before merge, release, or post-merge cleanup.
+If the current branch is `main`, create or switch to a non-main branch before
+pushing or opening PR; `review` autonomy never authorizes `git push origin main`.
 
 Before any remote branch push or PR creation that the user requested and the
 stop line permits, ensure the intent is proposed or publishable:
@@ -487,6 +556,14 @@ fallback, inspect the generated file and verify that it still contains
 `<!-- mainline:pr-description:start -->`. Pass that exact file content as the
 PR body. Do not copy only the visible Markdown, regenerate a lookalike body, or
 let the publishing helper overwrite the body with `--fill` / default prose.
+For the `gh` fallback, the safe shape is:
+
+```bash
+gh pr create --body-file .ml-cache/pr-description.md
+```
+
+Do not use `gh pr create --fill` or any connector default body when a sealed
+intent exists.
 
 If the user did not ask to push or open a PR, stop after sealing/publishing the
 Mainline intent and report the local result. Do not introduce a remote workflow
@@ -515,7 +592,9 @@ mainline check --submit --json < judgment.json
 ```
 
 Use `show` to understand decisions and risks. Use `trace` to understand how the
-work unfolded. Use `check` only when phase-1 overlap needs a semantic judgment.
+work unfolded. Use `check` only when inspected phase-1 overlap is real and
+potentially contradictory. Adjacent or complementary overlap should be recorded
+as a judgment in append / seal instead of escalated into `check`.
 
 ## Coverage And Rescue
 
@@ -540,17 +619,26 @@ Do not rewrite published history unless the user explicitly asks.
 
 ## Skill Distribution
 
-Install this skill with `npx skills` for the target agent:
+Install this skill with `npx skills` for supported target agents:
 
 ```bash
-npx --yes skills add mainline-org/mainline --skill mainline --agent codex --global --yes
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor --global --yes
 ```
 
-For local development:
+For local development from this repository:
 
 ```bash
-npx --yes skills add ./skills/mainline --skill mainline --agent codex --global --yes
+npx --yes skills add ./skills/mainline --skill mainline --agent codex claude-code cursor --global --yes
 ```
 
-The durable purpose of the skill is to teach agents to install, initialize,
-use, publish, and review Mainline intent data correctly.
+`mainline init` best-effort installs the default skill and hooks. Existing
+global skill installs are not refreshed by `mainline agents update` or
+`mainline init --rewire`; refresh them explicitly with:
+
+```bash
+npx --yes skills update mainline --global --yes
+```
+
+If update cannot determine the source, rerun the matching `skills add` command
+above. The durable purpose of the skill is to teach agents to install,
+initialize, use, publish, and review Mainline intent data correctly.

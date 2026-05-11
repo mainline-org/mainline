@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 23 -->
+<!-- mainline-agents-md-version: 26 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -18,8 +18,19 @@ Respect agent autonomy stop lines surfaced by `mainline status` and
 `mainline preflight`. Autonomy is advisory; hard gates and current user
 instructions take priority. `assist` stops before commit/seal, `handoff`
 stops after commit/seal/proposed intent and before push/PR, and `review`
-stops at an opened or updated PR. Review autonomy does not include merge,
-release, or post-merge cleanup.
+may push a non-main branch and stops at an opened or updated PR. Review
+autonomy never authorizes pushing `main`, merge, release, or post-merge
+cleanup.
+
+Terminology guardrail: `mainline publish` publishes Mainline intent metadata.
+It is distinct from pushing a Git branch, opening a PR, merging, package
+publishing, deployment, or product release. If the user says "publish" without
+a clear object, identify the target before acting.
+
+Distribution guardrail: `mainline agents update` refreshes this repo-local
+AGENTS guidance. Existing global Mainline skill installs are refreshed
+separately with `npx --yes skills update mainline --global --yes` or the
+matching `skills add` command.
 
 > **v0.3 invariant**: every commit on `main` is in exactly one of three
 > states — `covered` (sealed intent claims it), `skipped` (`Mainline-Skip:`
@@ -67,11 +78,19 @@ Two clarifications:
 mainline preflight --json
 ```
 
-Read `agent_authority` from `preflight` or `status` before deciding closeout.
-If `current.allowed_boundary` is `inspect_or_stop`, stop or ask for human
-judgment before advancing the lifecycle. Otherwise advance only to the allowed
-boundary unless the current user instruction explicitly lowers or raises the
-stop line within the team's configured ceiling.
+Read `.data.agent_authority` from `preflight --json` or `status --json`
+before deciding closeout. If `current.allowed_boundary` is `inspect_or_stop`,
+inspect the named findings / overlaps before advancing the lifecycle. Run
+`mainline check` or ask for human judgment only when inspection shows the
+overlap is real and potentially contradictory; adjacent or complementary
+overlap should be recorded in append / seal. Otherwise advance only to the
+allowed boundary unless the current user instruction explicitly lowers or raises
+the stop line within the team's configured `max_autonomy` ceiling. Interpret the
+latest user instruction semantically, not by keyword matching: advice-only /
+read-only lowers to `assist`; finish local work / commit / seal / handoff maps
+to `handoff`; push branch / open or update PR maps to `review`; merge / release
+/ deploy / package publish remains a separate explicit delivery task, not
+autonomy.
 
 If there is no `active_intent`, start one (use the user's goal verbatim
 when possible — it becomes the headline in `mainline log`):
@@ -383,6 +402,14 @@ Mainline does not require a Git push, a pull request, or GitHub.
 Preserve the repository's existing review and release workflow unless
 the user explicitly asks you to change it.
 
+Before a remote branch push or PR creation that the user requested and the
+stop line permits, ensure the intent is proposed or publishable:
+
+```
+mainline status --json
+mainline publish --intent <intent_id> --json
+```
+
 When the user does ask you to open or update a PR, generate the PR body
 from the sealed intent:
 
@@ -402,6 +429,18 @@ fallback, inspect the generated file and verify that it still contains
 the PR body. Do not copy only the visible Markdown, regenerate a lookalike
 body, or let the publishing helper overwrite the body with `--fill` /
 default prose.
+
+For the `gh` fallback, use:
+
+```
+gh pr create --body-file .ml-cache/pr-description.md
+```
+
+Do not use `gh pr create --fill` or any connector default body when a
+sealed intent exists.
+
+Do not push `main` as part of review autonomy. If the current branch is `main`,
+create or switch to a non-main branch before pushing or opening a PR.
 
 ### When the user asks you to phase-2 check an intent
 
@@ -514,18 +553,18 @@ can — ordered by reversibility, cheapest first:
 
    ```
    git reset --soft HEAD^         # un-commit, keep changes
-   mainline start "<goal>"
+   mainline start "<goal>" --json
    <continue normal flow>
    ```
 
 2. **Pushed** — backfill an intent that retroactively claims the commit:
 
    ```
-   mainline start "<why this commit was made>" --commits <sha>
-   mainline append "<turn-by-turn description, post-hoc>"
-   mainline seal --prepare > .ml-cache/seal.json
+   mainline start "<why this commit was made>" --commits <sha> --json
+   mainline append "<turn-by-turn description, post-hoc>" --json
+   mainline seal --prepare --json > .ml-cache/seal.json
    <fill .ml-cache/seal.json>
-   mainline seal --submit < .ml-cache/seal.json
+   mainline seal --submit --json < .ml-cache/seal.json
    ```
 
    The seal flow auto-pins the new intent to the listed commit on next

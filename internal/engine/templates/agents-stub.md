@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 11 -->
+<!-- mainline-agents-md-version: 15 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -18,16 +18,30 @@ mainline show <intent_id> --json                     # full why/decisions/signal
 mainline list-proposals --json                       # what's in flight
 
 # Write your own intent:
-mainline start "<goal>"                              # claim work
-mainline append "<what changed>"                     # after each turn
+mainline start "<goal>" --json                       # claim work
+mainline append "<what changed>" --json              # after meaningful turns
 git add ... && git commit -m ...                     # commit code
-mainline seal --prepare > .ml-cache/seal.json        # patch the starter
-mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
+mainline seal --prepare --json > .ml-cache/seal.json # patch the starter
+mainline seal --submit --json < .ml-cache/seal.json  # auto syncs + checks
 ```
 
-Respect `agent_authority` from status/preflight. `assist` stops before
-commit/seal, `handoff` stops before push/PR, and `review` stops at an
-opened or updated PR; merge/release require explicit user instruction.
+Respect `.data.agent_authority` from status/preflight. If
+`current.allowed_boundary` is `inspect_or_stop`, inspect the named finding or
+overlap before lifecycle advancement; use `mainline check` only for real and
+potentially contradictory overlap. `assist` stops before commit/seal, `handoff`
+stops after commit/seal/proposed intent and before push/PR, and `review` may
+push a non-main branch and stops at an opened or updated PR. Interpret the
+latest user instruction semantically, not by keyword matching: advice-only /
+read-only => assist, finish local work / commit / seal / handoff => handoff,
+push branch / open or update PR => review. Merge/release/deploy/package publish
+requires explicit user instruction and review autonomy never authorizes pushing
+`main`.
+
+`mainline publish` publishes Mainline intent metadata. It is not product release
+or deploy; identify the object before acting on ambiguous "publish" requests.
+`mainline agents update` refreshes repo AGENTS guidance only; global skills need
+`npx --yes skills update mainline --global --yes` or the matching `skills add`
+command.
 
 Sync, pin, merge are automatic — do not invoke them.
 

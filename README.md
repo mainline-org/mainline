@@ -128,6 +128,15 @@ begins with fresh repo state. The hooks do not decide what to do. The agent
 still reads context, records progress, seals the intent, and surfaces conflicts
 through the Mainline skill workflow.
 
+Existing agent skill installs are updated by the `skills` CLI, not by
+`mainline agents update` or `mainline init --rewire`. If update cannot infer
+the source, rerun the matching `skills add` command:
+
+```bash
+npx --yes skills update mainline --global --yes
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor --global --yes
+```
+
 On an existing repository, `mainline init` treats the current `main` HEAD as the
 coverage baseline. Older history is skipped by default; new commits should have
 intent coverage.
@@ -137,18 +146,22 @@ intent coverage.
 For non-trivial work, the agent-facing loop is:
 
 ```bash
-mainline context --current --json
-mainline start "<the user's goal>"
-mainline append "<meaningful progress>"
+mainline preflight --json
+mainline start "<the user's goal>" --json
+mainline append "<meaningful progress>" --json
 mainline seal --prepare --json > .ml-cache/seal.json
 mainline seal --submit --json < .ml-cache/seal.json
 ```
 
-`context` is the pre-edit gate. `start` claims the unit of work. `append`
-records meaningful turns: decisions, pivots, completed slices, or validation
-that changes confidence. `seal` turns the work into reviewable intent with a
-summary, decisions, rejected alternatives, validation notes, and a semantic
-fingerprint.
+`preflight` is the readiness and stop-line gate. It tells the agent whether to
+continue, inspect overlaps, or stop before lifecycle advancement. `start`
+claims the unit of work. `append` records meaningful turns: decisions, pivots,
+completed slices, or validation that changes confidence. `seal` turns the work
+into reviewable intent with a summary, decisions, rejected alternatives,
+validation notes, and a semantic fingerprint.
+
+Review autonomy may push a non-main branch and open or update a PR. It never
+authorizes pushing `main`, merging, releasing, or deploying.
 
 Agents should run this before architecture changes, refactors, migrations,
 deletions, auth/billing/permissions/data-model work, release/CI changes, and
