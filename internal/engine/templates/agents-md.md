@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 25 -->
+<!-- mainline-agents-md-version: 26 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -23,9 +23,9 @@ autonomy never authorizes pushing `main`, merge, release, or post-merge
 cleanup.
 
 Terminology guardrail: `mainline publish` publishes Mainline intent metadata.
-It is not product release, deploy, or Chinese "发布" unless the user explicitly
-means Mainline metadata. Git branch push, PR creation, PR merge, and product
-release are separate delivery steps.
+It is distinct from pushing a Git branch, opening a PR, merging, package
+publishing, deployment, or product release. If the user says "publish" without
+a clear object, identify the target before acting.
 
 Distribution guardrail: `mainline agents update` refreshes this repo-local
 AGENTS guidance. Existing global Mainline skill installs are refreshed
@@ -85,10 +85,12 @@ inspect the named findings / overlaps before advancing the lifecycle. Run
 overlap is real and potentially contradictory; adjacent or complementary
 overlap should be recorded in append / seal. Otherwise advance only to the
 allowed boundary unless the current user instruction explicitly lowers or raises
-the stop line within the team's configured `max_autonomy` ceiling. Examples:
-"先给建议" lowers to `assist`; "提交当前工作区" / "收口" maps to `handoff`;
-"直接 PR" / "可以提 PR 了吗" / "可以提了吧" maps to `review`; merge/release
-remains a separate explicit delivery task, not autonomy.
+the stop line within the team's configured `max_autonomy` ceiling. Interpret the
+latest user instruction semantically, not by keyword matching: advice-only /
+read-only lowers to `assist`; finish local work / commit / seal / handoff maps
+to `handoff`; push branch / open or update PR maps to `review`; merge / release
+/ deploy / package publish remains a separate explicit delivery task, not
+autonomy.
 
 If there is no `active_intent`, start one (use the user's goal verbatim
 when possible — it becomes the headline in `mainline log`):

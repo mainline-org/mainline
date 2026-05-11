@@ -1,6 +1,6 @@
 ---
 name: mainline
-description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, max_autonomy, stop lines, allowed_boundary, inspect_or_stop, before_commit/proposed_intent/opened_pr, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, PR descriptions, setup, or Chinese workflow phrases like 先给建议, 别直接改, 提交当前工作区, 收口, 直接 PR, 可以提 PR 了吗, 合并, 发布, or auto next."
+description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, max_autonomy, stop lines, allowed_boundary, inspect_or_stop, before_commit/proposed_intent/opened_pr, current-instruction overrides, commit/seal handoff, push/PR review boundaries, merge/release/deploy boundaries, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, PR descriptions, or setup."
 ---
 
 # Mainline
@@ -23,19 +23,22 @@ commands only when needed.
 Use this as the first-pass boundary decision; detailed workflows below explain
 how to execute each boundary.
 
-| User wording | Effective boundary | Do not cross without a new explicit request |
+Interpret the latest user instruction semantically, not by keyword matching.
+
+| Instruction class | Effective boundary | Do not cross without a new explicit request |
 |---|---|---|
-| "先给建议" / "别直接改" / "不要提交" / read-only review | `assist` | no edit, commit, seal, publish, push, or PR |
-| "提交当前工作区" / "收口" / "commit and seal" / "seal 一下" | `handoff` | no code branch push or PR |
-| "直接 PR" / "可以提 PR 了吗" / "可以提了吧" / "push and open PR" | `review`, capped by team `max_autonomy` | no push to `main`, merge, release, or post-merge cleanup |
-| "继续" / "auto next" | continue the next unfinished implementation or design step | no automatic PR unless effective autonomy is already `review` and PR is the natural next boundary |
-| "merge 这个 PR" / "合并" / "发布" / release / deploy | explicit delivery task, not autonomy | do not infer `mainline merge`, product release, or deployment target without checking the user's concrete target and the repo workflow |
+| Advice-only / read-only | `assist` | edits, commits, seals, metadata publish, push, or PR |
+| Finish local work / commit / seal / handoff | `handoff` | code branch push or PR |
+| Push branch / open or update PR | `review`, capped by team `max_autonomy` | push to `main`, merge, release, deploy, or post-merge cleanup |
+| Continue next task | keep the current effective boundary | lifecycle advancement unless it is naturally next and permitted |
+| Merge / release / deploy / package publish / post-merge cleanup | explicit delivery task, not autonomy | ambiguous target or missing repository workflow checks |
 
 Vocabulary guardrails:
 
 - `mainline publish` publishes Mainline intent metadata / actor-log state. It is
-  not product release, deploy, or the Chinese "发布" unless the user explicitly
-  says they mean Mainline metadata.
+  distinct from pushing a Git branch, opening a PR, merging, package publishing,
+  deployment, or product release. If the user says "publish" without a clear
+  object, identify the target before acting.
 - Git branch push, PR creation, PR merge, and product release/deploy are
   separate delivery steps. Do not collapse them into one "publish" action.
 - A file overlap is only a signal. It becomes a conflict workflow only after
@@ -72,9 +75,8 @@ Use this skill for any task in a Git repository when one of these is true:
 - The user mentions Mainline, intents, conflict checks, agent guidance, hooks,
   sealing, proposals, coverage, gaps, uncovered commits, agent autonomy,
   `agent_authority`, `max_autonomy`, stop lines, `allowed_boundary`,
-  `inspect_or_stop`, auto-submit / auto-commit / auto-seal behavior, or Chinese
-  workflow phrases such as "先给建议", "别直接改", "提交当前工作区", "收口",
-  "直接 PR", "可以提 PR 了吗", "合并", "发布", or "auto next".
+  `inspect_or_stop`, current-instruction overrides, handoff / review / delivery
+  boundaries, or auto-submit / auto-commit / auto-seal behavior.
 - You are about to edit code, refactor, delete code, change tests or CI, commit,
   push, create a PR, review a PR, or investigate whether prior work already made
   a decision in a repository known to use Mainline.
@@ -380,20 +382,19 @@ instruction. A direct user request can raise a turn to `review` only when
 `.data.agent_authority.team.max_autonomy` permits it; merge, release, and
 post-merge cleanup remain explicit delivery tasks, not autonomy.
 
-Current instruction override examples:
+Current instruction override classes:
 
-| User wording | Treat as |
+| Instruction class | Treat as |
 |---|---|
-| "先给建议" / "别直接改" / "不要提交" / read-only review | lower to `assist` |
-| "提交当前工作区" / "收口" / "commit and seal" / "seal 一下" | set boundary to `handoff` |
-| "直接 PR" / "可以提 PR 了吗" / "可以提了吧" / "push and open PR" | raise to `review`, capped by team `max_autonomy` |
-| "merge 这个 PR" / "合并" / "发布" / release / deploy / post-merge cleanup | explicit delivery task, not autonomy; do only if directly requested and other hard gates allow it |
+| Advice-only / read-only | lower to `assist` |
+| Finish local work / commit / seal / handoff | set boundary to `handoff` |
+| Push branch / open or update PR | raise to `review`, capped by team `max_autonomy` |
+| Merge / release / deploy / package publish / post-merge cleanup | explicit delivery task, not autonomy; identify the target and proceed only if directly requested and other hard gates allow it |
 
-Vague continuation instructions such as "继续" or "auto next" only advance to
-PR in effective `review` autonomy when implementation is complete, verification
-has passed, no unresolved design questions remain, and commit/seal/PR is the
-next natural boundary. Otherwise continue the next unfinished implementation or
-design step.
+Vague continuation instructions only advance to PR in effective `review`
+autonomy when implementation is complete, verification has passed, no
+unresolved design questions remain, and commit/seal/PR is the next natural
+boundary. Otherwise continue the next unfinished implementation or design step.
 
 ## Commit Workflow
 
@@ -431,7 +432,7 @@ team-visible memory boundary. Do not seal merely because a local experiment or
 intermediate commit exists.
 
 Do not seal in effective `assist` autonomy unless the user has explicitly asked
-for a handoff such as "commit and seal", "提交当前工作区", or "收口".
+for a handoff, commit, or seal boundary.
 
 When the repository has the intended commit and the work is ready for that
 handoff boundary, prepare the seal:
@@ -509,7 +510,7 @@ retry later:
 mainline publish --intent <intent_id> --json
 ```
 
-This is metadata publish, not product release / deploy / "发布". It only retries
+This is metadata publish, not product release or deploy. It only retries
 publishing the sealed Mainline intent state.
 
 Do not use `mainline abandon` as a routine repair path for seal wording, lint
