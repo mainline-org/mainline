@@ -1,6 +1,6 @@
 ---
 name: mainline
-description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, stop lines, allowed_boundary, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, or setup."
+description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, max_autonomy, stop lines, allowed_boundary, inspect_or_stop, before_commit/proposed_intent/opened_pr, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, PR descriptions, or setup."
 ---
 
 # Mainline
@@ -47,7 +47,9 @@ Use this skill for any task in a Git repository when one of these is true:
 - The repository has `.mainline/config.toml`, `.ml-cache/`, a Mainline block in
   AGENTS.md, Mainline refs, or existing Mainline commands in project docs.
 - The user mentions Mainline, intents, conflict checks, agent guidance, hooks,
-  sealing, proposals, coverage, gaps, or uncovered commits.
+  sealing, proposals, coverage, gaps, uncovered commits, agent autonomy,
+  `agent_authority`, `max_autonomy`, stop lines, `allowed_boundary`,
+  `inspect_or_stop`, or auto-submit / auto-commit / auto-seal behavior.
 - You are about to edit code, refactor, delete code, change tests or CI, commit,
   push, create a PR, review a PR, or investigate whether prior work already made
   a decision in a repository known to use Mainline.
@@ -156,9 +158,17 @@ contract for how far the agent may advance without a fresh human instruction:
   a generated Mainline PR body, then stop before merge, release, or post-merge
   cleanup.
 
-Hard gates and current user instructions take priority. If `preflight` lowers
-`agent_authority.current.allowed_boundary` to `inspect_or_stop`, stop or ask
-for human judgment before lifecycle advancement.
+Hard gates and current user instructions take priority. Team `max_autonomy` is
+a ceiling: a current user instruction can lower the stop line or raise it up to
+that ceiling, but it cannot authorize a boundary above the team cap. Never
+write a one-turn override into `.mainline/config.toml` or
+`.mainline/local.toml`.
+
+If `preflight` lowers `.data.agent_authority.current.allowed_boundary` to
+`inspect_or_stop`, do not advance the lifecycle blindly. Inspect the named
+findings / overlaps first. If the overlap is semantically real, run
+`mainline check` or ask for human judgment; if it is not contradictory, record
+that decision in the next append / seal rather than silently ignoring it.
 
 `notes_health.likely_history_rewrite` on `status` or `preflight` is cached by
 the most recent sync, not recomputed on every hot-path command. If the user
@@ -331,6 +341,11 @@ for this turn only; never write them to `.mainline/config.toml` or
 4. Advance only to the allowed boundary.
 5. Stop on hard gates.
 
+The effective boundary is the lower of team policy, hard gates, and the current
+instruction. A direct user request can raise a turn to `review` only when
+`.data.agent_authority.team.max_autonomy` permits it; merge, release, and
+post-merge cleanup remain explicit delivery tasks, not autonomy.
+
 Current instruction override examples:
 
 | User wording | Treat as |
@@ -420,6 +435,12 @@ scope explanation, or a "maybe later" thought, keep it in `review_notes`,
 Generate a SealResult JSON matching the returned schema. The fingerprint must
 be specific enough for conflict detection:
 
+- `summary.decisions` is an array of objects (`point`, `chose`, optional
+  `rationale`, optional `rejected` string array), not a string array.
+- `summary.rejected` is an array of objects (`alternative`, optional `reason`);
+  keep it as `[]` when there are no top-level rejected alternatives.
+- `fingerprint.api_changes` and `fingerprint.data_model_changes` are arrays of
+  objects; keep them as `[]` when none apply.
 - Subsystems and parent concepts
 - Files touched
 - Architectural claims

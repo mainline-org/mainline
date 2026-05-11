@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 12 -->
+<!-- mainline-agents-md-version: 13 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -18,18 +18,22 @@ mainline show <intent_id> --json                     # full why/decisions/signal
 mainline list-proposals --json                       # what's in flight
 
 # Write your own intent:
-mainline start "<goal>"                              # claim work
-mainline append "<what changed>"                     # after each turn
+mainline start "<goal>" --json                       # claim work
+mainline append "<what changed>" --json              # after meaningful turns
 git add ... && git commit -m ...                     # commit code
-mainline seal --prepare > .ml-cache/seal.json        # patch the starter
-mainline seal --submit < .ml-cache/seal.json         # auto syncs + checks
+mainline seal --prepare --json > .ml-cache/seal.json # patch the starter
+mainline seal --submit --json < .ml-cache/seal.json  # auto syncs + checks
 ```
 
-Respect `.data.agent_authority` from status/preflight. `assist` stops before
-commit/seal, `handoff` stops before push/PR, and `review` stops at an
-opened or updated PR. Current user wording can lower or raise within the team
-ceiling: "先给建议" => assist, "提交/收口" => handoff, "直接 PR" => review;
-merge/release require explicit user instruction.
+Respect `.data.agent_authority` from status/preflight. If
+`current.allowed_boundary` is `inspect_or_stop`, inspect the named finding or
+overlap before lifecycle advancement. `assist` stops before commit/seal,
+`handoff` stops after commit/seal/proposed intent and before push/PR, and
+`review` may push a non-main branch and stops at an opened or updated PR.
+Current user wording can lower or raise within the team `max_autonomy` ceiling:
+"先给建议" => assist, "提交/收口" => handoff, "直接 PR" => review; merge/release
+require explicit user instruction and review autonomy never authorizes pushing
+`main`.
 
 Sync, pin, merge are automatic — do not invoke them.
 

@@ -144,17 +144,18 @@ one file.
 ### What Agents Run
 
 ```bash
-mainline context --current --json
-mainline start "<the user's goal>"
-mainline append "<meaningful turn>"
+mainline preflight --json
+mainline start "<the user's goal>" --json
+mainline append "<meaningful turn>" --json
 mainline seal --prepare --json > .ml-cache/seal.json
 mainline seal --submit --json < .ml-cache/seal.json
 ```
 
-`context` is the pre-edit gate. `start` claims a real unit of engineering work.
-`append` records meaningful progress. `seal --prepare` freezes the evidence that
-will be submitted. `seal --submit` records the final intent and surfaces lint or
-conflict summaries.
+`preflight` is the readiness and stop-line gate. It tells the agent whether to
+continue, inspect overlaps, or stop before lifecycle advancement. `start` claims
+a real unit of engineering work. `append` records meaningful progress.
+`seal --prepare` freezes the evidence that will be submitted. `seal --submit`
+records the final intent and surfaces lint or conflict summaries.
 
 Append at the granularity of engineering meaning: a design choice, a completed
 slice, a pivot, or validation that changes confidence. Do not append every shell
