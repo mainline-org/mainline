@@ -129,10 +129,12 @@ still reads context, records progress, seals the intent, and surfaces conflicts
 through the Mainline skill workflow.
 
 Existing agent skill installs are updated by the `skills` CLI, not by
-`mainline agents update` or `mainline init --rewire`:
+`mainline agents update` or `mainline init --rewire`. If update cannot infer
+the source, rerun the matching `skills add` command:
 
 ```bash
 npx --yes skills update mainline --global --yes
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor --global --yes
 ```
 
 On an existing repository, `mainline init` treats the current `main` HEAD as the
@@ -157,6 +159,9 @@ claims the unit of work. `append` records meaningful turns: decisions, pivots,
 completed slices, or validation that changes confidence. `seal` turns the work
 into reviewable intent with a summary, decisions, rejected alternatives,
 validation notes, and a semantic fingerprint.
+
+Review autonomy may push a non-main branch and open or update a PR. It never
+authorizes pushing `main`, merging, releasing, or deploying.
 
 Agents should run this before architecture changes, refactors, migrations,
 deletions, auth/billing/permissions/data-model work, release/CI changes, and

@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 13 -->
+<!-- mainline-agents-md-version: 14 -->
 
 This project uses **Mainline** for AI-driven intent tracking and
 conflict detection. The full agent workflow lives in `AGENTS.md` at
@@ -27,13 +27,19 @@ mainline seal --submit --json < .ml-cache/seal.json  # auto syncs + checks
 
 Respect `.data.agent_authority` from status/preflight. If
 `current.allowed_boundary` is `inspect_or_stop`, inspect the named finding or
-overlap before lifecycle advancement. `assist` stops before commit/seal,
-`handoff` stops after commit/seal/proposed intent and before push/PR, and
-`review` may push a non-main branch and stops at an opened or updated PR.
-Current user wording can lower or raise within the team `max_autonomy` ceiling:
-"先给建议" => assist, "提交/收口" => handoff, "直接 PR" => review; merge/release
-require explicit user instruction and review autonomy never authorizes pushing
-`main`.
+overlap before lifecycle advancement; use `mainline check` only for real and
+potentially contradictory overlap. `assist` stops before commit/seal, `handoff`
+stops after commit/seal/proposed intent and before push/PR, and `review` may
+push a non-main branch and stops at an opened or updated PR. Current user
+wording can lower or raise within the team `max_autonomy` ceiling: "先给建议" /
+"别直接改" => assist, "提交当前工作区" / "收口" => handoff, "直接 PR" / "可以提 PR 了吗"
+=> review. Merge/release/发布 require explicit user instruction and review
+autonomy never authorizes pushing `main`.
+
+`mainline publish` publishes Mainline intent metadata. It is not product release
+or deploy. `mainline agents update` refreshes repo AGENTS guidance only; global
+skills need `npx --yes skills update mainline --global --yes` or the matching
+`skills add` command.
 
 Sync, pin, merge are automatic — do not invoke them.
 

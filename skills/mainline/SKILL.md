@@ -1,6 +1,6 @@
 ---
 name: mainline
-description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, max_autonomy, stop lines, allowed_boundary, inspect_or_stop, before_commit/proposed_intent/opened_pr, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, PR descriptions, or setup."
+description: "Use for coding-agent work in Git repos that use or may need Mainline, or when users mention Mainline, intents, agent autonomy, agent_authority, max_autonomy, stop lines, allowed_boundary, inspect_or_stop, before_commit/proposed_intent/opened_pr, auto-submit/auto-commit/auto-seal behavior, hooks, proposals, gaps, conflicts, committing, pushing, opening PRs, PR descriptions, setup, or Chinese workflow phrases like 先给建议, 别直接改, 提交当前工作区, 收口, 直接 PR, 可以提 PR 了吗, 合并, 发布, or auto next."
 ---
 
 # Mainline
@@ -17,6 +17,29 @@ If the current session already contains a `mainline:context` block injected by
 Mainline hooks, treat that hook context as already loaded. Do not re-run generic
 bootstrap context commands just to duplicate it. Run task-specific context
 commands only when needed.
+
+## Stop-Line Quick Matrix
+
+Use this as the first-pass boundary decision; detailed workflows below explain
+how to execute each boundary.
+
+| User wording | Effective boundary | Do not cross without a new explicit request |
+|---|---|---|
+| "先给建议" / "别直接改" / "不要提交" / read-only review | `assist` | no edit, commit, seal, publish, push, or PR |
+| "提交当前工作区" / "收口" / "commit and seal" / "seal 一下" | `handoff` | no code branch push or PR |
+| "直接 PR" / "可以提 PR 了吗" / "可以提了吧" / "push and open PR" | `review`, capped by team `max_autonomy` | no push to `main`, merge, release, or post-merge cleanup |
+| "继续" / "auto next" | continue the next unfinished implementation or design step | no automatic PR unless effective autonomy is already `review` and PR is the natural next boundary |
+| "merge 这个 PR" / "合并" / "发布" / release / deploy | explicit delivery task, not autonomy | do not infer `mainline merge`, product release, or deployment target without checking the user's concrete target and the repo workflow |
+
+Vocabulary guardrails:
+
+- `mainline publish` publishes Mainline intent metadata / actor-log state. It is
+  not product release, deploy, or the Chinese "发布" unless the user explicitly
+  says they mean Mainline metadata.
+- Git branch push, PR creation, PR merge, and product release/deploy are
+  separate delivery steps. Do not collapse them into one "publish" action.
+- A file overlap is only a signal. It becomes a conflict workflow only after
+  inspection shows it is real and potentially contradictory.
 
 ## Language Rule (load-bearing)
 
@@ -49,7 +72,9 @@ Use this skill for any task in a Git repository when one of these is true:
 - The user mentions Mainline, intents, conflict checks, agent guidance, hooks,
   sealing, proposals, coverage, gaps, uncovered commits, agent autonomy,
   `agent_authority`, `max_autonomy`, stop lines, `allowed_boundary`,
-  `inspect_or_stop`, or auto-submit / auto-commit / auto-seal behavior.
+  `inspect_or_stop`, auto-submit / auto-commit / auto-seal behavior, or Chinese
+  workflow phrases such as "先给建议", "别直接改", "提交当前工作区", "收口",
+  "直接 PR", "可以提 PR 了吗", "合并", "发布", or "auto next".
 - You are about to edit code, refactor, delete code, change tests or CI, commit,
   push, create a PR, review a PR, or investigate whether prior work already made
   a decision in a repository known to use Mainline.
@@ -166,9 +191,18 @@ write a one-turn override into `.mainline/config.toml` or
 
 If `preflight` lowers `.data.agent_authority.current.allowed_boundary` to
 `inspect_or_stop`, do not advance the lifecycle blindly. Inspect the named
-findings / overlaps first. If the overlap is semantically real, run
-`mainline check` or ask for human judgment; if it is not contradictory, record
-that decision in the next append / seal rather than silently ignoring it.
+findings / overlaps first. Classify each overlap:
+
+- Same branch, same goal, or explicit follow-up → record the relationship.
+- Adjacent / complementary protocol or documentation work → record why it is not
+  contradictory.
+- Upstream drift that changes the same behavior → rebase / merge / inspect
+  before implementation or closeout.
+- Real and potentially contradictory semantic conflict → run `mainline check` or
+  ask for human judgment.
+
+Do not run `mainline check` just because files overlap. Do not ignore an
+overlap silently; record the classification in the next append / seal.
 
 `notes_health.likely_history_rewrite` on `status` or `preflight` is cached by
 the most recent sync, not recomputed on every hot-path command. If the user
@@ -352,8 +386,8 @@ Current instruction override examples:
 |---|---|
 | "先给建议" / "别直接改" / "不要提交" / read-only review | lower to `assist` |
 | "提交当前工作区" / "收口" / "commit and seal" / "seal 一下" | set boundary to `handoff` |
-| "直接 PR" / "可以提了吧" / "push and open PR" | raise to `review`, capped by team `max_autonomy` |
-| "merge 这个 PR" / "发布" / post-merge cleanup | explicit delivery task, not autonomy; do only if directly requested and other hard gates allow it |
+| "直接 PR" / "可以提 PR 了吗" / "可以提了吧" / "push and open PR" | raise to `review`, capped by team `max_autonomy` |
+| "merge 这个 PR" / "合并" / "发布" / release / deploy / post-merge cleanup | explicit delivery task, not autonomy; do only if directly requested and other hard gates allow it |
 
 Vague continuation instructions such as "继续" or "auto next" only advance to
 PR in effective `review` autonomy when implementation is complete, verification
@@ -475,6 +509,9 @@ retry later:
 mainline publish --intent <intent_id> --json
 ```
 
+This is metadata publish, not product release / deploy / "发布". It only retries
+publishing the sealed Mainline intent state.
+
 Do not use `mainline abandon` as a routine repair path for seal wording, lint
 warnings, or commit-hash drift after rebase/amend. Use abandon for cancellation
 or rejection of the work; if a submitted seal looks wrong, report the problem
@@ -518,6 +555,14 @@ fallback, inspect the generated file and verify that it still contains
 `<!-- mainline:pr-description:start -->`. Pass that exact file content as the
 PR body. Do not copy only the visible Markdown, regenerate a lookalike body, or
 let the publishing helper overwrite the body with `--fill` / default prose.
+For the `gh` fallback, the safe shape is:
+
+```bash
+gh pr create --body-file .ml-cache/pr-description.md
+```
+
+Do not use `gh pr create --fill` or any connector default body when a sealed
+intent exists.
 
 If the user did not ask to push or open a PR, stop after sealing/publishing the
 Mainline intent and report the local result. Do not introduce a remote workflow
@@ -546,7 +591,9 @@ mainline check --submit --json < judgment.json
 ```
 
 Use `show` to understand decisions and risks. Use `trace` to understand how the
-work unfolded. Use `check` only when phase-1 overlap needs a semantic judgment.
+work unfolded. Use `check` only when inspected phase-1 overlap is real and
+potentially contradictory. Adjacent or complementary overlap should be recorded
+as a judgment in append / seal instead of escalated into `check`.
 
 ## Coverage And Rescue
 

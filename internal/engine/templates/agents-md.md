@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 24 -->
+<!-- mainline-agents-md-version: 25 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -21,6 +21,16 @@ stops after commit/seal/proposed intent and before push/PR, and `review`
 may push a non-main branch and stops at an opened or updated PR. Review
 autonomy never authorizes pushing `main`, merge, release, or post-merge
 cleanup.
+
+Terminology guardrail: `mainline publish` publishes Mainline intent metadata.
+It is not product release, deploy, or Chinese "发布" unless the user explicitly
+means Mainline metadata. Git branch push, PR creation, PR merge, and product
+release are separate delivery steps.
+
+Distribution guardrail: `mainline agents update` refreshes this repo-local
+AGENTS guidance. Existing global Mainline skill installs are refreshed
+separately with `npx --yes skills update mainline --global --yes` or the
+matching `skills add` command.
 
 > **v0.3 invariant**: every commit on `main` is in exactly one of three
 > states — `covered` (sealed intent claims it), `skipped` (`Mainline-Skip:`
@@ -70,13 +80,15 @@ mainline preflight --json
 
 Read `.data.agent_authority` from `preflight --json` or `status --json`
 before deciding closeout. If `current.allowed_boundary` is `inspect_or_stop`,
-inspect the named findings / overlaps before advancing the lifecycle; run
-`mainline check` or ask for human judgment when the overlap is semantically
-real. Otherwise advance only to the allowed boundary unless the current user
-instruction explicitly lowers or raises the stop line within the team's
-configured `max_autonomy` ceiling. Examples: "先给建议" lowers to `assist`;
-"提交当前工作区" / "收口" maps to `handoff`; "直接 PR" / "可以提了吧" maps to
-`review`; merge/release remains a separate explicit delivery task, not autonomy.
+inspect the named findings / overlaps before advancing the lifecycle. Run
+`mainline check` or ask for human judgment only when inspection shows the
+overlap is real and potentially contradictory; adjacent or complementary
+overlap should be recorded in append / seal. Otherwise advance only to the
+allowed boundary unless the current user instruction explicitly lowers or raises
+the stop line within the team's configured `max_autonomy` ceiling. Examples:
+"先给建议" lowers to `assist`; "提交当前工作区" / "收口" maps to `handoff`;
+"直接 PR" / "可以提 PR 了吗" / "可以提了吧" maps to `review`; merge/release
+remains a separate explicit delivery task, not autonomy.
 
 If there is no `active_intent`, start one (use the user's goal verbatim
 when possible — it becomes the headline in `mainline log`):
@@ -408,6 +420,15 @@ fallback, inspect the generated file and verify that it still contains
 the PR body. Do not copy only the visible Markdown, regenerate a lookalike
 body, or let the publishing helper overwrite the body with `--fill` /
 default prose.
+
+For the `gh` fallback, use:
+
+```
+gh pr create --body-file .ml-cache/pr-description.md
+```
+
+Do not use `gh pr create --fill` or any connector default body when a
+sealed intent exists.
 
 Do not push `main` as part of review autonomy. If the current branch is `main`,
 create or switch to a non-main branch before pushing or opening a PR.
