@@ -325,6 +325,26 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 	if pkg.Kind != "mainline.seal.prepare" {
 		t.Error("wrong kind")
 	}
+	if pkg.SchemaVersion != 3 {
+		t.Errorf("prepare schema version = %d, want 3", pkg.SchemaVersion)
+	}
+	if pkg.SealResultSchema == nil {
+		t.Fatal("seal_result_schema must be present")
+	}
+	if len(pkg.SealResultSchema.Summary.Decisions) != 1 {
+		t.Fatalf("schema should show one summary.decisions[] object shape, got %+v",
+			pkg.SealResultSchema.Summary.Decisions)
+	}
+	if pkg.SealResultSchema.Summary.Decisions[0].Chose == "" {
+		t.Fatalf("schema should document summary.decisions[].chose")
+	}
+	if len(pkg.SealResultSchema.Summary.Rejected) != 1 {
+		t.Fatalf("schema should show one summary.rejected[] object shape, got %+v",
+			pkg.SealResultSchema.Summary.Rejected)
+	}
+	if pkg.SealResultSchema.Summary.Rejected[0].Alternative == "" {
+		t.Fatalf("schema should document summary.rejected[].alternative")
+	}
 
 	// Starter contract: intent_id and fingerprint.files_touched are
 	// pre-populated, agent-judgment fields are empty (the agent
@@ -340,6 +360,14 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 	if pkg.Starter.Summary.Title != "" {
 		t.Errorf("agent-judgment field summary.title should be empty in starter, got %q",
 			pkg.Starter.Summary.Title)
+	}
+	if len(pkg.Starter.Summary.Decisions) != 1 {
+		t.Fatalf("starter should include one blank decision object to teach array item shape, got %+v",
+			pkg.Starter.Summary.Decisions)
+	}
+	if pkg.Starter.Summary.Decisions[0].Point != "" || pkg.Starter.Summary.Decisions[0].Chose != "" {
+		t.Fatalf("starter decision placeholder should keep agent-judgment fields blank, got %+v",
+			pkg.Starter.Summary.Decisions[0])
 	}
 	if pkg.Starter.Summary.UserGoal != "implement feature X" {
 		t.Errorf("starter user_goal should mirror start goal: got %q",

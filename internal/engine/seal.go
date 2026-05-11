@@ -78,7 +78,7 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 
 	pkg := &domain.SealPreparePackage{
 		Kind:          "mainline.seal.prepare",
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Turns:         turnSummaries,
 		ChangedFiles:  changes,
 		Snapshot:      snapshot,
@@ -104,6 +104,7 @@ func (s *Service) SealPrepare(intentID string) (*domain.SealPreparePackage, erro
 	// first-touch agent and sets the JSON shape correctly so the
 	// validator's fingerprint checks pass on the first patch.
 	pkg.Starter = buildSealStarter(draft.IntentID, draft.Goal, changedFiles)
+	pkg.SealResultSchema = sealResultSchemaHints()
 
 	// Persist the snapshot so SealSubmit can validate the live repo
 	// against what prepare claimed. Overwrite-safe: re-running --prepare
@@ -183,8 +184,9 @@ func short(sha string) string {
 //   - intent_id, summary.user_goal, fingerprint.files_touched,
 //     fingerprint.subsystems
 //
-// Agent-judgment fields stay zero/empty so the schema is visible (the
-// agent sees the field names + types and patches in their content).
+// Agent-judgment fields stay zero/empty or blank placeholders so the
+// schema is visible (the agent sees the field names + types and
+// patches in their content).
 // summary.user_goal is not agent judgment: it mirrors the authoritative
 // `mainline start` goal and SealSubmit enforces that value. Durable
 // action signals are intentionally not part of the starter; creating
@@ -194,7 +196,7 @@ func short(sha string) string {
 // the conflict-detection layer uses, so seal-time and check-time
 // agree on what counts as a subsystem.
 func buildSealStarter(intentID, userGoal string, files []string) *domain.SealResult {
-	subs := subsystemsFromFiles(files)
+	subs := nonNilStrings(subsystemsFromFiles(files))
 	return &domain.SealResult{
 		IntentID: intentID,
 		Summary: domain.IntentSummary{
@@ -202,20 +204,62 @@ func buildSealStarter(intentID, userGoal string, files []string) *domain.SealRes
 			What:        "",
 			Why:         "",
 			UserGoal:    userGoal,
-			Decisions:   []domain.Decision{},
+			Decisions:   []domain.Decision{{Point: "", Chose: ""}},
 			Rejected:    []domain.RejectedAlternative{},
 			ReviewNotes: []string{},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:           subs,
-			FilesTouched:         append([]string(nil), files...),
+			FilesTouched:         nonNilStrings(files),
 			ArchitecturalClaims:  []string{},
 			BehavioralChanges:    []string{},
+			APIChanges:           []domain.APIChange{},
+			DataModelChanges:     []domain.DataModelChange{},
 			SecurityImplications: []string{},
 			MigrationNotes:       []string{},
 			Tags:                 []string{},
 		},
 		Confidence: domain.SealConfidence{},
+	}
+}
+
+func nonNilStrings(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), in...)
+}
+
+func sealResultSchemaHints() *domain.SealResultSchemaHints {
+	return &domain.SealResultSchemaHints{
+		Summary: domain.SealResultSummarySchemaHints{
+			Decisions: []domain.Decision{{
+				Point:     "decision point or question",
+				Chose:     "chosen approach or accepted trade-off",
+				Rationale: "why this choice was made",
+				Rejected:  []string{"alternative considered and rejected"},
+			}},
+			Rejected: []domain.RejectedAlternative{{
+				Alternative: "top-level alternative considered",
+				Reason:      "why it was not chosen",
+			}},
+		},
+		Fingerprint: domain.SealResultFingerprintSchemaHints{
+			APIChanges: []domain.APIChange{{
+				Kind:          "added|modified|removed",
+				Surface:       "http|function|class|cli|event|config",
+				Signature:     "affected API, CLI, event, or function signature",
+				Compatibility: "breaking|compatible|unknown",
+			}},
+			DataModelChanges: []domain.DataModelChange{{
+				Kind:              "added|modified|removed",
+				Name:              "model, table, field, or persisted state name",
+				Location:          "file or storage location",
+				Compatibility:     "breaking|compatible|unknown",
+				MigrationRequired: false,
+				MigrationNotes:    "migration or compatibility note, if any",
+			}},
+		},
 	}
 }
 
@@ -229,6 +273,7 @@ diff. summary.user_goal is also pre-filled from mainline start and
 SealSubmit enforces that authoritative goal. Patch in the
 agent-judgment fields (title, what, why, decisions, rejected,
 review_notes, fingerprint details, confidence) and submit.
+Use seal_result_schema only as an item-shape guide; do not submit it.
 
 Default seal contract:
 - Seal records history: what changed, why, decisions, rejected
@@ -245,6 +290,14 @@ Required structure:
 2. fingerprint: subsystems, files_touched, architectural_claims, behavioral_changes,
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)
+
+Array item shapes:
+- summary.decisions is Decision[]: objects with point, chose, optional rationale,
+  and optional rejected string[]. It is never string[].
+- summary.rejected is RejectedAlternative[]: objects with alternative and optional
+  reason. Use [] when there are no top-level rejected alternatives.
+- fingerprint.api_changes and fingerprint.data_model_changes are object arrays.
+  Use [] when none apply.
 
 Field decision tree:
 - "We chose X because Y" or "we shipped with limitation X" -> decisions
@@ -364,7 +417,7 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 	var sr domain.SealResult
 	if err := json.Unmarshal(input, &sr); err != nil {
 		return nil, domain.NewError(domain.ErrInvalidInput,
-			fmt.Sprintf("invalid SealResult JSON: %v", err))
+			formatSealUnmarshalError(err))
 	}
 
 	if err := validateSealActionSignalContract(&sr); err != nil {
@@ -552,4 +605,21 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 	}
 
 	return result, nil
+}
+
+func formatSealUnmarshalError(err error) string {
+	msg := fmt.Sprintf("invalid SealResult JSON: %v", err)
+	detail := err.Error()
+	switch {
+	case strings.Contains(detail, "IntentSummary.summary.decisions"):
+		return msg + "; summary.decisions must be Decision[] (objects with point, chose, optional rationale, optional rejected), not string[]; copy seal_result_starter and use seal_result_schema from `mainline seal --prepare --json`"
+	case strings.Contains(detail, "IntentSummary.summary.rejected"):
+		return msg + "; summary.rejected must be RejectedAlternative[] (objects with alternative and optional reason), not string[]; use [] when none apply"
+	case strings.Contains(detail, "SemanticFingerprint.fingerprint.api_changes"):
+		return msg + "; fingerprint.api_changes must be APIChange[] objects, not string[]; use [] when none apply"
+	case strings.Contains(detail, "SemanticFingerprint.fingerprint.data_model_changes"):
+		return msg + "; fingerprint.data_model_changes must be DataModelChange[] objects, not string[]; use [] when none apply"
+	default:
+		return msg
+	}
 }

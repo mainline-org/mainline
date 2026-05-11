@@ -406,6 +406,12 @@ scope explanation, or a "maybe later" thought, keep it in `review_notes`,
 Generate a SealResult JSON matching the returned schema. The fingerprint must
 be specific enough for conflict detection:
 
+- `summary.decisions` is an array of objects (`point`, `chose`, optional
+  `rationale`, optional `rejected` string array), not a string array.
+- `summary.rejected` is an array of objects (`alternative`, optional `reason`);
+  keep it as `[]` when there are no top-level rejected alternatives.
+- `fingerprint.api_changes` and `fingerprint.data_model_changes` are arrays of
+  objects; keep them as `[]` when none apply.
 - Subsystems and parent concepts
 - Files touched
 - Architectural claims

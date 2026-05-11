@@ -428,12 +428,32 @@ type Reference struct {
 	URL    string `json:"url,omitempty"`    // file URL / http URL / provider URL
 }
 
+// SealResultSchemaHints documents the object shape for SealResult arrays whose
+// zero-value starter would otherwise render as [] and leave agents guessing.
+// The values are examples, not submit payload content.
+type SealResultSchemaHints struct {
+	Summary     SealResultSummarySchemaHints     `json:"summary"`
+	Fingerprint SealResultFingerprintSchemaHints `json:"fingerprint"`
+}
+
+type SealResultSummarySchemaHints struct {
+	Decisions []Decision            `json:"decisions"`
+	Rejected  []RejectedAlternative `json:"rejected"`
+}
+
+type SealResultFingerprintSchemaHints struct {
+	APIChanges       []APIChange       `json:"api_changes"`
+	DataModelChanges []DataModelChange `json:"data_model_changes"`
+}
+
 // SealPreparePackage is returned by `mainline seal --prepare`.
 //
-// schema_version 2 (v0.3) added the Snapshot block + Intent.CurrentBranch.
-// Older readers still parse v2 packages because the new fields are
-// additive; older packages (v1) are still valid input to SealSubmit
-// because Snapshot is optional and CurrentBranch defaults to GitBranch.
+// schema_version 3 added SealResultSchema hints for ambiguous array item
+// shapes. schema_version 2 (v0.3) added the Snapshot block +
+// Intent.CurrentBranch. Older readers still parse v2/v3 packages because the
+// new fields are additive; older packages (v1) are still valid input to
+// SealSubmit because Snapshot is optional and CurrentBranch defaults to
+// GitBranch.
 type SealPreparePackage struct {
 	Kind          string `json:"kind"` // "mainline.seal.prepare"
 	SchemaVersion int    `json:"schema_version"`
@@ -464,12 +484,18 @@ type SealPreparePackage struct {
 	// the engine can derive deterministically (intent_id,
 	// fingerprint.files_touched, path-derived subsystems) come
 	// pre-filled; fields that need agent judgment (title, what,
-	// why, decisions) are present as empty
-	// strings / empty arrays so the schema is visible and the
-	// editing target is clear. Durable action signals are deliberately
-	// absent from this starter; use guard/risk/followup commands when
-	// a human explicitly promotes one.
+	// why, decisions) are present as empty strings / arrays or blank
+	// object placeholders so the schema is visible and the editing
+	// target is clear. Durable action signals are deliberately absent
+	// from this starter; use guard/risk/followup commands when a human
+	// explicitly promotes one.
 	Starter *SealResult `json:"seal_result_starter,omitempty"`
+
+	// SealResultSchema shows concrete array item shapes for fields that
+	// are easy for agents to accidentally fill as string arrays. It is a
+	// schema aid only; submit seal_result_starter after patching it, not
+	// this wrapper.
+	SealResultSchema *SealResultSchemaHints `json:"seal_result_schema,omitempty"`
 
 	// ApplicableOpenRisks lists open risks on files this intent touches.
 	// Populated at prepare time so the agent can decide whether to
