@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 22 -->
+<!-- mainline-agents-md-version: 23 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
