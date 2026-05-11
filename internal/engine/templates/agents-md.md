@@ -334,6 +334,13 @@ the next state in a new turn.
    "tags": ["auth", "authentication", "security", "jwt", "session"]
    ```
 
+   Schema guard: `summary.decisions` and `summary.rejected` are arrays
+   of objects, not string arrays. Use `summary.decisions[].point` /
+   `chose` / optional `rationale`; use `summary.rejected[].alternative`
+   / optional `reason`, or keep `summary.rejected` as `[]`.
+   `fingerprint.api_changes` and `fingerprint.data_model_changes` are
+   also object arrays; keep them as `[]` when none apply.
+
    Seal records decisions by default. It does not let agents create
    repo-wide constraints, risks, or follow-up queues. Use:
 
