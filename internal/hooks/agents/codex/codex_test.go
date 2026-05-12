@@ -76,8 +76,8 @@ func TestInstallMergesHooksAndEnablesFeature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(cfg), "[features]\ncodex_hooks = true") {
-		t.Fatalf("config.toml did not enable codex_hooks:\n%s", cfg)
+	if !strings.Contains(string(cfg), "[features]\nhooks = true") {
+		t.Fatalf("config.toml did not enable hooks:\n%s", cfg)
 	}
 
 	again, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"})
@@ -137,7 +137,7 @@ func TestInstallationStatusDetectsDisabledFeatureAndRepair(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(dir, ".codex", "config.toml")
-	if err := os.WriteFile(configPath, []byte("[features]\ncodex_hooks = false\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("[features]\nhooks = false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,8 +145,8 @@ func TestInstallationStatusDetectsDisabledFeatureAndRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !st.Installed || !st.NeedsRepair || !strings.Contains(strings.Join(st.RepairReasons, "\n"), "codex_hooks") {
-		t.Fatalf("expected disabled codex_hooks to need repair: %#v", st)
+	if !st.Installed || !st.NeedsRepair || !strings.Contains(strings.Join(st.RepairReasons, "\n"), "hooks feature") {
+		t.Fatalf("expected disabled hooks feature to need repair: %#v", st)
 	}
 
 	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
@@ -157,7 +157,54 @@ func TestInstallationStatusDetectsDisabledFeatureAndRepair(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st.NeedsRepair {
-		t.Fatalf("install should repair disabled codex_hooks: %#v", st)
+		t.Fatalf("install should repair disabled hooks feature: %#v", st)
+	}
+}
+
+func TestInstallMigratesLegacyCodexHooksFeature(t *testing.T) {
+	dir := t.TempDir()
+	codexDir := filepath.Join(dir, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(`model = "gpt-5.5"
+
+[features]
+codex_hooks = true
+experimental = true
+
+[model_provider.test]
+name = "test"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(cfg)
+	if !strings.Contains(text, "hooks = true") {
+		t.Fatalf("config.toml did not enable hooks:\n%s", text)
+	}
+	if strings.Contains(text, "codex_hooks") {
+		t.Fatalf("legacy codex_hooks feature survived migration:\n%s", text)
+	}
+	if !strings.Contains(text, "experimental = true") || !strings.Contains(text, "[model_provider.test]") {
+		t.Fatalf("migration did not preserve surrounding config:\n%s", text)
+	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NeedsRepair {
+		t.Fatalf("migrated install should be healthy: %#v", st)
 	}
 }
 
