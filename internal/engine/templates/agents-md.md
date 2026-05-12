@@ -338,6 +338,8 @@ the next state in a new turn.
    of objects, not string arrays. Use `summary.decisions[].point` /
    `chose` / optional `rationale`; use `summary.rejected[].alternative`
    / optional `reason`, or keep `summary.rejected` as `[]`.
+   `summary.review_notes` is a string array; keep it as `[]` when
+   there is no ephemeral reviewer context.
    `fingerprint.api_changes` and `fingerprint.data_model_changes` are
    also object arrays; keep them as `[]` when none apply.
 

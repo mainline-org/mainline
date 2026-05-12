@@ -2,7 +2,9 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/mainline-org/mainline/internal/core"
@@ -195,11 +197,11 @@ func short(sha string) string {
 // Subsystems are derived from path prefixes via the same helper
 // the conflict-detection layer uses, so seal-time and check-time
 // agree on what counts as a subsystem.
-func buildSealStarter(intentID, userGoal string, files []string) *domain.SealResult {
+func buildSealStarter(intentID, userGoal string, files []string) *domain.SealResultStarter {
 	subs := nonNilStrings(subsystemsFromFiles(files))
-	return &domain.SealResult{
+	return &domain.SealResultStarter{
 		IntentID: intentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.IntentSummaryStarter{
 			Title:       "",
 			What:        "",
 			Why:         "",
@@ -243,6 +245,7 @@ func sealResultSchemaHints() *domain.SealResultSchemaHints {
 				Alternative: "top-level alternative considered",
 				Reason:      "why it was not chosen",
 			}},
+			ReviewNotes: []string{"reviewer note, validation note, or scope explanation"},
 		},
 		Fingerprint: domain.SealResultFingerprintSchemaHints{
 			APIChanges: []domain.APIChange{{
@@ -296,6 +299,8 @@ Array item shapes:
   and optional rejected string[]. It is never string[].
 - summary.rejected is RejectedAlternative[]: objects with alternative and optional
   reason. Use [] when there are no top-level rejected alternatives.
+- summary.review_notes is string[]: reviewer notes, validation notes, or scope
+  explanations. Use [] when none apply.
 - fingerprint.api_changes and fingerprint.data_model_changes are object arrays.
   Use [] when none apply.
 
@@ -419,6 +424,7 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		return nil, domain.NewError(domain.ErrInvalidInput,
 			formatSealUnmarshalError(err))
 	}
+	normalizeSealResultForSubmit(&sr)
 
 	if err := validateSealActionSignalContract(&sr); err != nil {
 		return nil, err
@@ -609,6 +615,12 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 
 func formatSealUnmarshalError(err error) string {
 	msg := fmt.Sprintf("invalid SealResult JSON: %v", err)
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		if hint := sealUnmarshalTypeHint(typeErr); hint != "" {
+			return msg + "; " + hint
+		}
+	}
 	detail := err.Error()
 	switch {
 	case strings.Contains(detail, "IntentSummary.summary.decisions"):
@@ -622,4 +634,53 @@ func formatSealUnmarshalError(err error) string {
 	default:
 		return msg
 	}
+}
+
+func normalizeSealResultForSubmit(sr *domain.SealResult) {
+	if sr == nil {
+		return
+	}
+	sr.Summary.ReviewNotes = compactNonEmptyStrings(sr.Summary.ReviewNotes)
+}
+
+func compactNonEmptyStrings(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		if strings.TrimSpace(item) != "" {
+			out = append(out, item)
+		}
+	}
+	if len(out) == 0 {
+		return []string{}
+	}
+	return out
+}
+
+func sealUnmarshalTypeHint(err *json.UnmarshalTypeError) string {
+	if err == nil {
+		return ""
+	}
+	field := err.Field
+	switch field {
+	case "summary.decisions":
+		return "summary.decisions must be Decision[] (objects with point, chose, optional rationale, optional rejected), not string[]; copy seal_result_starter and use seal_result_schema from `mainline seal --prepare --json`"
+	case "summary.rejected":
+		return "summary.rejected must be RejectedAlternative[] (objects with alternative and optional reason), not string[]; use [] when none apply"
+	case "summary.review_notes":
+		return "summary.review_notes must be string[] (reviewer notes, validation notes, or scope explanations), not a string; use [] when none apply"
+	case "fingerprint.api_changes":
+		return "fingerprint.api_changes must be APIChange[] objects, not string[]; use [] when none apply"
+	case "fingerprint.data_model_changes":
+		return "fingerprint.data_model_changes must be DataModelChange[] objects, not string[]; use [] when none apply"
+	}
+	if err.Value == "string" && err.Type.Kind() == reflect.Slice {
+		if err.Type.Elem().Kind() == reflect.String {
+			return fmt.Sprintf("%s must be string[], not a string; use [] when none apply", field)
+		}
+		return fmt.Sprintf("%s must be an array of objects, not a string; use [] when none apply", field)
+	}
+	return ""
 }

@@ -345,6 +345,13 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 	if pkg.SealResultSchema.Summary.Rejected[0].Alternative == "" {
 		t.Fatalf("schema should document summary.rejected[].alternative")
 	}
+	if len(pkg.SealResultSchema.Summary.ReviewNotes) != 1 {
+		t.Fatalf("schema should show one summary.review_notes[] string shape, got %+v",
+			pkg.SealResultSchema.Summary.ReviewNotes)
+	}
+	if pkg.SealResultSchema.Summary.ReviewNotes[0] == "" {
+		t.Fatalf("schema should document summary.review_notes[]")
+	}
 
 	// Starter contract: intent_id and fingerprint.files_touched are
 	// pre-populated, agent-judgment fields are empty (the agent
