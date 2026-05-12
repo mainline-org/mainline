@@ -192,8 +192,12 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("missing mainline hook under %s", nativeKey))
 		}
 	}
-	if !codexHooksFeatureEnabled(configPath) {
-		st.RepairReasons = append(st.RepairReasons, "codex_hooks feature is disabled or missing")
+	featureEnabled, legacyFeaturePresent := codexHooksFeatureState(configPath)
+	if !featureEnabled {
+		st.RepairReasons = append(st.RepairReasons, "hooks feature is disabled or missing")
+	}
+	if legacyFeaturePresent {
+		st.RepairReasons = append(st.RepairReasons, "legacy codex_hooks feature flag is present")
 	}
 	if reason := hooks.RuntimeRepairReason(st.CommandMode); reason != "" {
 		st.RepairReasons = append(st.RepairReasons, reason)
@@ -314,9 +318,13 @@ func countManagedCodex(raw json.RawMessage) int {
 	return count
 }
 
-func codexHooksFeatureEnabled(path string) bool {
+func codexHooksFeatureState(path string) (enabled bool, legacyPresent bool) {
 	data, err := os.ReadFile(path)
-	return err == nil && hasCodexHooksEnabled(string(data))
+	if err != nil {
+		return false, false
+	}
+	text := string(data)
+	return hasHooksFeatureEnabled(text), hasLegacyCodexHooksFeature(text)
 }
 
 func allManagedPrefixes() []string {
@@ -349,13 +357,10 @@ func ensureCodexHooksFeature(path string) (bool, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return false, fmt.Errorf("create .codex dir: %w", err)
 		}
-		return true, os.WriteFile(path, []byte("[features]\ncodex_hooks = true\n"), 0o644)
+		return true, os.WriteFile(path, []byte("[features]\nhooks = true\n"), 0o644)
 	}
 	text := string(data)
-	if hasCodexHooksEnabled(text) {
-		return false, nil
-	}
-	next := setCodexHooksEnabled(text)
+	next := setHooksFeatureEnabled(text)
 	if next == text {
 		return false, nil
 	}
@@ -365,7 +370,31 @@ func ensureCodexHooksFeature(path string) (bool, error) {
 	return true, nil
 }
 
-func hasCodexHooksEnabled(text string) bool {
+func hasHooksFeatureEnabled(text string) bool {
+	found := false
+	walkFeatures(text, func(key, value string) bool {
+		if key == "hooks" {
+			found = value == "true"
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func hasLegacyCodexHooksFeature(text string) bool {
+	found := false
+	walkFeatures(text, func(key, _ string) bool {
+		if key == "codex_hooks" {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func walkFeatures(text string, visit func(key, value string) bool) {
 	inFeatures := false
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -373,49 +402,107 @@ func hasCodexHooksEnabled(text string) bool {
 			inFeatures = trimmed == "[features]"
 			continue
 		}
-		if inFeatures && strings.HasPrefix(trimmed, "codex_hooks") {
-			parts := strings.SplitN(trimmed, "=", 2)
-			return len(parts) == 2 && strings.TrimSpace(parts[1]) == "true"
+		if !inFeatures || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		key, value, ok := parseFeatureAssignment(trimmed)
+		if !ok {
+			continue
+		}
+		if !visit(key, value) {
+			return
 		}
 	}
-	return false
 }
 
-func setCodexHooksEnabled(text string) string {
+func setHooksFeatureEnabled(text string) string {
 	lines := strings.Split(text, "\n")
 	inFeatures := false
 	featuresSeen := false
-	for i, line := range lines {
+	hooksSeen := false
+	changed := false
+	out := make([]string, 0, len(lines)+2)
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
 			if inFeatures {
-				lines = append(lines[:i], append([]string{"codex_hooks = true", ""}, lines[i:]...)...)
-				return strings.Join(lines, "\n")
+				if !hooksSeen {
+					out = insertBeforeTrailingBlank(out, "hooks = true")
+					changed = true
+				}
+				if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+					out = append(out, "")
+				}
 			}
 			inFeatures = trimmed == "[features]"
-			featuresSeen = inFeatures
+			if inFeatures {
+				featuresSeen = true
+				hooksSeen = false
+			}
+			out = append(out, line)
 			continue
 		}
-		if inFeatures && strings.HasPrefix(trimmed, "codex_hooks") {
-			lines[i] = "codex_hooks = true"
-			return ensureTrailingNewline(strings.Join(lines, "\n"))
+		if inFeatures {
+			key, value, ok := parseFeatureAssignment(trimmed)
+			if ok && key == "codex_hooks" {
+				changed = true
+				continue
+			}
+			if ok && key == "hooks" {
+				hooksSeen = true
+				if value != "true" {
+					out = append(out, "hooks = true")
+					changed = true
+					continue
+				}
+			}
 		}
+		out = append(out, line)
 	}
 	if inFeatures {
-		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-			lines = lines[:len(lines)-1]
+		if !hooksSeen {
+			out = insertBeforeTrailingBlank(out, "hooks = true")
+			changed = true
 		}
-		lines = append(lines, "codex_hooks = true")
-		return ensureTrailingNewline(strings.Join(lines, "\n"))
 	}
 	if featuresSeen {
-		return ensureTrailingNewline(strings.Join(lines, "\n"))
+		if !changed {
+			return text
+		}
+		return ensureTrailingNewline(strings.Join(out, "\n"))
 	}
 	prefix := ""
-	if strings.TrimSpace(text) != "" && !strings.HasSuffix(text, "\n") {
+	if strings.TrimSpace(text) == "" {
+		return "[features]\nhooks = true\n"
+	}
+	if !strings.HasSuffix(text, "\n") {
 		prefix = "\n"
 	}
-	return ensureTrailingNewline(text + prefix + "\n[features]\ncodex_hooks = true")
+	return ensureTrailingNewline(text + prefix + "\n[features]\nhooks = true")
+}
+
+func parseFeatureAssignment(trimmed string) (key string, value string, ok bool) {
+	parts := strings.SplitN(trimmed, "=", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(parts[0])
+	value = strings.TrimSpace(parts[1])
+	if beforeComment, _, found := strings.Cut(value, "#"); found {
+		value = strings.TrimSpace(beforeComment)
+	}
+	return key, value, key != ""
+}
+
+func insertBeforeTrailingBlank(lines []string, value string) []string {
+	i := len(lines)
+	for i > 0 && strings.TrimSpace(lines[i-1]) == "" {
+		i--
+	}
+	lines = append(lines, "")
+	copy(lines[i+1:], lines[i:])
+	lines[i] = value
+	return lines
 }
 
 func ensureTrailingNewline(s string) string {
