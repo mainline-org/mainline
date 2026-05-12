@@ -474,6 +474,8 @@ be specific enough for conflict detection:
   `rationale`, optional `rejected` string array), not a string array.
 - `summary.rejected` is an array of objects (`alternative`, optional `reason`);
   keep it as `[]` when there are no top-level rejected alternatives.
+- `summary.review_notes` is a string array; keep it as `[]` when there is no
+  ephemeral reviewer context.
 - `fingerprint.api_changes` and `fingerprint.data_model_changes` are arrays of
   objects; keep them as `[]` when none apply.
 - Subsystems and parent concepts

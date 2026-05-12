@@ -348,6 +348,29 @@ type SealResult struct {
 	ResolvesFollowups []FollowupResolutionInput `json:"resolves_followups,omitempty"`
 }
 
+// SealResultStarter is the prepare-time editing template for agents. It keeps
+// optional-but-useful arrays visible as [] without changing the canonical
+// SealResult / IntentSummary serialization used for sealed records.
+type SealResultStarter struct {
+	IntentID    string               `json:"intent_id"`
+	Summary     IntentSummaryStarter `json:"summary"`
+	Fingerprint SemanticFingerprint  `json:"fingerprint"`
+	Confidence  SealConfidence       `json:"confidence"`
+}
+
+type IntentSummaryStarter struct {
+	Title        string                `json:"title"`
+	What         string                `json:"what"`
+	Why          string                `json:"why"`
+	UserGoal     string                `json:"user_goal"`
+	Decisions    []Decision            `json:"decisions"`
+	Rejected     []RejectedAlternative `json:"rejected"`
+	Risks        []string              `json:"risks,omitempty"`
+	AntiPatterns []AntiPattern         `json:"anti_patterns,omitempty"`
+	Followups    []string              `json:"followups,omitempty"`
+	ReviewNotes  []string              `json:"review_notes"`
+}
+
 // RiskResolutionInput is what agents submit in SealResult.ResolvesRisks
 // to declare that their work resolves a previously-open risk.
 type RiskResolutionInput struct {
@@ -439,6 +462,10 @@ type SealResultSchemaHints struct {
 type SealResultSummarySchemaHints struct {
 	Decisions []Decision            `json:"decisions"`
 	Rejected  []RejectedAlternative `json:"rejected"`
+	// ReviewNotes is a string array. It is included here because the
+	// real summary field is optional and may be omitted from zero-value
+	// payloads, which otherwise leaves agents guessing the type.
+	ReviewNotes []string `json:"review_notes"`
 }
 
 type SealResultFingerprintSchemaHints struct {
@@ -489,7 +516,7 @@ type SealPreparePackage struct {
 	// target is clear. Durable action signals are deliberately absent
 	// from this starter; use guard/risk/followup commands when a human
 	// explicitly promotes one.
-	Starter *SealResult `json:"seal_result_starter,omitempty"`
+	Starter *SealResultStarter `json:"seal_result_starter,omitempty"`
 
 	// SealResultSchema shows concrete array item shapes for fields that
 	// are easy for agents to accidentally fill as string arrays. It is a
