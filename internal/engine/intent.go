@@ -300,17 +300,28 @@ func (s *Service) Show(intentID string) (*ShowResult, error) {
 		return nil, err
 	}
 
-	// Try local draft first
+	iv := s.readIntentViewByID(intentID)
+
+	// Try local draft first. For sealed/proposed intents the local draft
+	// cache can remain after the materialized view exists; keep the draft
+	// in JSON for compatibility, but also expose the view so callers can
+	// read summary/code_commit/publication without falling back to cache
+	// internals. Terminal views still override stale draft cache exactly
+	// as before.
 	draft, err := s.Store.ReadDraft(intentID)
 	if err == nil && draft != nil {
-		if iv := s.readIntentViewByID(intentID); iv != nil && isTerminalIntentStatus(iv.Status) {
+		if iv != nil && isTerminalIntentStatus(iv.Status) {
 			return &ShowResult{View: iv}, nil
 		}
 		turns, _ := s.Store.ReadTurns(intentID)
-		return &ShowResult{Intent: draft, Turns: turns}, nil
+		result := &ShowResult{Intent: draft, Turns: turns}
+		if iv != nil {
+			result.View = iv
+		}
+		return result, nil
 	}
 
-	if iv := s.readIntentViewByID(intentID); iv != nil {
+	if iv != nil {
 		return &ShowResult{View: iv}, nil
 	}
 
