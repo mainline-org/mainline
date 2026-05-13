@@ -2,11 +2,11 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
@@ -747,40 +747,27 @@ func TestContextRetrieval_IncludesSupersededLineageWhenSupersederMatches(t *test
 	}
 }
 
-// Property 1: a legacy anti_pattern with empty why is rejected by the
-// low-level schema validator. SealSubmit rejects the whole field for
-// new action-signal writes, but old records still need coherent shape.
-func TestValidateSealResult_RejectsAntiPatternWithEmptyWhy(t *testing.T) {
-	sr := &domain.SealResult{
-		IntentID: "int_x12345678",
-		Summary: domain.IntentSummary{
-			Title: "t", What: "w", Why: "y",
-			AntiPatterns: []domain.AntiPattern{
-				{What: "do X", Why: "", Severity: "high"},
-			},
+// Legacy anti_patterns remain readable in sealed views, and lint still keeps
+// their historical shape coherent. New seal submissions use SealSummaryInput
+// and cannot create these fields.
+func TestLintIntent_FlagsLegacyAntiPatternWithEmptyWhy(t *testing.T) {
+	summary := &domain.IntentSummary{
+		Title: "t", What: "w", Why: "y",
+		Decisions: []domain.Decision{{Point: "p", Chose: "c"}},
+		AntiPatterns: []domain.AntiPattern{
+			{What: "do X", Why: "", Severity: "high"},
 		},
-		Fingerprint: domain.SemanticFingerprint{
-			Subsystems:   []string{"s"},
-			FilesTouched: []string{"f.go"},
-		},
-		Confidence: domain.SealConfidence{Summary: 0.9, Fingerprint: 0.9},
 	}
-	if err := core.ValidateSealResult(sr); err == nil {
-		t.Fatal("expected rejection of anti_pattern with empty why")
-	} else if !strings.Contains(err.Error(), "anti_patterns") || !strings.Contains(err.Error(), "why") {
-		t.Errorf("error should mention anti_patterns + why, got: %v", err)
+	fp := &domain.SemanticFingerprint{
+		Subsystems:   []string{"s"},
+		FilesTouched: []string{"f.go"},
 	}
-
-	// Empty severity is fine; non-canonical severity is rejected.
-	sr.Summary.AntiPatterns[0].Why = "real reason"
-	sr.Summary.AntiPatterns[0].Severity = "catastrophic"
-	if err := core.ValidateSealResult(sr); err == nil {
-		t.Fatal("expected rejection of non-canonical severity")
+	res := LintIntent("int_x12345678", summary, fp, "", nil)
+	if res.Pass {
+		t.Fatalf("expected legacy anti_pattern with empty why to fail lint: %+v", res.Issues)
 	}
-
-	sr.Summary.AntiPatterns[0].Severity = "high"
-	if err := core.ValidateSealResult(sr); err != nil {
-		t.Errorf("valid anti_pattern should pass: %v", err)
+	if !strings.Contains(fmt.Sprint(res.Issues), "anti_pattern_no_why") {
+		t.Fatalf("expected anti_pattern_no_why lint issue, got %+v", res.Issues)
 	}
 }
 

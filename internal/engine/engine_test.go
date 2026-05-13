@@ -390,7 +390,7 @@ func TestSealPrepareAndSubmit(t *testing.T) {
 	// Seal submit
 	sealResult := domain.SealResult{
 		IntentID: startResult.IntentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title:    "Implement feature X",
 			What:     "Added feature X to module Y",
 			Why:      "Users requested feature X",
@@ -685,7 +685,7 @@ func TestPublishLocalOnly(t *testing.T) {
 	// Seal
 	sr := domain.SealResult{
 		IntentID: start.IntentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "T", What: "W", Why: "Y",
 			Decisions: []domain.Decision{{
 				Point:     "publish test",

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -9,38 +10,44 @@ import (
 
 func TestBuildSealStarterOmitsActionSignals(t *testing.T) {
 	starter := buildSealStarter("int_abc123", "ship the thing", []string{"internal/auth/session.go"})
-	if len(starter.Summary.Risks) != 0 {
-		t.Fatalf("starter should not include risks: %+v", starter.Summary.Risks)
+	data, err := json.Marshal(starter.Summary)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(starter.Summary.Followups) != 0 {
-		t.Fatalf("starter should not include followups: %+v", starter.Summary.Followups)
+	for _, legacyKey := range []string{"risks", "followups", "anti_patterns"} {
+		if strings.Contains(string(data), `"`+legacyKey+`"`) {
+			t.Fatalf("starter summary must not expose legacy key %q: %s", legacyKey, data)
+		}
 	}
-	if len(starter.Summary.AntiPatterns) != 0 {
-		t.Fatalf("starter should not include anti_patterns: %+v", starter.Summary.AntiPatterns)
+	schema := sealResultSchemaHints()
+	schemaData, err := json.Marshal(schema.Summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, legacyKey := range []string{"risks", "followups", "anti_patterns"} {
+		if strings.Contains(string(schemaData), `"`+legacyKey+`"`) {
+			t.Fatalf("seal_result_schema summary must not expose legacy key %q: %s", legacyKey, schemaData)
+		}
 	}
 	instruction := sealInstruction()
 	if strings.Contains(instruction, "Keep risks, anti_patterns, and\nfollowups as []") {
 		t.Fatalf("instruction still nudges agents to fill old action signal fields")
 	}
-	if !strings.Contains(instruction, "Seal does not create durable action signals") {
+	if !strings.Contains(instruction, "Seal summary is not a durable action-signal creation surface") {
 		t.Fatalf("instruction should state the default seal contract")
 	}
 }
 
-func TestValidateSealActionSignalContractRejectsSealSignals(t *testing.T) {
-	base := &domain.SealResult{}
-	if err := validateSealActionSignalContract(base); err != nil {
-		t.Fatalf("empty signals should pass: %v", err)
+func TestValidateNoLegacySealSummarySignalsRejectsKeys(t *testing.T) {
+	base := json.RawMessage(`{"intent_id":"int_x","summary":{"title":"t"}}`)
+	if err := validateNoLegacySealSummarySignals(base); err != nil {
+		t.Fatalf("payload without legacy keys should pass: %v", err)
 	}
 
-	cases := []domain.SealResult{
-		{Summary: domain.IntentSummary{Risks: []string{"risk"}}},
-		{Summary: domain.IntentSummary{Followups: []string{"followup"}}},
-		{Summary: domain.IntentSummary{AntiPatterns: []domain.AntiPattern{{What: "x", Why: "y"}}}},
-	}
-	for _, tc := range cases {
-		if err := validateSealActionSignalContract(&tc); err == nil {
-			t.Fatalf("seal action signal accepted: %+v", tc.Summary)
+	for _, key := range []string{"risks", "followups", "anti_patterns"} {
+		payload := json.RawMessage(`{"intent_id":"int_x","summary":{"title":"t","` + key + `":[]}}`)
+		if err := validateNoLegacySealSummarySignals(payload); err == nil {
+			t.Fatalf("legacy seal summary key %q accepted", key)
 		}
 	}
 }

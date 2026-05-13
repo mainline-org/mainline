@@ -201,14 +201,15 @@ func buildSealStarter(intentID, userGoal string, files []string) *domain.SealRes
 	subs := nonNilStrings(subsystemsFromFiles(files))
 	return &domain.SealResultStarter{
 		IntentID: intentID,
-		Summary: domain.IntentSummaryStarter{
-			Title:       "",
-			What:        "",
-			Why:         "",
-			UserGoal:    userGoal,
-			Decisions:   []domain.Decision{{Point: "", Chose: ""}},
-			Rejected:    []domain.RejectedAlternative{},
-			ReviewNotes: []string{},
+		Summary: domain.SealSummaryStarter{
+			Title:                   "",
+			What:                    "",
+			Why:                     "",
+			UserGoal:                userGoal,
+			Decisions:               []domain.Decision{{Point: "", Chose: ""}},
+			Rejected:                []domain.RejectedAlternative{},
+			AcknowledgedConstraints: []domain.AcknowledgedConstraint{},
+			ReviewNotes:             []string{},
 		},
 		Fingerprint: domain.SemanticFingerprint{
 			Subsystems:           subs,
@@ -245,6 +246,11 @@ func sealResultSchemaHints() *domain.SealResultSchemaHints {
 				Alternative: "top-level alternative considered",
 				Reason:      "why it was not chosen",
 			}},
+			AcknowledgedConstraints: []domain.AcknowledgedConstraint{{
+				ConstraintID: "guard_xxx",
+				Disposition:  "preserved|mitigated|not_applicable|intentionally_changed",
+				Note:         "how this seal handled the inherited constraint",
+			}},
 			ReviewNotes: []string{"reviewer note, validation note, or scope explanation"},
 		},
 		Fingerprint: domain.SealResultFingerprintSchemaHints{
@@ -275,21 +281,24 @@ fingerprint.subsystems are pre-filled deterministically from the
 diff. summary.user_goal is also pre-filled from mainline start and
 SealSubmit enforces that authoritative goal. Patch in the
 agent-judgment fields (title, what, why, decisions, rejected,
-review_notes, fingerprint details, confidence) and submit.
+acknowledged_constraints when applicable, review_notes,
+fingerprint details, confidence) and submit.
 Use seal_result_schema only as an item-shape guide; do not submit it.
 
 Default seal contract:
 - Seal records history: what changed, why, decisions, rejected
-  alternatives, validation/review notes, and semantic fingerprint.
-- Seal does not create durable action signals. Do not include
-  summary.risks, summary.followups, or summary.anti_patterns.
-- If a human explicitly promotes a signal, create it outside seal:
+  alternatives, inherited-constraint acknowledgements,
+  validation/review notes, and semantic fingerprint.
+- Seal summary is not a durable action-signal creation surface.
+  Its schema intentionally has no risks, followups, or anti_patterns.
+- If a signal is explicitly promoted, create it outside seal:
   mainline guard add   (human-confirmed constraints)
   mainline risks add   (structured reviewer-facing failure modes)
   mainline followups add (explicitly deferred work with provenance)
 
 Required structure:
-1. summary: title, what, why, user_goal, decisions, rejected alternatives, review_notes
+1. summary: title, what, why, user_goal, decisions, rejected alternatives,
+   acknowledged_constraints when applicable, review_notes
 2. fingerprint: subsystems, files_touched, architectural_claims, behavioral_changes,
    api_changes, data_model_changes, security_implications, migration_notes, tags
 3. confidence: summary (0-1), fingerprint (0-1)
@@ -299,6 +308,8 @@ Array item shapes:
   and optional rejected string[]. It is never string[].
 - summary.rejected is RejectedAlternative[]: objects with alternative and optional
   reason. Use [] when there are no top-level rejected alternatives.
+- summary.acknowledged_constraints is AcknowledgedConstraint[]: objects with
+  constraint_id, disposition, and optional note. Use [] when none apply.
 - summary.review_notes is string[]: reviewer notes, validation notes, or scope
   explanations. Use [] when none apply.
 - fingerprint.api_changes and fingerprint.data_model_changes are object arrays.
@@ -308,9 +319,14 @@ Field decision tree:
 - "We chose X because Y" or "we shipped with limitation X" -> decisions
 - "We considered B but ruled it out" -> rejected
 - "Reviewer should focus on Z", validation notes, or scope explanation -> review_notes
-- "This may fail when X" -> do not put it in seal; use mainline risks add only when it meets the explicit risk rules.
-- "Do X later" -> do not put it in seal; use mainline followups add only when the user/reference/cut-scope provenance exists.
-- "Future work MUST NOT do X" -> do not put it in seal; a human must run mainline guard add.
+- "This may fail when X" -> use mainline risks add only when it has a concrete
+  failure mode with trigger/impact plus mitigation/validation/owner; otherwise
+  mention it in review_notes only if it is useful reviewer context.
+- "Do X later" -> use mainline followups add only when the user explicitly
+  deferred it, an external issue/ticket/PR exists, or this PR cut real scope;
+  otherwise mention it in the final response, not the ledger.
+- "Future work MUST NOT do X" -> only a human-confirmed mainline guard add can
+  create that constraint. Agents may propose the guard in the final response.
 
 Return ONLY valid JSON matching the SealResult schema.`
 }
@@ -371,26 +387,40 @@ func nonBlockingLintIssues(issues []LintIssue) []LintIssue {
 	return out
 }
 
-func validateSealActionSignalContract(sr *domain.SealResult) error {
-	var fields []string
-	if len(sr.Summary.AntiPatterns) > 0 {
-		fields = append(fields, "summary.anti_patterns")
-	}
-	if len(sr.Summary.Risks) > 0 {
-		fields = append(fields, "summary.risks")
-	}
-	if len(sr.Summary.Followups) > 0 {
-		fields = append(fields, "summary.followups")
-	}
+func validateNoLegacySealSummarySignals(input json.RawMessage) error {
+	fields := legacySealSummarySignalKeys(input)
 	if len(fields) == 0 {
 		return nil
 	}
 	return domain.NewRecoverableError(
 		domain.ErrSealFailed,
-		fmt.Sprintf("seal cannot create durable action signals: %s", strings.Join(fields, ", ")),
+		fmt.Sprintf("seal summary no longer accepts legacy signal fields: %s", strings.Join(fields, ", ")),
+		"re-run `mainline seal --prepare --json` to regenerate the current seal schema",
 		"use review_notes for ephemeral reviewer context",
-		"use `mainline risks add`, `mainline followups add`, or human-confirmed `mainline guard add` for promoted signals",
+		"use `mainline risks add`, `mainline followups add`, or human-confirmed `mainline guard add` for promoted durable signals",
 	)
+}
+
+func legacySealSummarySignalKeys(input json.RawMessage) []string {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(input, &root); err != nil {
+		return nil
+	}
+	rawSummary, ok := root["summary"]
+	if !ok {
+		return nil
+	}
+	var summary map[string]json.RawMessage
+	if err := json.Unmarshal(rawSummary, &summary); err != nil {
+		return nil
+	}
+	var fields []string
+	for _, key := range []string{"anti_patterns", "risks", "followups"} {
+		if _, ok := summary[key]; ok {
+			fields = append(fields, "summary."+key)
+		}
+	}
+	return fields
 }
 
 func formatBlockingLintIssues(issues []LintIssue) string {
@@ -419,16 +449,16 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		return nil, err
 	}
 
+	if err := validateNoLegacySealSummarySignals(input); err != nil {
+		return nil, err
+	}
+
 	var sr domain.SealResult
 	if err := json.Unmarshal(input, &sr); err != nil {
 		return nil, domain.NewError(domain.ErrInvalidInput,
 			formatSealUnmarshalError(err))
 	}
 	normalizeSealResultForSubmit(&sr)
-
-	if err := validateSealActionSignalContract(&sr); err != nil {
-		return nil, err
-	}
 
 	if err := core.ValidateSealResult(&sr); err != nil {
 		return nil, domain.NewError(domain.ErrSealFailed, err.Error())
@@ -497,7 +527,7 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 		GitBranch:   draft.GitBranch,
 		BaseCommit:  draft.BaseCommit,
 		CodeCommit:  codeCommit,
-		Summary:     sr.Summary,
+		Summary:     sr.Summary.ToIntentSummary(),
 		Fingerprint: sr.Fingerprint,
 		TurnCount:   len(draft.Turns),
 		SealedAt:    core.Now(),
@@ -623,10 +653,12 @@ func formatSealUnmarshalError(err error) string {
 	}
 	detail := err.Error()
 	switch {
-	case strings.Contains(detail, "IntentSummary.summary.decisions"):
+	case strings.Contains(detail, "SealSummaryInput.summary.decisions"):
 		return msg + "; summary.decisions must be Decision[] (objects with point, chose, optional rationale, optional rejected), not string[]; copy seal_result_starter and use seal_result_schema from `mainline seal --prepare --json`"
-	case strings.Contains(detail, "IntentSummary.summary.rejected"):
+	case strings.Contains(detail, "SealSummaryInput.summary.rejected"):
 		return msg + "; summary.rejected must be RejectedAlternative[] (objects with alternative and optional reason), not string[]; use [] when none apply"
+	case strings.Contains(detail, "SealSummaryInput.summary.acknowledged_constraints"):
+		return msg + "; summary.acknowledged_constraints must be AcknowledgedConstraint[] objects, not string[]; use [] when none apply"
 	case strings.Contains(detail, "SemanticFingerprint.fingerprint.api_changes"):
 		return msg + "; fingerprint.api_changes must be APIChange[] objects, not string[]; use [] when none apply"
 	case strings.Contains(detail, "SemanticFingerprint.fingerprint.data_model_changes"):
@@ -669,6 +701,8 @@ func sealUnmarshalTypeHint(err *json.UnmarshalTypeError) string {
 		return "summary.decisions must be Decision[] (objects with point, chose, optional rationale, optional rejected), not string[]; copy seal_result_starter and use seal_result_schema from `mainline seal --prepare --json`"
 	case "summary.rejected":
 		return "summary.rejected must be RejectedAlternative[] (objects with alternative and optional reason), not string[]; use [] when none apply"
+	case "summary.acknowledged_constraints":
+		return "summary.acknowledged_constraints must be AcknowledgedConstraint[] objects, not string[]; use [] when none apply"
 	case "summary.review_notes":
 		return "summary.review_notes must be string[] (reviewer notes, validation notes, or scope explanations), not a string; use [] when none apply"
 	case "fingerprint.api_changes":
