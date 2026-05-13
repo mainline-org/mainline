@@ -105,6 +105,9 @@ mainline start --commits <sha> "<why>"
 团队如果需要显式 repo policy，可以跑 `mainline agents install` 写入轻量
 `AGENTS.md` pointer；这不是必需步骤。
 
+Intent 记录会通过 Git refs 和 Git notes 跟随代码流转。用 `mainline log`、
+`mainline show <id>` 或 `mainline hub open` 查看它们。
+
 ## Agent 协议契约
 
 Mainline 的核心不是一组命令，而是 coding agent 的行为契约。

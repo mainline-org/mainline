@@ -137,6 +137,10 @@ func renderSealLintHint(issues []engine.LintIssue, intentID string) {
 // does not require users to push, open PRs, or merge through GitHub.
 func renderSealNextSteps(result *engine.SealSubmitResult) {
 	fmt.Println()
+	fmt.Println("View intent:")
+	fmt.Printf("  mainline show %s\n", result.IntentID)
+	fmt.Println("  mainline hub open")
+	fmt.Println()
 	fmt.Println("Next:")
 	fmt.Printf("  · If your workflow opens or updates a PR: `mainline pr-description --intent %s > .ml-cache/pr-description.md`\n", result.IntentID)
 	fmt.Println("    Use that file as the PR body so GitHub does not need a duplicate Mainline comment.")

@@ -156,6 +156,9 @@ block code work solely because hooks are absent.
 
 ## Start Of Task
 
+If the goal is too vague to make a useful intent, prefer one quick clarifying question before `mainline start`; do not turn this into PRD/task planning.
+If you proceed anyway, use the safest narrow interpretation and record the assumption in the first `mainline append`.
+
 At the start of a real task:
 
 ```bash

@@ -115,6 +115,9 @@ mainline start --commits <sha> "<why>"
 For teams that want explicit repo-level policy, `mainline agents install` writes
 a lightweight `AGENTS.md` pointer. This is optional.
 
+Intent records travel through Git refs and Git notes. Use `mainline log`,
+`mainline show <id>`, or `mainline hub open` to inspect them.
+
 ## Agent Protocol Contract
 
 Mainline's core asset is a behavior contract for coding agents.
