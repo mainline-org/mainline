@@ -142,6 +142,8 @@ that without re-creating identity or team config.`,
 				fmt.Println("      (Use a different remote name? Set [mainline] remote in")
 				fmt.Println("       .mainline/config.toml.)")
 			}
+			fmt.Println()
+			fmt.Println("Next: start work with your agent, then inspect recorded intent with `mainline log` or `mainline hub open`.")
 		}
 	},
 }

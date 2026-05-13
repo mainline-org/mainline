@@ -75,7 +75,8 @@ An intent captures:
 
 Mainline is not a Git replacement, PR system, session recorder, RAG index, or
 productivity dashboard. It is repo-local engineering memory that travels with
-your code through Git refs and Git notes.
+your code through Git refs and Git notes. Read that memory with `mainline log`,
+`mainline show <id>`, or `mainline hub open`.
 
 ## Why Comments Are Not Enough
 
