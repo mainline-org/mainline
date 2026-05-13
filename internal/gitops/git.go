@@ -190,24 +190,42 @@ func (g *Git) MergeBase(a, b string) (string, error) {
 
 // DiffStatAgainst returns diff stats between two refs.
 func (g *Git) DiffStatAgainst(base, head string) (domain.DiffStats, []domain.FileChange, error) {
-	out, err := g.run("diff", "--numstat", base, head)
+	out, err := g.run("diff", "--numstat", "-z", base, head)
 	if err != nil {
 		return domain.DiffStats{}, nil, err
 	}
 
 	var stats domain.DiffStats
 	var changes []domain.FileChange
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line == "" {
+	fields := strings.Split(out, "\x00")
+	for i := 0; i < len(fields); {
+		header := fields[i]
+		i++
+		if header == "" {
 			continue
 		}
-		parts := strings.Fields(line)
+		parts := strings.SplitN(header, "\t", 3)
 		if len(parts) < 3 {
 			continue
 		}
-		added, _ := strconv.Atoi(parts[0])
-		removed, _ := strconv.Atoi(parts[1])
+		added := parseNumstatCount(parts[0])
+		removed := parseNumstatCount(parts[1])
 		file := parts[2]
+		if file == "" {
+			// With --numstat -z, renames/copies are encoded as:
+			// "<add>\t<del>\t\0<old>\0<new>\0". Mainline's
+			// touched-file fingerprint should point at the resulting
+			// path, matching --name-status handling below.
+			if i+1 >= len(fields) {
+				break
+			}
+			i++ // old path
+			file = fields[i]
+			i++
+		}
+		if file == "" {
+			continue
+		}
 		stats.Files++
 		stats.Added += added
 		stats.Removed += removed
@@ -220,29 +238,42 @@ func (g *Git) DiffStatAgainst(base, head string) (domain.DiffStats, []domain.Fil
 	}
 
 	// Enrich with --name-status for accurate status
-	statusOut, err := g.run("diff", "--name-status", base, head)
+	statusOut, err := g.run("diff", "--name-status", "-z", base, head)
 	if err == nil {
 		statusMap := make(map[string]string)
-		for _, line := range strings.Split(strings.TrimSpace(statusOut), "\n") {
-			if line == "" {
+		statusFields := strings.Split(statusOut, "\x00")
+		for i := 0; i < len(statusFields); {
+			status := statusFields[i]
+			i++
+			if status == "" {
 				continue
 			}
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				status := parts[0]
-				file := parts[len(parts)-1]
-				switch {
-				case strings.HasPrefix(status, "A"):
-					statusMap[file] = "added"
-				case strings.HasPrefix(status, "D"):
-					statusMap[file] = "deleted"
-				case strings.HasPrefix(status, "R"):
-					statusMap[file] = "renamed"
-				case strings.HasPrefix(status, "C"):
-					statusMap[file] = "copied"
-				default:
-					statusMap[file] = "modified"
+			if i >= len(statusFields) {
+				break
+			}
+			file := statusFields[i]
+			i++
+			if strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C") {
+				if i >= len(statusFields) {
+					break
 				}
+				file = statusFields[i]
+				i++
+			}
+			if file == "" {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(status, "A"):
+				statusMap[file] = "added"
+			case strings.HasPrefix(status, "D"):
+				statusMap[file] = "deleted"
+			case strings.HasPrefix(status, "R"):
+				statusMap[file] = "renamed"
+			case strings.HasPrefix(status, "C"):
+				statusMap[file] = "copied"
+			default:
+				statusMap[file] = "modified"
 			}
 		}
 		for i, fc := range changes {
@@ -255,14 +286,22 @@ func (g *Git) DiffStatAgainst(base, head string) (domain.DiffStats, []domain.Fil
 	return stats, changes, nil
 }
 
+func parseNumstatCount(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // DiffFilesAgainst returns the list of changed file paths.
 func (g *Git) DiffFilesAgainst(base, head string) ([]string, error) {
-	out, err := g.run("diff", "--name-only", base, head)
+	out, err := g.run("diff", "--name-only", "-z", base, head)
 	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for _, f := range strings.Split(strings.TrimSpace(out), "\n") {
+	for _, f := range strings.Split(out, "\x00") {
 		if f != "" {
 			files = append(files, f)
 		}

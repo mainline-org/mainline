@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/storage"
@@ -798,17 +800,48 @@ Start at ` + "`index.html`" + `.
 
 // fileSlug encodes a repo file path into a single safe filename.
 // `/` becomes `__`, other punctuation that is unsafe on common
-// filesystems is replaced by `_`. Collisions are theoretically
-// possible (e.g. `a__b.go` vs `a/b.go`) but extremely unlikely in
-// practice and acceptable for v1; v2 will move to API URLs.
+// filesystems is replaced by `_`. Long repo paths are capped with a
+// deterministic hash suffix so the generated single path component
+// stays under common filesystem NAME_MAX limits (255 bytes on macOS).
 func fileSlug(path string) string {
 	r := strings.NewReplacer("/", "__", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_")
-	return r.Replace(path)
+	return boundedSlug(r.Replace(path), path)
 }
 
 func actorSlug(id string) string {
 	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_")
-	return r.Replace(id)
+	return boundedSlug(r.Replace(id), id)
+}
+
+const hubSlugMaxBytes = 200
+
+func boundedSlug(slug, original string) string {
+	if len([]byte(slug)) <= hubSlugMaxBytes {
+		return slug
+	}
+	sum := sha256.Sum256([]byte(original))
+	suffix := fmt.Sprintf("--%x", sum[:6])
+	prefixBudget := hubSlugMaxBytes - len(suffix)
+	if prefixBudget < 0 {
+		prefixBudget = 0
+	}
+	return truncateUTF8Bytes(slug, prefixBudget) + suffix
+}
+
+func truncateUTF8Bytes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len([]byte(s)) <= max {
+		return s
+	}
+	if max > len(s) {
+		max = len(s)
+	}
+	for max > 0 && !utf8.ValidString(s[:max]) {
+		max--
+	}
+	return s[:max]
 }
 
 // buildFocusList produces the dashboard "Needs attention" list with
