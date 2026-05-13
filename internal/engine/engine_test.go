@@ -508,6 +508,37 @@ func TestShowPrefersTerminalViewOverStaleDraft(t *testing.T) {
 	}
 }
 
+func TestShowAddsMaterializedViewWithoutDroppingLocalDraft(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("test-agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	intentID, _ := seedSealedIntent(t, dir, svc, "show-proposed-view", "show_pv.go")
+
+	result, err := svc.Show(intentID)
+	if err != nil {
+		t.Fatalf("show: %v", err)
+	}
+	if result.View == nil {
+		t.Fatalf("show should expose sealed materialized view; got intent=%+v", result.Intent)
+	}
+	if result.Intent == nil {
+		t.Fatal("show should keep local draft in JSON for compatibility")
+	}
+	if result.View.Status != domain.StatusSealedLocal && result.View.Status != domain.StatusProposed {
+		t.Fatalf("expected sealed/proposed view status, got %s", result.View.Status)
+	}
+	if result.View.CodeCommit == "" {
+		t.Fatal("sealed view should expose code_commit")
+	}
+	if result.View.Summary == nil || result.View.Summary.Title != "Test Title" {
+		t.Fatalf("sealed view should expose seal summary, got %+v", result.View.Summary)
+	}
+}
+
 func TestShowNotFound(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
