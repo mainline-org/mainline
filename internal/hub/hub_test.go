@@ -506,6 +506,42 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	}
 }
 
+func TestExport_BoundsLongFilePageSlug(t *testing.T) {
+	dir := t.TempDir()
+	repoRoot := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".ml-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := storage.New(repoRoot, nil)
+
+	longPath := `domain_docs/mes/spec/process/compair/smt_forms/` +
+		strings.Repeat(`\345\215\260\345\210\267\346\234\272`, 18) +
+		` (QR-Mac-144).md`
+	longSlug := fileSlug(longPath)
+	if got := len([]byte(longSlug + ".html")); got > 255 {
+		t.Fatalf("file page slug must fit a filesystem path component: got %d bytes (%q)", got, longSlug)
+	}
+	if !strings.Contains(longSlug, "--") {
+		t.Fatalf("long slug should keep a hash suffix to avoid collisions, got %q", longSlug)
+	}
+
+	v := makeView(intent("int_long_file", "actor", "2026-04-28T01:00:00Z", domain.StatusMerged, longPath))
+	if err := store.WriteMainlineView(v); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "site")
+	if _, err := Export(store, ExportOptions{OutputDir: out}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "files", longSlug+".html")); err != nil {
+		t.Fatalf("expected bounded file page on disk: %v", err)
+	}
+	filesPage, _ := os.ReadFile(filepath.Join(out, "files.html"))
+	if !strings.Contains(string(filesPage), "files/"+longSlug+".html") {
+		t.Fatalf("files index should link to bounded slug %q", longSlug)
+	}
+}
+
 func TestExport_NoIntentsStillWritesIndex(t *testing.T) {
 	dir := t.TempDir()
 	repoRoot := filepath.Join(dir, "repo")
