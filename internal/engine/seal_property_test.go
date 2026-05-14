@@ -48,6 +48,7 @@ func TestPropertySealSubmitNeverMutatesOnValidationFailure(t *testing.T) {
 		// schema validation, lookup/status checks, or deterministic lint.
 		failureMode := rapid.IntRange(0, 5).Draw(rt, "failureMode")
 		var sr domain.SealResult
+		var data []byte
 		switch failureMode {
 		case 0:
 			// Missing intent_id
@@ -64,20 +65,19 @@ func TestPropertySealSubmitNeverMutatesOnValidationFailure(t *testing.T) {
 			sr = validSealResultForPBT(draftBefore.IntentID)
 			sr.Summary.What = ""
 		case 4:
-			// Invalid anti-pattern (empty why)
+			// Legacy seal summary signal key rejected before mutation.
 			sr = validSealResultForPBT(draftBefore.IntentID)
-			sr.Summary.AntiPatterns = []domain.AntiPattern{{
-				What:     "something",
-				Why:      "",
-				Severity: "high",
-			}}
+			data, _ = json.Marshal(sr)
+			data = injectLegacySummarySignalKey(data, "anti_patterns")
 		case 5:
 			// Deterministic lint error (boilerplate what)
 			sr = validSealResultForPBT(draftBefore.IntentID)
 			sr.Summary.What = "implemented changes"
 		}
 
-		data, _ := json.Marshal(sr)
+		if data == nil {
+			data, _ = json.Marshal(sr)
+		}
 		_, _ = svc.SealSubmitWithOptions(json.RawMessage(data), nil)
 
 		// Draft status MUST NOT have changed
@@ -171,7 +171,7 @@ func TestPropertyValidateSealResultCompleteness(t *testing.T) {
 func validSealResultForPBT(intentID string) domain.SealResult {
 	return domain.SealResult{
 		IntentID: intentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "title",
 			What:  "what",
 			Why:   "why",
@@ -192,6 +192,19 @@ func validSealResultForPBT(intentID string) domain.SealResult {
 	}
 }
 
+func injectLegacySummarySignalKey(data []byte, key string) []byte {
+	var root map[string]interface{}
+	_ = json.Unmarshal(data, &root)
+	summary, _ := root["summary"].(map[string]interface{})
+	if summary == nil {
+		summary = map[string]interface{}{}
+		root["summary"] = summary
+	}
+	summary[key] = []interface{}{}
+	out, _ := json.Marshal(root)
+	return out
+}
+
 func drawValidSealResult(rt *rapid.T) domain.SealResult {
 	titleAlpha := []string{"fix auth", "refactor sync", "add JWT", "update docs"}
 	fileAlpha := []string{"a.go", "b.go", "internal/x.go", "README.md"}
@@ -210,7 +223,7 @@ func drawValidSealResult(rt *rapid.T) domain.SealResult {
 
 	return domain.SealResult{
 		IntentID: "int_" + rapid.StringMatching(`[a-f0-9]{8}`).Draw(rt, "id"),
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: rapid.SampledFrom(titleAlpha).Draw(rt, "title"),
 			What:  "implemented " + rapid.SampledFrom(titleAlpha).Draw(rt, "what"),
 			Why:   "because " + rapid.SampledFrom(titleAlpha).Draw(rt, "why"),

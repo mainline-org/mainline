@@ -186,19 +186,26 @@ current decision. The superseded intent is valuable context
 
 ### 6.7 Explicit signal writes (MUST NOT use seal)
 
-When sealing, agents MUST NOT create durable action signals by filling
-`summary.risks`, `summary.followups`, or `summary.anti_patterns`.
-Seal records decisions by default.
+The seal submit input uses a write-only summary schema. It records
+history, decisions, inherited-constraint acknowledgements, and reviewer
+context; it does not contain durable action-signal creation fields such
+as legacy `summary.risks`, `summary.followups`, or
+`summary.anti_patterns`. Old temp seal payloads containing those keys
+MUST be rejected rather than silently converted or ignored.
 
 Agents SHOULD:
 
 - Move acceptable trade-offs to `decisions[].chose` with rationale.
 - Move reviewer-only context to `review_notes`.
+- Use `summary.acknowledged_constraints` only to acknowledge inherited
+  constraints that retrieval actually surfaced.
 - Use `mainline risks add` only for a concrete failure mode with
   trigger or impact, plus mitigation / validation / owner.
 - Use `mainline followups add` only for explicit user deferral, an
   external issue/ticket/PR reference, or a real cut-scope task.
 - Never create constraints; a human must confirm `mainline guard add`.
+- Mention candidate signals in the final response when they are not
+  promoted enough for an explicit signal command.
 
 ### 6.8 Writing seals (MUST)
 
@@ -210,8 +217,8 @@ A well-formed seal:
 - Has at least one `decision` with a choice point and what was chosen.
 - Has `fingerprint.subsystems` and `fingerprint.files_touched` populated.
 - Has `tags` populated generously (synonyms, parent concepts).
-- Does not contain `summary.risks`, `summary.followups`, or
-  `summary.anti_patterns`.
+- Uses the seal write schema only: no legacy `summary.risks`,
+  `summary.followups`, or `summary.anti_patterns` keys.
 
 ## 7. Task priority matrix
 

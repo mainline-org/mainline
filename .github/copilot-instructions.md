@@ -34,9 +34,10 @@ out. The seal is the team's memory — translating it makes it harder
 to read for the people whose memory it is. Code identifiers, command
 names, and file paths stay in their original form.
 
-Seal records decisions by default. Do not add `summary.risks`,
-`summary.followups`, or `summary.anti_patterns` to a seal payload.
-Use explicit `mainline risk add`, `mainline followup add`, or
+Seal records decisions by default. The seal summary write schema does
+not contain durable signal creation fields such as legacy
+`summary.risks`, `summary.followups`, or `summary.anti_patterns`.
+Use explicit `mainline risks add`, `mainline followups add`, or
 interactive human-confirmed `mainline guard add` for durable signals.
 
 ### If `mainline hooks` is installed for your agent

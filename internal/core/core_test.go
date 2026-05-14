@@ -143,7 +143,7 @@ func TestValidateStateTransition(t *testing.T) {
 func TestValidateSealResult(t *testing.T) {
 	valid := &domain.SealResult{
 		IntentID: "int_abc12345",
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "Add feature X",
 			What:  "Adds feature X to module Y",
 			Why:   "Users need X",
@@ -300,7 +300,7 @@ func TestPropertySealValidationRejectsEmptyFields(t *testing.T) {
 	// Property: a SealResult with any required field empty should fail
 	base := domain.SealResult{
 		IntentID: "int_12345678",
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "title", What: "what", Why: "why",
 		},
 		Fingerprint: domain.SemanticFingerprint{

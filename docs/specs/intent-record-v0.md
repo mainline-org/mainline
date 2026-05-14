@@ -146,6 +146,13 @@ New hard constraints are created as explicit signal events, not through
 `IntentSummary.anti_patterns`; active context and queue surfaces ignore
 this field.
 
+`IntentSummary` is the read/materialized summary stored on sealed intent
+events. It keeps legacy signal fields so old actor-log records remain
+parseable, but `mainline seal --submit` accepts a separate write schema
+that omits `risks`, `followups`, and `anti_patterns`. Durable signal
+creation happens through `constraint.added`, `risk.added`, and
+`followup.added` actor-log events.
+
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `what` | string | ✓ | The action to avoid. Must not be empty. |

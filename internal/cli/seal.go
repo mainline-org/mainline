@@ -18,6 +18,7 @@ var sealSubmit bool
 var sealIntentID string
 var sealOffline bool
 var sealAllowDirty bool
+var sealAllowStructuredSignals bool
 var sealRefs []string
 
 var sealCmd = &cobra.Command{
@@ -27,6 +28,15 @@ var sealCmd = &cobra.Command{
 		svc, err := getService()
 		if err != nil {
 			outputError(err)
+			return
+		}
+
+		if sealAllowStructuredSignals {
+			outputError(domain.NewRecoverableError(domain.ErrInvalidInput,
+				"--allow-structured-signals is deprecated",
+				"seal summary no longer accepts durable signal creation fields",
+				"use `mainline risks add`, `mainline followups add`, or human-confirmed `mainline guard add` instead",
+			))
 			return
 		}
 
@@ -158,6 +168,7 @@ func init() {
 	sealCmd.Flags().StringVar(&sealIntentID, "intent", "", "intent ID (default: active intent on current branch)")
 	sealCmd.Flags().BoolVar(&sealOffline, "offline", false, "skip the auto sync+check inside --submit (sealed_local only)")
 	sealCmd.Flags().BoolVar(&sealAllowDirty, "allow-dirty", false, "submit even when worktree is dirty/untracked (records dirty status in audit trail)")
+	sealCmd.Flags().BoolVar(&sealAllowStructuredSignals, "allow-structured-signals", false, "deprecated: seal no longer creates durable signals; use explicit signal commands")
 	sealCmd.Flags().StringArrayVar(&sealRefs, "ref", nil, "attach reference (format: kind:client:ref, e.g. session:claude-code:sess_abc123)")
 }
 

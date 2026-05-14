@@ -84,7 +84,7 @@ func AuthMiddleware() {}
 	// Step 5: Seal submit (simulate agent producing SealResult)
 	sealResult := domain.SealResult{
 		IntentID: startResult.IntentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title:    "Implement JWT authentication",
 			What:     "Added JWT-based authentication with login endpoint and middleware",
 			Why:      "Application needs secure user authentication",
@@ -217,7 +217,7 @@ func TestSealRejectInvalidResult(t *testing.T) {
 	// Missing required fields
 	invalid := domain.SealResult{
 		IntentID: start.IntentID,
-		Summary:  domain.IntentSummary{Title: ""}, // missing What, Why
+		Summary:  domain.SealSummaryInput{Title: ""}, // missing What, Why
 	}
 	data, _ := json.Marshal(invalid)
 	_, err := svc.SealSubmit(json.RawMessage(data))
@@ -292,7 +292,7 @@ func TestCheckPrepareWithOverlap(t *testing.T) {
 
 	sr1 := domain.SealResult{
 		IntentID: start1.IntentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "Auth",
 			What:  "auth",
 			Why:   "security",
@@ -325,7 +325,7 @@ func TestCheckPrepareWithOverlap(t *testing.T) {
 
 	sr2 := domain.SealResult{
 		IntentID: start2.IntentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "Auth v2",
 			What:  "auth v2",
 			Why:   "upgrade",
@@ -608,7 +608,7 @@ func writeFile(t helperTB, dir, name, content string) {
 func validSealResult(intentID string) domain.SealResult {
 	return domain.SealResult{
 		IntentID: intentID,
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "Test Title",
 			What:  "Test what",
 			Why:   "Test why",

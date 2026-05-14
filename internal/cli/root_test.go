@@ -17,3 +17,9 @@ func TestSignalCommandsUsePluralQueues(t *testing.T) {
 		t.Fatalf("followups add command missing: cmd=%v err=%v", cmd, err)
 	}
 }
+
+func TestSealStructuredSignalsFlagIsDeprecatedButParsed(t *testing.T) {
+	if flag := sealCmd.Flags().Lookup("allow-structured-signals"); flag == nil {
+		t.Fatal("deprecated --allow-structured-signals flag should remain parseable for migration errors")
+	}
+}

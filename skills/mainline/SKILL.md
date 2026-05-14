@@ -449,12 +449,15 @@ stays out of git AND keeps the v0.3 worktree-clean check happy on
 submit. The package contains a `seal_result_starter` field with the
 deterministic bits (intent_id, fingerprint.files_touched,
 fingerprint.subsystems) pre-populated — patch in title / what / why /
-decisions / rejected / review_notes / fingerprint / confidence rather
-than typing the JSON from scratch.
+decisions / rejected / acknowledged_constraints when applicable /
+review_notes / fingerprint / confidence rather than typing the JSON
+from scratch.
 
-Seal records decisions by default. Do not add `summary.risks`,
-`summary.followups`, or `summary.anti_patterns` to the seal payload.
-Those are durable action signals, not completeness fields.
+Seal records decisions by default. The seal summary write schema does
+not include durable signal creation fields such as legacy
+`summary.risks`, `summary.followups`, or `summary.anti_patterns`; old
+temp seal files containing those keys are rejected and should be
+regenerated with `mainline seal --prepare --json`.
 
 Use explicit signal commands only when the source is real:
 
@@ -468,7 +471,9 @@ Use explicit signal commands only when the source is real:
 
 If you only have reviewer context, validation notes, accepted trade-offs,
 scope explanation, or a "maybe later" thought, keep it in `review_notes`,
-`decisions`, or leave it out.
+`decisions`, final response, or leave it out. Candidate constraints can
+be proposed to the user, but only the human-confirmed guard command
+makes them durable.
 
 Generate a SealResult JSON matching the returned schema. The fingerprint must
 be specific enough for conflict detection:

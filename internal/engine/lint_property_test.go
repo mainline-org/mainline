@@ -9,11 +9,10 @@ import (
 
 	"pgregory.net/rapid"
 
-	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
-// PBTs for the lint subsystem and the AntiPattern validator. These
+// PBTs for the lint subsystem and legacy AntiPattern linting. These
 // supplement the example-based tests in lint_test.go and
 // context_retrieval_test.go: examples pin obvious cases for fast
 // feedback; PBTs explore the input space rapid considers most
@@ -80,68 +79,59 @@ func TestPropertyLintWarningsNeverFailPass(t *testing.T) {
 	})
 }
 
-// AntiPattern validation: ValidateSealResult must reject any
-// AntiPattern with empty `what` OR empty `why`, and must accept any
-// AntiPattern with non-empty both fields and a canonical severity.
-// Property test asserts the rule across random inputs.
-func TestPropertyAntiPatternValidation(t *testing.T) {
+// Legacy anti-pattern lint must flag empty `what` or `why` while accepting
+// coherent historical records. New seal submissions use SealSummaryInput and
+// cannot create anti_patterns.
+func TestPropertyLegacyAntiPatternLint(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
-		// A baseline-valid SealResult so we isolate the anti_pattern
-		// rules under test.
-		base := func() *domain.SealResult {
-			return &domain.SealResult{
-				IntentID: "int_x12345678",
-				Summary: domain.IntentSummary{
-					Title: "t", What: "w", Why: "y",
-				},
-				Fingerprint: domain.SemanticFingerprint{
-					Subsystems:   []string{"s"},
-					FilesTouched: []string{"f.go"},
-				},
-				Confidence: domain.SealConfidence{Summary: 0.9, Fingerprint: 0.9},
-			}
-		}
-
 		whatRaw := rapid.SampledFrom([]string{"", " ", "do not delete X", "Removing the /oauth path"}).Draw(rt, "what")
 		whyRaw := rapid.SampledFrom([]string{"", "  ", "OAuth callback needs it", "Production constraint"}).Draw(rt, "why")
-		severity := rapid.SampledFrom([]string{"", "low", "medium", "high", "catastrophic", "highish"}).Draw(rt, "sev")
 
-		sr := base()
-		sr.Summary.AntiPatterns = []domain.AntiPattern{
-			{What: whatRaw, Why: whyRaw, Severity: severity},
+		summary := &domain.IntentSummary{
+			Title:     "t",
+			What:      "w",
+			Why:       "y",
+			Decisions: []domain.Decision{{Point: "p", Chose: "c"}},
+			AntiPatterns: []domain.AntiPattern{
+				{What: whatRaw, Why: whyRaw, Severity: "high"},
+			},
 		}
-		err := importedValidate(sr)
+		fp := &domain.SemanticFingerprint{Subsystems: []string{"s"}, FilesTouched: []string{"f.go"}}
+		res := LintIntent("int_x12345678", summary, fp, "", nil)
 
 		whatEmpty := strings.TrimSpace(whatRaw) == ""
 		whyEmpty := strings.TrimSpace(whyRaw) == ""
-		sevValid := severity == "" || severity == "low" || severity == "medium" || severity == "high"
 
 		switch {
 		case whatEmpty:
-			if err == nil {
+			if res.Pass {
 				rt.Fatalf("empty what must be rejected: what=%q", whatRaw)
 			}
-			if !strings.Contains(err.Error(), "what") {
-				rt.Errorf("error should mention 'what' for empty-what case: %v", err)
+			if !strings.Contains(issueText(res.Issues), "anti_pattern_no_what") {
+				rt.Errorf("issues should mention anti_pattern_no_what: %+v", res.Issues)
 			}
 		case whyEmpty:
-			if err == nil {
+			if res.Pass {
 				rt.Fatalf("empty why must be rejected: why=%q", whyRaw)
 			}
-			if !strings.Contains(err.Error(), "why") {
-				rt.Errorf("error should mention 'why' for empty-why case: %v", err)
-			}
-		case !sevValid:
-			if err == nil {
-				rt.Fatalf("non-canonical severity must be rejected: sev=%q", severity)
+			if !strings.Contains(issueText(res.Issues), "anti_pattern_no_why") {
+				rt.Errorf("issues should mention anti_pattern_no_why: %+v", res.Issues)
 			}
 		default:
-			if err != nil {
-				rt.Fatalf("valid anti_pattern must pass: what=%q why=%q sev=%q got %v",
-					whatRaw, whyRaw, severity, err)
+			if !res.Pass {
+				rt.Fatalf("valid anti_pattern should pass lint: what=%q why=%q issues=%+v",
+					whatRaw, whyRaw, res.Issues)
 			}
 		}
 	})
+}
+
+func issueText(issues []LintIssue) string {
+	var parts []string
+	for _, issue := range issues {
+		parts = append(parts, issue.Code, issue.Message)
+	}
+	return strings.Join(parts, " ")
 }
 
 // Branch reachability for classifyRetrievalStatus: each of the four
@@ -228,13 +218,6 @@ func drawFingerprintForLint(rt *rapid.T, label string) *domain.SemanticFingerpri
 		fp.FilesTouched = []string{"f.go"}
 	}
 	return fp
-}
-
-// importedValidate is a tiny shim so the property test can call
-// core.ValidateSealResult without repeating the import expression
-// at every call site.
-func importedValidate(sr *domain.SealResult) error {
-	return core.ValidateSealResult(sr)
 }
 
 func nowForBranchTest() time.Time {

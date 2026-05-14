@@ -86,7 +86,7 @@ func TestSealUnmarshalErrorAddsGenericStringArrayHint(t *testing.T) {
 
 func TestNormalizeSealResultForSubmitDropsBlankReviewNotes(t *testing.T) {
 	sr := &domain.SealResult{
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			ReviewNotes: []string{"", "  ", "review this path"},
 		},
 	}

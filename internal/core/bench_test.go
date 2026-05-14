@@ -105,7 +105,7 @@ func BenchmarkValidateStateTransition(b *testing.B) {
 func BenchmarkValidateSealResult(b *testing.B) {
 	sr := &domain.SealResult{
 		IntentID: "int_12345678",
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			Title: "title", What: "what", Why: "why",
 		},
 		Fingerprint: domain.SemanticFingerprint{

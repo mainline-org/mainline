@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 26 -->
+<!-- mainline-agents-md-version: 27 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -334,17 +334,21 @@ the next state in a new turn.
    "tags": ["auth", "authentication", "security", "jwt", "session"]
    ```
 
-   Schema guard: `summary.decisions` and `summary.rejected` are arrays
-   of objects, not string arrays. Use `summary.decisions[].point` /
-   `chose` / optional `rationale`; use `summary.rejected[].alternative`
-   / optional `reason`, or keep `summary.rejected` as `[]`.
+   Schema guard: `summary.decisions`, `summary.rejected`, and
+   `summary.acknowledged_constraints` are arrays of objects, not string
+   arrays. Use `summary.decisions[].point` / `chose` / optional
+   `rationale`; use `summary.rejected[].alternative` / optional
+   `reason`, or keep `summary.rejected` as `[]`. Use
+   `summary.acknowledged_constraints[].constraint_id` / `disposition` /
+   optional `note` only for inherited constraints you actually saw.
    `summary.review_notes` is a string array; keep it as `[]` when
    there is no ephemeral reviewer context.
    `fingerprint.api_changes` and `fingerprint.data_model_changes` are
    also object arrays; keep them as `[]` when none apply.
 
-   Seal records decisions by default. It does not let agents create
-   repo-wide constraints, risks, or follow-up queues. Use:
+   Seal records decisions by default. The seal summary schema is not a
+   durable signal creation surface and does not contain repo-wide
+   constraints, risks, or follow-up queues. Use:
 
    - `review_notes` for ephemeral reviewer context.
    - `decisions` for accepted trade-offs and implementation limits.
@@ -355,8 +359,12 @@ the next state in a new turn.
      real scope.
    - `mainline guard add` only through interactive human confirmation.
 
-   Submit rejects any seal payload containing `summary.risks`,
-   `summary.followups`, or `summary.anti_patterns`.
+   If a possible signal is not promoted enough for those commands,
+   mention it in the final response; keep it in `review_notes` only when
+   it is useful reviewer context for this PR. Submit rejects legacy seal
+   payloads containing `summary.risks`, `summary.followups`, or
+   `summary.anti_patterns`; re-run `mainline seal --prepare --json` if
+   you see those keys in an old temp file.
 
    If `mainline context` surfaced `inherited_constraints`, acknowledge
    each in the seal's `summary.acknowledged_constraints`:

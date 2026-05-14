@@ -157,7 +157,7 @@ func TestLintIntent_SupersedesKnownIsSilent(t *testing.T) {
 func TestLintSealResult_Wraps(t *testing.T) {
 	r := LintSealResult(&domain.SealResult{
 		IntentID: "int_x",
-		Summary: domain.IntentSummary{
+		Summary: domain.SealSummaryInput{
 			What: "implemented changes", Why: "y", Decisions: nonEmptyDecisions(),
 		},
 		Fingerprint: domain.SemanticFingerprint{Subsystems: []string{"s"}, FilesTouched: []string{"f"}},
