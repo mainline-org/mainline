@@ -182,6 +182,43 @@ func TestInitCanUpdateExistingIdentityActorName(t *testing.T) {
 	}
 }
 
+func TestInitReportsProgress(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	var messages []string
+	if _, err := svc.InitWithOptions("test-agent", InitOptions{
+		Progress: func(message string) {
+			messages = append(messages, message)
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"creating Mainline directories",
+		"writing repository config",
+		"writing local actor identity",
+		"configuring git refs",
+		"staging setup files",
+		"committing setup files",
+		"building local Mainline view",
+	}
+	for _, needle := range want {
+		found := false
+		for _, got := range messages {
+			if got == needle {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("progress messages missing %q; got %#v", needle, messages)
+		}
+	}
+}
+
 func TestStartAndAppend(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()

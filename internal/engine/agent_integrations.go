@@ -18,6 +18,7 @@ import (
 
 type InitOptions struct {
 	InstallAgentIntegrations bool
+	Progress                 func(message string)
 }
 
 type AgentIntegrationInstallResult struct {
@@ -42,8 +43,19 @@ type HookInstallResult struct {
 }
 
 func (s *Service) InstallDefaultAgentIntegrations() *AgentIntegrationInstallResult {
+	return s.installDefaultAgentIntegrations(nil)
+}
+
+func (s *Service) installDefaultAgentIntegrations(progress func(message string)) *AgentIntegrationInstallResult {
+	if progress != nil {
+		progress("installing default Mainline skill (this can take a minute on first run)")
+	}
+	skill := s.installDefaultSkill()
+	if progress != nil {
+		progress("installing repo-local hooks")
+	}
 	return &AgentIntegrationInstallResult{
-		Skill: s.installDefaultSkill(),
+		Skill: skill,
 		Hooks: s.installDefaultHooks(),
 	}
 }

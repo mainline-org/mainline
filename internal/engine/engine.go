@@ -128,6 +128,7 @@ func (s *Service) Init(actorName string) (*InitResult, error) {
 
 func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResult, error) {
 	if s.Store.IsInitialized() {
+		opts.reportProgress("checking existing Mainline setup")
 		if err := s.Store.EnsureDirs(); err != nil {
 			return nil, fmt.Errorf("create dirs: %w", err)
 		}
@@ -143,6 +144,7 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 				return nil, domain.NewError(domain.ErrAlreadyInitialized,
 					".mainline already exists and local identity is configured")
 			}
+			opts.reportProgress("updating local actor identity")
 			oldName := identity.ActorName
 			identity.ActorName = actorName
 			if err := s.Store.WriteIdentity(identity); err != nil {
@@ -157,6 +159,7 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 			if err := s.Store.WriteLocalConfig(localCfg); err != nil {
 				return nil, fmt.Errorf("write local config: %w", err)
 			}
+			opts.reportProgress("building local Mainline view")
 			s.ensureLocalViews(cfg)
 			return &InitResult{
 				RepoRoot:        s.Git.RepoRoot,
@@ -214,10 +217,12 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 		cfg.Mainline.Coverage.BaselineCommit = head
 	}
 
+	opts.reportProgress("creating Mainline directories")
 	if err := s.Store.EnsureDirs(); err != nil {
 		return nil, fmt.Errorf("create dirs: %w", err)
 	}
 
+	opts.reportProgress("writing repository config")
 	if err := s.Store.WriteTeamConfig(&cfg); err != nil {
 		return nil, fmt.Errorf("write config: %w", err)
 	}
@@ -232,6 +237,7 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 		ActorName: actorName,
 		CreatedAt: core.Now(),
 	}
+	opts.reportProgress("writing local actor identity")
 	if err := s.Store.WriteIdentity(identity); err != nil {
 		return nil, fmt.Errorf("write identity: %w", err)
 	}
@@ -252,12 +258,14 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 	// shouldn't ride into shared history. Without local.toml here,
 	// fresh-init repos would have an untracked file and the v0.3
 	// snapshot contract would refuse subsequent seals.
+	opts.reportProgress("updating .gitignore")
 	if err := s.Git.EnsureGitignore([]string{".ml-cache/", ".mainline/local.toml"}); err != nil {
 		return nil, fmt.Errorf("update .gitignore: %w", err)
 	}
 
 	// Configure git notes + actor-log fetch/push so the dedicated
 	// mainline refs travel with normal `git push` / `git fetch`.
+	opts.reportProgress("configuring git refs")
 	s.configureRemoteRefspecs(cfg.Mainline.ActorLogPrefix)
 	// Configure git log to show mainline notes by default
 	_ = s.Git.ConfigAdd("notes.displayRef", "refs/notes/mainline/*")
@@ -265,13 +273,14 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 	var integrations *AgentIntegrationInstallResult
 	if opts.InstallAgentIntegrations {
 		cfg.Hooks = domain.DefaultHooksSection()
-		integrations = s.InstallDefaultAgentIntegrations()
+		integrations = s.installDefaultAgentIntegrations(opts.Progress)
 	}
 
 	// Commit .mainline/config.toml plus repo-local hook config that
 	// Init created in one commit so a fresh-init repo lands with a
 	// clean worktree. Skill installation is outside the repo and is
 	// reported separately.
+	opts.reportProgress("staging setup files")
 	if err := s.Store.WriteTeamConfig(&cfg); err != nil {
 		return nil, fmt.Errorf("write team config: %w", err)
 	}
@@ -294,6 +303,7 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 	// `commit` may fail if there is nothing to commit (re-running init);
 	// that's the documented idempotent case, not a bug. When it does
 	// commit, capture the SHA so the user sees it on screen.
+	opts.reportProgress("committing setup files")
 	commitSHA := ""
 	if _, err := s.Git.Run("commit", "-m", "mainline: init"); err == nil {
 		if sha, err := s.Git.Run("rev-parse", "HEAD"); err == nil {
@@ -301,6 +311,7 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 		}
 	}
 
+	opts.reportProgress("building local Mainline view")
 	s.ensureLocalViews(&cfg)
 
 	return &InitResult{
@@ -313,6 +324,12 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 		CommitHash:        commitSHA,
 		AgentIntegrations: integrations,
 	}, nil
+}
+
+func (opts InitOptions) reportProgress(message string) {
+	if opts.Progress != nil {
+		opts.Progress(message)
+	}
 }
 
 // configureRemoteRefspecs ensures the configured remote's fetch/push

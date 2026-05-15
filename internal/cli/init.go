@@ -69,6 +69,7 @@ that without re-creating identity or team config.`,
 
 		result, err := svc.InitWithOptions(resolvedName, engine.InitOptions{
 			InstallAgentIntegrations: true,
+			Progress:                 initProgressPrinter(),
 		})
 		if err != nil {
 			outputError(err)
@@ -193,6 +194,15 @@ func shouldPromptInitActorName() bool {
 	return !jsonOutput &&
 		isatty.IsTerminal(os.Stdin.Fd()) &&
 		isatty.IsTerminal(os.Stdout.Fd())
+}
+
+func initProgressPrinter() func(message string) {
+	if jsonOutput {
+		return nil
+	}
+	return func(message string) {
+		fmt.Fprintf(os.Stderr, "mainline init: %s\n", message)
+	}
 }
 
 func renderInitAgentIntegrations(r *engine.AgentIntegrationInstallResult) {
