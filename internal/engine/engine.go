@@ -116,6 +116,10 @@ type InitResult struct {
 	// installation that CLI init requests. Engine callers that need
 	// the historical "state only" behavior call Init without options.
 	AgentIntegrations *AgentIntegrationInstallResult `json:"agent_integrations,omitempty"`
+
+	// IdentityUpdated is true when init ran against an already
+	// initialized clone and only changed the clone-local actor name.
+	IdentityUpdated bool `json:"identity_updated,omitempty"`
 }
 
 func (s *Service) Init(actorName string) (*InitResult, error) {
@@ -133,9 +137,35 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 			return nil, domain.NewError(domain.ErrNotInitialized, "config not found; run 'mainline init'")
 		}
 
-		if _, err := s.Store.ReadIdentity(); err == nil {
-			return nil, domain.NewError(domain.ErrAlreadyInitialized,
-				".mainline already exists and local identity is configured")
+		if identity, err := s.Store.ReadIdentity(); err == nil {
+			actorName = strings.TrimSpace(actorName)
+			if actorName == "" {
+				return nil, domain.NewError(domain.ErrAlreadyInitialized,
+					".mainline already exists and local identity is configured")
+			}
+			oldName := identity.ActorName
+			identity.ActorName = actorName
+			if err := s.Store.WriteIdentity(identity); err != nil {
+				return nil, fmt.Errorf("write identity: %w", err)
+			}
+			localCfg := &domain.LocalConfig{
+				Actor: domain.ActorSection{
+					ID:   identity.ActorID,
+					Name: identity.ActorName,
+				},
+			}
+			if err := s.Store.WriteLocalConfig(localCfg); err != nil {
+				return nil, fmt.Errorf("write local config: %w", err)
+			}
+			s.ensureLocalViews(cfg)
+			return &InitResult{
+				RepoRoot:        s.Git.RepoRoot,
+				ActorID:         identity.ActorID,
+				ActorName:       identity.ActorName,
+				MainBranch:      cfg.Mainline.MainBranch,
+				Created:         false,
+				IdentityUpdated: oldName != identity.ActorName,
+			}, nil
 		} else if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("read identity: %w", err)
 		}
@@ -1308,7 +1338,7 @@ func (s *Service) IdentityConfigured() bool {
 }
 
 func (s *Service) actorDisplayName(identity *domain.Identity) string {
-	name := strings.TrimSpace(s.Git.ConfigGet("user.name"))
+	name := strings.TrimSpace(s.Git.ConfigGetOne("user.name"))
 	if name != "" {
 		return name
 	}

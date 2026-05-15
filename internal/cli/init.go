@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strings"
 
+	isatty "github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
 	"github.com/mainline-org/mainline/internal/engine"
@@ -63,18 +65,7 @@ that without re-creating identity or team config.`,
 			return
 		}
 
-		// Resolve actor name: explicit --actor-name wins; fall back
-		// to MAINLINE_ACTOR_NAME if exported; otherwise svc.Init
-		// will use its internal default ("default-agent") and we
-		// warn loudly below.
-		resolvedName := initActorName
-		usedEnvFallback := false
-		if resolvedName == "" {
-			if envName := strings.TrimSpace(os.Getenv(envActorName)); envName != "" {
-				resolvedName = envName
-				usedEnvFallback = true
-			}
-		}
+		resolvedName, actorNameSource := resolveInitActorName(svc, initActorName)
 
 		result, err := svc.InitWithOptions(resolvedName, engine.InitOptions{
 			InstallAgentIntegrations: true,
@@ -87,12 +78,28 @@ that without re-creating identity or team config.`,
 		if jsonOutput {
 			outputJSON(result)
 		} else {
+			if !result.Created {
+				fmt.Printf("Mainline already initialized in %s\n", result.RepoRoot)
+				if result.IdentityUpdated {
+					fmt.Printf("  Updated local actor name: %s\n", result.ActorName)
+				} else {
+					fmt.Printf("  Local actor name already: %s\n", result.ActorName)
+				}
+				fmt.Println()
+				fmt.Println("Next: start work with your agent, then inspect recorded intent with `mainline log` or `mainline hub open`.")
+				return
+			}
 			fmt.Printf("Mainline initialized in %s\n", result.RepoRoot)
 			fmt.Printf("  Actor ID:    %s\n", result.ActorID)
 			fmt.Printf("  Actor name:  %s\n", result.ActorName)
 			fmt.Printf("  Main branch: %s\n", result.MainBranch)
-			if usedEnvFallback {
+			switch actorNameSource {
+			case "env":
 				fmt.Printf("  (actor name picked up from $%s)\n", envActorName)
+			case "git":
+				fmt.Println("  (actor name picked up from git config user.name)")
+			case "prompt":
+				fmt.Println("  (actor name entered at the terminal)")
 			}
 			// Surface what Init actually wrote to git. Pre-this-fix
 			// the success message was silent about the new commit;
@@ -126,11 +133,11 @@ that without re-creating identity or team config.`,
 			// `mainline init` and silently becomes "default-agent"
 			// in every actor log + commit note, with no prompt to
 			// fix it. Now we say so loudly.
-			if resolvedName == "" {
+			if result.ActorName == "default-agent" {
 				fmt.Println()
 				fmt.Println("⚠ No --actor-name passed; defaulted to 'default-agent'.")
-				fmt.Println("  Re-run with --actor-name \"<your name>\" to claim a")
-				fmt.Println("  recognisable identity, or export $" + envActorName + " in your shell.")
+				fmt.Println("  Run `mainline init --actor-name \"<your name>\"` to update")
+				fmt.Println("  this clone-local identity, or export $" + envActorName + " in your shell.")
 				fmt.Println("  (it shows up in `mainline log`, on commit notes, and in the audit trail).")
 			}
 			remote := svc.RemoteName()
@@ -151,6 +158,41 @@ that without re-creating identity or team config.`,
 func init() {
 	initCmd.Flags().StringVar(&initActorName, "actor-name", "", "name for this actor identity (or export "+envActorName+")")
 	initCmd.Flags().BoolVar(&initRewire, "rewire", false, "(re-)apply remote refspec config on an already-initialised repo")
+}
+
+func resolveInitActorName(svc *engine.Service, explicit string) (string, string) {
+	if name := strings.TrimSpace(explicit); name != "" {
+		return name, "flag"
+	}
+	if envName := strings.TrimSpace(os.Getenv(envActorName)); envName != "" {
+		return envName, "env"
+	}
+	gitName := strings.TrimSpace(svc.Git.ConfigGetOne("user.name"))
+	if shouldPromptInitActorName() {
+		defaultName := gitName
+		if defaultName == "" {
+			defaultName = "default-agent"
+		}
+		fmt.Fprintf(os.Stdout, "Actor name [%s]: ", defaultName)
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		if name := strings.TrimSpace(line); name != "" {
+			return name, "prompt"
+		}
+		if gitName != "" {
+			return gitName, "git"
+		}
+		return "", "default"
+	}
+	if gitName != "" {
+		return gitName, "git"
+	}
+	return "", "default"
+}
+
+func shouldPromptInitActorName() bool {
+	return !jsonOutput &&
+		isatty.IsTerminal(os.Stdin.Fd()) &&
+		isatty.IsTerminal(os.Stdout.Fd())
 }
 
 func renderInitAgentIntegrations(r *engine.AgentIntegrationInstallResult) {

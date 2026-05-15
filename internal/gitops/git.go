@@ -1262,6 +1262,16 @@ func (g *Git) ConfigGet(key string) string {
 	return strings.TrimSpace(out)
 }
 
+// ConfigGetOne returns the effective scalar value of a git config key,
+// empty if not set.
+func (g *Git) ConfigGetOne(key string) string {
+	out, err := g.run("config", "--get", key)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 func (g *Git) ConfigUnsetAll(key, valueRegex string) error {
 	_, err := g.run("config", "--unset-all", key, valueRegex)
 	return err
