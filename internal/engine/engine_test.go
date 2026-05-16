@@ -122,10 +122,100 @@ func TestInitAndStatus(t *testing.T) {
 		t.Fatalf("status effective autonomy: got %q want %q", got, want)
 	}
 
-	// Double init should fail
-	_, err = svc.Init("test-agent")
+	// Bare double init should still fail instead of silently doing work.
+	_, err = svc.Init("")
 	if err == nil {
 		t.Error("double init should fail")
+	}
+}
+
+func TestInitCanUpdateExistingIdentityActorName(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initResult, err := svc.Init("default-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	headBefore, err := svc.Git.HeadCommit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updateResult, err := svc.Init("z2z23n0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updateResult.Created {
+		t.Fatal("identity update should not report a fresh init")
+	}
+	if !updateResult.IdentityUpdated {
+		t.Fatal("identity update should report IdentityUpdated=true")
+	}
+	if updateResult.ActorID != initResult.ActorID {
+		t.Fatalf("actor ID should stay stable, got %q want %q", updateResult.ActorID, initResult.ActorID)
+	}
+	if updateResult.ActorName != "z2z23n0" {
+		t.Fatalf("actor name: got %q want %q", updateResult.ActorName, "z2z23n0")
+	}
+	headAfter, err := svc.Git.HeadCommit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headAfter != headBefore {
+		t.Fatalf("identity update should not create a commit, before=%s after=%s", headBefore, headAfter)
+	}
+	id, err := svc.Store.ReadIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.ActorName != "z2z23n0" {
+		t.Fatalf("stored actor name: got %q want %q", id.ActorName, "z2z23n0")
+	}
+	localCfg, err := svc.Store.ReadLocalConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if localCfg.Actor.Name != "z2z23n0" {
+		t.Fatalf("local config actor name: got %q want %q", localCfg.Actor.Name, "z2z23n0")
+	}
+}
+
+func TestInitReportsProgress(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	var messages []string
+	if _, err := svc.InitWithOptions("test-agent", InitOptions{
+		Progress: func(message string) {
+			messages = append(messages, message)
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"creating Mainline directories",
+		"writing repository config",
+		"writing local actor identity",
+		"configuring git refs",
+		"staging setup files",
+		"committing setup files",
+		"building local Mainline view",
+	}
+	for _, needle := range want {
+		found := false
+		for _, got := range messages {
+			if got == needle {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("progress messages missing %q; got %#v", needle, messages)
+		}
 	}
 }
 
