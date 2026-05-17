@@ -125,6 +125,14 @@ that without re-creating identity or team config.`,
 				fmt.Println()
 				fmt.Println("(All Mainline-managed files were already tracked; no new commit.)")
 			}
+			if len(result.LocalOnlyFiles) > 0 {
+				fmt.Println()
+				fmt.Println("Local-only agent hook files:")
+				for _, p := range result.LocalOnlyFiles {
+					fmt.Printf("  · %s\n", p)
+				}
+				fmt.Println("  (excluded in this clone via .git/info/exclude)")
+			}
 			if result.AgentIntegrations != nil {
 				fmt.Println()
 				renderInitAgentIntegrations(result.AgentIntegrations)

@@ -139,22 +139,58 @@ func (s *Service) installDefaultHooks() []HookInstallResult {
 	return out
 }
 
-func integrationRepoPaths(repoRoot string, integrations *AgentIntegrationInstallResult) []string {
+func (s *Service) prepareIntegrationRepoFiles(integrations *AgentIntegrationInstallResult) ([]string, []string, error) {
 	if integrations == nil {
-		return nil
+		return nil, nil, nil
 	}
-	var out []string
+	created := map[string]bool{}
+	for _, h := range integrations.Hooks {
+		for _, p := range h.Report.CreatedFiles {
+			created[cleanRepoAbsPath(s.Git.RepoRoot, p)] = true
+		}
+	}
+	var stage []string
+	var localOnly []string
 	for _, h := range integrations.Hooks {
 		if h.Error != "" {
 			continue
 		}
 		for _, p := range h.Report.Files {
-			if rel, err := filepath.Rel(repoRoot, p); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-				out = append(out, rel)
+			rel, ok := repoRelativePath(s.Git.RepoRoot, p)
+			if !ok {
+				continue
+			}
+			switch {
+			case s.Git.IsTracked(rel):
+				stage = append(stage, rel)
+			case created[cleanRepoAbsPath(s.Git.RepoRoot, p)] && !s.Git.IsIgnored(rel):
+				localOnly = append(localOnly, rel)
 			}
 		}
 	}
-	return out
+	localOnly = dedupeStrings(localOnly)
+	if len(localOnly) > 0 {
+		if err := s.Git.EnsureInfoExclude(localOnly); err != nil {
+			return nil, nil, err
+		}
+	}
+	return dedupeStrings(stage), localOnly, nil
+}
+
+func repoRelativePath(repoRoot, path string) (string, bool) {
+	abs := cleanRepoAbsPath(repoRoot, path)
+	rel, err := filepath.Rel(repoRoot, abs)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
+func cleanRepoAbsPath(repoRoot, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(filepath.Join(repoRoot, path))
 }
 
 func dedupeStrings(in []string) []string {

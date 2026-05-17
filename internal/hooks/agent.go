@@ -242,6 +242,11 @@ type InstallReport struct {
 	// status` so the user can find the files manually.
 	Files []string `json:"files,omitempty"`
 
+	// CreatedFiles is the subset of Files that did not exist before this
+	// install. Init uses this to keep fresh hook config clone-local
+	// without changing how pre-existing agent config is tracked.
+	CreatedFiles []string `json:"created_files,omitempty"`
+
 	// HookCount is the number of hook event entries the agent now
 	// has wired to mainline (after merge). One agent can install
 	// several entries (e.g. cursor installs 5).

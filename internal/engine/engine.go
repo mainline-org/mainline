@@ -107,6 +107,11 @@ type InitResult struct {
 	// re-runs against a repo that already has all of them tracked.
 	FilesStaged []string `json:"files_staged,omitempty"`
 
+	// LocalOnlyFiles are repo-relative paths Init kept clone-local by
+	// writing this checkout's .git/info/exclude. These are fresh agent
+	// hook config files, not shared Mainline team config.
+	LocalOnlyFiles []string `json:"local_only_files,omitempty"`
+
 	// CommitHash is the SHA of the `mainline: init` commit, when
 	// Init created one. Empty when there was nothing new to commit
 	// (re-runs after the initial install).
@@ -206,6 +211,11 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 		}
 		if opts.InstallAgentIntegrations {
 			result.AgentIntegrations = s.InstallDefaultAgentIntegrations()
+			_, localOnly, err := s.prepareIntegrationRepoFiles(result.AgentIntegrations)
+			if err != nil {
+				return nil, fmt.Errorf("prepare agent integration files: %w", err)
+			}
+			result.LocalOnlyFiles = localOnly
 		}
 		return result, nil
 	}
@@ -276,19 +286,22 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 		integrations = s.installDefaultAgentIntegrations(opts.Progress)
 	}
 
-	// Commit .mainline/config.toml plus repo-local hook config that
-	// Init created in one commit so a fresh-init repo lands with a
-	// clean worktree. Skill installation is outside the repo and is
-	// reported separately.
+	// Commit only shared setup files plus hook config that was already
+	// tracked. Fresh hook config stays clone-local so init does not
+	// change a repo's existing agent-config tracking convention.
 	opts.reportProgress("staging setup files")
 	if err := s.Store.WriteTeamConfig(&cfg); err != nil {
 		return nil, fmt.Errorf("write team config: %w", err)
+	}
+	integrationStagePaths, integrationLocalOnly, err := s.prepareIntegrationRepoFiles(integrations)
+	if err != nil {
+		return nil, fmt.Errorf("prepare agent integration files: %w", err)
 	}
 	addPaths := []string{
 		".mainline/config.toml",
 		".gitignore",
 	}
-	addPaths = append(addPaths, integrationRepoPaths(s.Git.RepoRoot, integrations)...)
+	addPaths = append(addPaths, integrationStagePaths...)
 	addPaths = dedupeStrings(addPaths)
 	staged := []string{}
 	for _, p := range addPaths {
@@ -321,6 +334,7 @@ func (s *Service) InitWithOptions(actorName string, opts InitOptions) (*InitResu
 		MainBranch:        cfg.Mainline.MainBranch,
 		Created:           true,
 		FilesStaged:       staged,
+		LocalOnlyFiles:    integrationLocalOnly,
 		CommitHash:        commitSHA,
 		AgentIntegrations: integrations,
 	}, nil
