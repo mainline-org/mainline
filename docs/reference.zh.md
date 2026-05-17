@@ -82,6 +82,11 @@ mainline init --actor-name "<你的名字>"
 2. 安装 Mainline skill，也就是 agent 的完整 workflow 手册。
 3. 安装 Cursor、Claude Code、Codex 等支持的 repo-local hooks。
 
+`init` 新创建的 hook 配置文件会通过 `.git/info/exclude` 保持为当前 clone
+本地文件，不进入初始 setup commit。如果仓库原本已经 track 某个 agent hook
+文件，Mainline 会尊重这个习惯，把合并后的 hook 更新和其他 init setup 一起
+stage。
+
 支持 hooks 的 agent 每次 session start 会自动跑 `mainline sync` 和
 `mainline status`，并把 snapshot 注入上下文。Agent 仍然负责语义判断：什么时候
 start、append 什么、如何 seal、warning 是否代表真实 conflict。

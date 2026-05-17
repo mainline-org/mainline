@@ -89,6 +89,11 @@ mainline init --actor-name "<your name>"
 3. Installs repo-local hooks for supported agents such as Cursor, Claude Code,
    and Codex.
 
+Fresh hook config files created by `init` are kept clone-local through
+`.git/info/exclude` so they do not appear in the initial setup commit. If a repo
+already tracks an agent hook file, Mainline preserves that convention and stages
+the merged hook update with the rest of the init setup.
+
 At every supported session start, hooks run `mainline sync` and
 `mainline status`, then inject the snapshot into the agent's context. The agent
 still makes the semantic decisions: when to start, what to append, how to seal,

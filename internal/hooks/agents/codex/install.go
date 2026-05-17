@@ -71,6 +71,7 @@ func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallR
 	out := mustMarshalSorted(rawTop)
 
 	files := []string{hooksPath}
+	configExisted := fileExists(configPath)
 	configChanged, err := ensureCodexHooksFeature(configPath)
 	if err != nil {
 		return report, err
@@ -93,6 +94,12 @@ func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallR
 		return report, fmt.Errorf("write %s: %w", hooksPath, err)
 	}
 	report.Files = files
+	if !fileExisted {
+		report.CreatedFiles = append(report.CreatedFiles, hooksPath)
+	}
+	if configChanged && !configExisted {
+		report.CreatedFiles = append(report.CreatedFiles, configPath)
+	}
 	report.HookCount = hookCount
 	return report, nil
 }
@@ -325,6 +332,11 @@ func codexHooksFeatureState(path string) (enabled bool, legacyPresent bool) {
 	}
 	text := string(data)
 	return hasHooksFeatureEnabled(text), hasLegacyCodexHooksFeature(text)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func allManagedPrefixes() []string {

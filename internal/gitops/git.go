@@ -733,6 +733,18 @@ func (g *Git) WorktreeStatus() (*WorktreeStatusReport, error) {
 	return rep, nil
 }
 
+// IsTracked reports whether relPath is already tracked by Git.
+func (g *Git) IsTracked(relPath string) bool {
+	_, err := g.run("ls-files", "--error-unmatch", "--", relPath)
+	return err == nil
+}
+
+// IsIgnored reports whether relPath is ignored by the checkout's ignore rules.
+func (g *Git) IsIgnored(relPath string) bool {
+	_, err := g.run("check-ignore", "-q", "--", relPath)
+	return err == nil
+}
+
 // WriteAndCommitFile stages and commits a single file (used for .mainline config).
 func (g *Git) WriteAndCommitFile(relPath, content, message string) error {
 	fullPath := filepath.Join(g.RepoRoot, relPath)
@@ -782,6 +794,63 @@ func (g *Git) EnsureGitignore(patterns []string) error {
 		}
 	}
 	return nil
+}
+
+// EnsureInfoExclude adds patterns to this clone's local exclude file.
+func (g *Git) EnsureInfoExclude(patterns []string) error {
+	out, err := g.run("rev-parse", "--git-path", "info/exclude")
+	if err != nil {
+		return err
+	}
+	path := strings.TrimSpace(out)
+	if path == "" {
+		return fmt.Errorf("empty git info exclude path")
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(g.RepoRoot, path)
+	}
+	existing := ""
+	if data, err := os.ReadFile(path); err == nil {
+		existing = string(data)
+	}
+	var toAdd []string
+	for _, p := range patterns {
+		if p == "" || ignoreFileContains(existing, p) {
+			continue
+		}
+		toAdd = append(toAdd, p)
+	}
+	if len(toAdd) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		if _, err := f.WriteString("\n"); err != nil {
+			return fmt.Errorf("info exclude separator newline: %w", err)
+		}
+	}
+	for _, p := range toAdd {
+		if _, err := f.WriteString(p + "\n"); err != nil {
+			return fmt.Errorf("info exclude append %q: %w", p, err)
+		}
+	}
+	return nil
+}
+
+func ignoreFileContains(existing, pattern string) bool {
+	for _, line := range strings.Split(existing, "\n") {
+		if strings.TrimSpace(line) == pattern {
+			return true
+		}
+	}
+	return false
 }
 
 // -----------------------------------------------------------

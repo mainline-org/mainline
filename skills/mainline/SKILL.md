@@ -125,8 +125,9 @@ script or `~/go/bin` for `go install`) is on PATH. Re-run
 
 If the CLI exists but the repository is not initialized and the user asked to
 set up Mainline, initialize it. `mainline init` installs the default Mainline
-skill and repo-local hook integrations; it does not write AGENTS.md unless the
-user explicitly asks for repo-level policy:
+skill and repo-local hook integrations. Fresh hook config files are kept
+clone-local via `.git/info/exclude` unless the repo already tracks them; it does
+not write AGENTS.md unless the user explicitly asks for repo-level policy:
 
 ```bash
 mainline init --actor-name "<name>"

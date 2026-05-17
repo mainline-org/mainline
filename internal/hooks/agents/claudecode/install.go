@@ -81,6 +81,9 @@ func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallR
 		return report, fmt.Errorf("write %s: %w", settingsPath, err)
 	}
 	report.Files = []string{settingsPath}
+	if !fileExisted {
+		report.CreatedFiles = []string{settingsPath}
+	}
 	report.HookCount = hookCount
 	return report, nil
 }
