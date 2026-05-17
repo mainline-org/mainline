@@ -50,6 +50,12 @@ func TestUpsertAgentsMD_CreatesIfMissing(t *testing.T) {
 	if !strings.Contains(got, "## Mainline") {
 		t.Errorf("missing template body")
 	}
+	if !strings.Contains(got, "classify overlap warnings") {
+		t.Errorf("missing overlap classification guidance")
+	}
+	if strings.Contains(got, "verbatim") {
+		t.Errorf("generated AGENTS.md should not ask agents to paste overlap warnings verbatim")
+	}
 }
 
 // The most important property: user content above and below the

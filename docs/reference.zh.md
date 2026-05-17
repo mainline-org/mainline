@@ -274,7 +274,7 @@ Reviewer / maintainer 额外命令：
 | Command | 用途 |
 |---|---|
 | `mainline status` | 当前 intent、sync staleness、counts 和 coverage rollup。 |
-| `mainline sync` | fetch remote state、rebuild view、auto-pin merged commits、surface conflicts。 |
+| `mainline sync` | fetch remote state、rebuild view、auto-pin merged commits，并暴露 phase-1 overlap warnings。 |
 | `mainline lint [<id>]` | advisory seal-quality checks。 |
 | `mainline guard add` | 添加人工确认约束。 |
 | `mainline risks add` | 添加结构化 explicit risk。 |
