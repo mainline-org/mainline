@@ -249,14 +249,17 @@ Before editing code, an intent-aware agent should answer:
 
 ## 9. Conflict awareness (SHOULD)
 
-After sealing, `mainline seal --submit` runs phase-1 conflict
-detection automatically. If the response contains a `conflicts`
-array, the agent SHOULD surface those conflicts to the user before
-continuing.
+After sealing, `mainline seal --submit` runs phase-1 overlap detection
+automatically. If the response contains a `conflicts` array, the agent
+SHOULD treat those entries as overlap warnings, inspect/classify them,
+and escalate only when the warning is uncertain or likely to be a real
+semantic conflict. Agents SHOULD NOT paste raw JSON by default; benign
+or adjacent overlap can be recorded or summarized in human terms.
 
-Phase-1 conflicts are file/subsystem overlap signals (not semantic
-judgments). Phase-2 semantic judgment is invoked deliberately when
-phase-1 flags an overlap.
+Phase-1 overlap warnings are file/subsystem overlap signals (not
+semantic judgments). Phase-2 semantic judgment is invoked deliberately
+when phase-1 flags an overlap that looks real or uncertain after agent
+inspection.
 
 Seal-time phase-1 conflict detection checks active proposed intents and
 merged intents that landed after the current intent's base commit. Older

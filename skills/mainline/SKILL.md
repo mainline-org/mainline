@@ -510,8 +510,14 @@ Mainline will permanently record the dirty state:
 mainline seal --submit --allow-dirty --json < .ml-cache/seal.json
 ```
 
-If the response includes `conflicts`, surface them to the user verbatim before
-continuing. Do not silently move on from Mainline conflicts.
+If the response includes `conflicts`, treat them as phase-1 overlap warnings,
+not semantic conflict judgments. Inspect and classify them before closeout:
+adjacent, complementary, or already-accounted-for overlap should be summarized
+briefly in human terms only when useful; do not paste raw JSON by default. If
+you cannot classify a warning or it looks like a real semantic conflict,
+escalate to the user with the relevant intents, why it may conflict, and the
+recommended next action. Include raw JSON only when the user asks for debug
+detail or the tool output itself is needed to diagnose a failure.
 
 If submit sealed locally but failed to publish because the network was down,
 retry later:

@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 27 -->
+<!-- mainline-agents-md-version: 28 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -385,11 +385,16 @@ the next state in a new turn.
    mainline seal --submit --json < .ml-cache/seal.json
    ```
 
-   Submit auto-syncs with the team and runs phase-1 conflict detection
+   Submit auto-syncs with the team and runs phase-1 overlap detection
    against proposed intents and merged intents that landed after your
-   intent base. If the JSON response
-   carries a `conflicts` array, **surface those conflicts to the user
-   verbatim** before continuing. Do not silently move on.
+   intent base. If the JSON response carries a `conflicts` array, treat
+   it as phase-1 overlap warnings, not semantic conflict judgments. Inspect
+   and classify the warnings before closeout: adjacent, complementary, or
+   already-accounted-for overlap should be summarized briefly in human terms
+   only when useful. Escalate to the user only when you cannot classify a
+   warning or it looks like a real semantic conflict; include raw JSON only
+   when the user asks for debug detail or tool output is needed to diagnose
+   a failure.
 
 5. (Optional but encouraged) Quality-check the seal:
 
@@ -495,8 +500,8 @@ runs **two mechanical operations** at session start and injects a
 
 Concretely: every step described above (start when there is real
 work, append after each meaningful logical change, commit, seal
---prepare, fill SealResult, seal --submit, surface conflicts) you do
-yourself, hooks installed or not. The hook layer is a **context
+--prepare, fill SealResult, seal --submit, classify overlap warnings)
+you do yourself, hooks installed or not. The hook layer is a **context
 provider**, not a workflow driver.
 
 Run `mainline hooks status` to confirm whether hooks are wired and

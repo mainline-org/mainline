@@ -361,7 +361,7 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 	b.WriteString("- Before non-trivial work, run task-specific context commands such as `mainline context --current --json`, `mainline context --files <path>... --json`, or `mainline context --query \"<task summary>\" --json` when this snapshot is not enough.\n")
 	b.WriteString("- If `active_intent` above is empty and your turn is real work (not a one-off question or procedural ask), run `mainline start \"<goal>\"`. If it is non-empty, append against it instead.\n")
 	b.WriteString("- After each meaningful logical change, run `mainline append \"<what changed>\"`. The hooks DO NOT do this for you — only your judgment can decide what counts as a meaningful change.\n")
-	b.WriteString("- When the task is complete, commit code, then `mainline seal --prepare --json`, fill the SealResult (fingerprint generously), then `mainline seal --submit --json < seal.json`. If the response carries a `conflicts` array, surface it to the user verbatim.\n")
+	b.WriteString("- When the task is complete, commit code, then `mainline seal --prepare --json`, fill the SealResult (fingerprint generously), then `mainline seal --submit --json < seal.json`. If the response carries a `conflicts` array, treat it as phase-1 overlap warnings: inspect/classify first, escalate only when uncertain or likely semantic, and do not paste raw JSON by default.\n")
 	b.WriteString("- Re-run `mainline status` whenever you are about to make an architectural decision; sessionStart context is a one-shot snapshot, not a live view.\n")
 	b.WriteString("<!-- /mainline:context -->\n")
 	return b.String()

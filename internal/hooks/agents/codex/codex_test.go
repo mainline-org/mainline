@@ -299,6 +299,12 @@ func TestRenderSessionStartOutput(t *testing.T) {
 	if !strings.Contains(got.HookSpecificOutput.AdditionalContext, "Mainline session-start context") {
 		t.Fatalf("missing mainline context: %s", got.HookSpecificOutput.AdditionalContext)
 	}
+	if !strings.Contains(got.HookSpecificOutput.AdditionalContext, "phase-1 overlap warnings") {
+		t.Fatalf("missing overlap classification guidance: %s", got.HookSpecificOutput.AdditionalContext)
+	}
+	if strings.Contains(got.HookSpecificOutput.AdditionalContext, "verbatim") {
+		t.Fatalf("session context should not ask agents to paste overlap warnings verbatim: %s", got.HookSpecificOutput.AdditionalContext)
+	}
 }
 
 func TestRenderUserPromptSubmitOutput(t *testing.T) {

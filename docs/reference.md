@@ -306,7 +306,7 @@ Reviewer and maintainer extras:
 | Command | Use |
 |---|---|
 | `mainline status` | Current intent, sync staleness, counts, and coverage rollup. |
-| `mainline sync` | Fetch remote state, rebuild views, auto-pin merged commits, surface new conflicts. |
+| `mainline sync` | Fetch remote state, rebuild views, auto-pin merged commits, and surface phase-1 overlap warnings. |
 | `mainline lint [<id>]` | Advisory seal-quality checks. |
 | `mainline guard add` | Interactively add a human-promoted constraint. |
 | `mainline risks add` | Add a structured explicit risk. |
