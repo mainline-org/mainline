@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/engine"
 	"github.com/mainline-org/mainline/internal/eval"
 	"github.com/mainline-org/mainline/internal/storage"
@@ -25,9 +26,9 @@ var evalCmd = &cobra.Command{
 	Use:   "eval",
 	Short: "Run the agent eval harness against the embedded fixture catalog",
 	Long: `Run agent-eval fixtures end-to-end against retrieval. Each fixture
-seeds a synthetic intent view, runs ` + "`mainline context --query`" + `
-on the fixture's task description, and scores whether retrieval
-surfaces the expected constraining intents and their anti_patterns.
+seeds a synthetic intent view, runs Mainline context retrieval on the
+fixture's task description and task files, and scores whether retrieval
+surfaces the expected constraining intents and explicit signals.
 
 This is the *precondition* test for the product thesis: a constraint
 that retrieval cannot surface is one no agent can respect, regardless
@@ -171,17 +172,42 @@ actor_log_prefix = "actors"
 	return &fixtureRetriever{svc: svc}, nil
 }
 
-// RetrieveByQuery satisfies eval.Retriever. The harness only uses
-// query mode; --files / --current modes are out of scope for
-// fixture scoring (we don't have a working tree).
-func (f *fixtureRetriever) RetrieveByQuery(query string, limit int) ([]eval.Retrieved, error) {
+// Retrieve satisfies eval.Retriever. Fixtures with TaskFiles use the
+// files mode plus query text, matching how agents see inherited
+// constraints for a concrete change. Query-only fixtures keep using
+// query mode.
+func (f *fixtureRetriever) Retrieve(input eval.RetrievalInput, limit int) ([]eval.Retrieved, error) {
+	mode := "query"
+	if len(input.Files) > 0 {
+		mode = "files"
+	}
 	res, err := f.svc.RetrieveContext(engine.ContextRetrievalRequest{
-		Mode:  "query",
-		Query: query,
+		Mode:  mode,
+		Query: input.Query,
+		Files: input.Files,
 		Limit: limit,
 	})
 	if err != nil {
 		return nil, err
+	}
+	view, _ := f.svc.Store.ReadMainlineView()
+	constraintsByIntent := map[string][]domain.InheritedConstraint{}
+	for _, c := range res.InheritedConstraints {
+		constraintsByIntent[c.SourceIntent] = append(constraintsByIntent[c.SourceIntent], c)
+	}
+	risksByIntent := map[string][]domain.Risk{}
+	followupsByIntent := map[string][]domain.Followup{}
+	if view != nil {
+		for _, r := range domain.MaterializeRisks(view, "") {
+			if r.Status == "open" && r.SourceIntent != "" {
+				risksByIntent[r.SourceIntent] = append(risksByIntent[r.SourceIntent], r)
+			}
+		}
+		for _, fu := range view.Followups {
+			if fu.Status == "open" && fu.SourceIntent != "" {
+				followupsByIntent[fu.SourceIntent] = append(followupsByIntent[fu.SourceIntent], fu)
+			}
+		}
 	}
 	out := make([]eval.Retrieved, 0, len(res.RelevantIntents))
 	for _, ri := range res.RelevantIntents {
@@ -189,6 +215,9 @@ func (f *fixtureRetriever) RetrieveByQuery(query string, limit int) ([]eval.Retr
 			IntentID:     ri.IntentID,
 			Status:       ri.Status,
 			AntiPatterns: ri.AntiPatterns,
+			Constraints:  constraintsByIntent[ri.IntentID],
+			Risks:        risksByIntent[ri.IntentID],
+			Followups:    followupsByIntent[ri.IntentID],
 		})
 	}
 	return out, nil

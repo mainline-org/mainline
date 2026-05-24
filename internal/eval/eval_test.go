@@ -13,24 +13,55 @@ import (
 // engine wire-up.
 type fakeRetriever struct{ out []Retrieved }
 
-func (f fakeRetriever) RetrieveByQuery(_ string, _ int) ([]Retrieved, error) {
+func (f fakeRetriever) Retrieve(_ RetrievalInput, _ int) ([]Retrieved, error) {
 	return f.out, nil
+}
+
+type captureRetriever struct {
+	in  RetrievalInput
+	out []Retrieved
+}
+
+func (c *captureRetriever) Retrieve(in RetrievalInput, _ int) ([]Retrieved, error) {
+	c.in = in
+	return c.out, nil
 }
 
 // BuildView is the seam between fixture data and the materialised
 // view RetrieveContext reads. Spot-check the non-trivial fields:
-// supersedes evidence, AntiPatterns flow through, AgeDays drives
+// supersedes evidence, explicit signals flow through, AgeDays drives
 // SealedAt direction (older = earlier timestamp).
 func TestBuildView_PopulatesIntentSummaryAndStatusEvidence(t *testing.T) {
 	f := Fixture{
 		Name: "test",
 		Intents: []SeedIntent{
 			{
-				ID:           "int_a",
-				Title:        "Title",
-				What:         "what",
-				Why:          "why",
-				AntiPatterns: []domain.AntiPattern{{What: "no", Why: "load-bearing"}},
+				ID:    "int_a",
+				Title: "Title",
+				What:  "what",
+				Why:   "why",
+				Constraints: []SeedConstraint{{
+					What:     "Keep OAuth session middleware",
+					Why:      "callback needs it",
+					Severity: "high",
+					Files:    []string{"src/auth/middleware.go"},
+				}},
+				ExplicitRisks: []SeedRisk{{
+					Statement: domain.RiskStatement{
+						FailureMode: "OAuth cleanup can break callback sessions",
+						Impact:      "login callback outage",
+						Mitigation:  "keep callback coverage",
+					},
+					Files: []string{"src/auth/middleware.go"},
+				}},
+				ExplicitFollowups: []SeedFollowup{{
+					Statement: domain.FollowupStatement{
+						Task:       "Remove middleware after OAuth callback migration",
+						Source:     domain.SignalSourceExplicitDefer,
+						SourceNote: "deferred by fixture",
+					},
+					Files: []string{"src/auth/middleware.go"},
+				}},
 				Status:       domain.StatusSuperseded,
 				SupersededBy: "int_b",
 				AgeDays:      30,
@@ -49,8 +80,14 @@ func TestBuildView_PopulatesIntentSummaryAndStatusEvidence(t *testing.T) {
 	if a.StatusEvidence.SupersededByIntent != "int_b" {
 		t.Errorf("supersedes evidence not propagated: %+v", a.StatusEvidence)
 	}
-	if len(a.Summary.AntiPatterns) != 1 || a.Summary.AntiPatterns[0].Why != "load-bearing" {
-		t.Errorf("anti-patterns not flowing through: %+v", a.Summary.AntiPatterns)
+	if len(v.Constraints) != 1 || v.Constraints[0].SourceIntent != "int_a" || v.Constraints[0].ID == "" {
+		t.Errorf("explicit constraints not flowing through: %+v", v.Constraints)
+	}
+	if len(v.Risks) != 1 || v.Risks[0].SourceIntent != "int_a" || v.Risks[0].Status != "open" {
+		t.Errorf("explicit risks not flowing through: %+v", v.Risks)
+	}
+	if len(v.Followups) != 1 || v.Followups[0].SourceIntent != "int_a" || v.Followups[0].Status != "open" {
+		t.Errorf("explicit follow-ups not flowing through: %+v", v.Followups)
 	}
 	// Older-aged intent must have a strictly-earlier SealedAt than
 	// the newer one. AgeDays=30 vs AgeDays=0.
@@ -60,19 +97,19 @@ func TestBuildView_PopulatesIntentSummaryAndStatusEvidence(t *testing.T) {
 	}
 }
 
-// ScoreFixture: every Expected.IntentID present + all anti-patterns
-// matched + statuses match → Pass=true, every item.Pass=true.
+// ScoreFixture: every Expected.IntentID present + all explicit signals
+// matched + statuses match -> Pass=true, every item.Pass=true.
 func TestScoreFixture_AllExpectedMet(t *testing.T) {
 	f := Fixture{
 		Name: "happy",
 		Expected: []ExpectedItem{
-			{IntentID: "int_a", AntiPatternMatch: "oauth"},
+			{IntentID: "int_a", Signal: ExpectedSignal{Kind: SignalConstraint, Match: "oauth"}},
 			{IntentID: "int_b", MinStatus: "superseded"},
 		},
 	}
 	got := []Retrieved{
-		{IntentID: "int_a", Status: "current", AntiPatterns: []domain.AntiPattern{
-			{What: "Removing the /oauth path", Why: "callback needs it"},
+		{IntentID: "int_a", Status: "current", Constraints: []domain.InheritedConstraint{
+			{What: "Do not remove the /oauth path", Why: "callback needs it"},
 		}},
 		{IntentID: "int_b", Status: "superseded"},
 	}
@@ -113,19 +150,19 @@ func TestScoreFixture_MissingIntentFailsFixture(t *testing.T) {
 	}
 }
 
-// AntiPattern substring match is case-insensitive — fixtures should
-// not need to know whether agents recorded AntiPatterns in lower
-// case or title case.
-func TestScoreFixture_AntiPatternMatchIsCaseInsensitive(t *testing.T) {
+// Explicit signal substring match is case-insensitive; fixtures should
+// not need to know whether agents recorded signal text in lower case
+// or title case.
+func TestScoreFixture_SignalMatchIsCaseInsensitive(t *testing.T) {
 	f := Fixture{
 		Name: "case",
 		Expected: []ExpectedItem{
-			{IntentID: "int_a", AntiPatternMatch: "OAUTH PATH"},
+			{IntentID: "int_a", Signal: ExpectedSignal{Kind: SignalRisk, Match: "OAUTH PATH"}},
 		},
 	}
 	got := []Retrieved{
-		{IntentID: "int_a", AntiPatterns: []domain.AntiPattern{
-			{What: "removing the /oauth path", Why: "x"},
+		{IntentID: "int_a", Risks: []domain.Risk{
+			{Text: "Removing the /oauth path can break callback sessions", Status: "open"},
 		}},
 	}
 	res := ScoreFixture(f, got)
@@ -157,18 +194,26 @@ func TestScoreFixture_StatusMismatchExplains(t *testing.T) {
 // shape; smoke-test the round trip.
 func TestRunFixture_RoundTripsThroughRetriever(t *testing.T) {
 	f := Fixture{
-		Name: "round-trip",
+		Name:      "round-trip",
+		Task:      "change auth middleware",
+		TaskFiles: []string{"src/auth/middleware.go"},
 		Expected: []ExpectedItem{
 			{IntentID: "int_a"},
 		},
 	}
-	r := fakeRetriever{out: []Retrieved{{IntentID: "int_a", Status: "current"}}}
+	r := &captureRetriever{out: []Retrieved{{IntentID: "int_a", Status: "current"}}}
 	res, err := RunFixture(f, r, 5)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if !res.Pass {
 		t.Errorf("expected pass: %+v", res)
+	}
+	if r.in.Query != f.Task {
+		t.Errorf("retriever query = %q, want %q", r.in.Query, f.Task)
+	}
+	if len(r.in.Files) != 1 || r.in.Files[0] != "src/auth/middleware.go" {
+		t.Errorf("retriever files = %+v", r.in.Files)
 	}
 }
 

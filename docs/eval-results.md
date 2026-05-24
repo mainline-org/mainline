@@ -1,13 +1,13 @@
 # Mainline Eval Results
 
-**Latest update:** 2026-04-30 — Layer 2 v2 (LLM-as-judge scorer) baseline complete.
+**Latest update:** 2026-05-24 — Layer 1 fixtures migrated to the explicit-signal model.
 **Catalog:** 8/8 populated (auth-migration, abandoned-approach, superseded-decision, stale-intent, billing-boundary, risk-aware-tests, docs-only-intent, refactor-cross-file)
 
 ## TL;DR
 
 | Layer | What it tests | Result |
 |---|---|---|
-| Layer 1 | Retrieval preconditions | **8/8 pass** — constraints reach the agent |
+| Layer 1 | Retrieval preconditions | **8/8 pass** — explicit constraints/status reach the agent |
 | Layer 2 v1 | Substring scorer | NET-NEGATIVE — inverts real signal |
 | Layer 2 v2 (replay) | LLM-as-judge scorer | **CF=4 violations, IF=0 violations, Δ=4** |
 | Layer 2 live (3-seed) | Agent-spawning, real LLM | **CF=9, IF=0, Δ=9 (consistent across seeds)** |
@@ -35,42 +35,55 @@ It has two layers:
    intent-first — can possibly act on the constraint, so the comparison
    is moot until retrieval is fixed.
 
-2. **LLM runner** (`mainline eval agent --runner <path>`) — pending.
+2. **LLM runner** (`mainline eval agent --runner <path>`).
    Drives both the code-first and intent-first prompts against an
    external runner binary, scores forbidden-list violations, and
    reports the comparison. Requires the user to wire a runner script
    that talks to their LLM of choice (Anthropic / OpenAI / Bedrock /
    local).
 
-This document records layer 1 results. Layer 2 results land here
-after the first runner round.
+This document records layer 1 results plus the preserved Layer 2
+baselines from the earlier runner round.
 
 ---
 
-## Layer 1 second baseline: precondition scorer
+## Layer 1 current baseline: explicit-signal precondition scorer
+
+**Date:** 2026-05-24
+**Command:** `go run . eval run --json`
+
+This baseline verifies the post-redesign contract: durable future-agent
+rules come from explicit signal records, not legacy seal-summary
+`anti_patterns`. The fixtures now seed:
+
+- explicit high-severity constraints for hard long-lived rules,
+- lifecycle status for abandoned / superseded / stale history,
+- ordinary decisions for current implementation choices.
+
+The precondition scorer still asks the same product question: can a future
+agent see the relevant intent and the current durable signal before drafting
+the change?
 
 | # | Fixture | Status | Notes |
 |---|---|---|---|
-| 1 | `auth-migration` | ✓ pass | both intents + anti_patterns surface |
-| 2 | `abandoned-approach` | ✓ pass | abandoned intent + anti_pattern surface with status=abandoned |
+| 1 | `auth-migration` | ✓ pass | both intents + explicit OAuth constraints surface |
+| 2 | `abandoned-approach` | ✓ pass | abandoned intent surfaces with status=abandoned |
 | 3 | `superseded-decision` | ✓ pass | F1 fix: superseded retrieved alongside superseder, ranking preserved |
 | 4 | `stale-intent` | ✓ pass | wall-clock-stale classifier fires correctly |
-| 5 | `billing-boundary` | ✓ pass | both boundary anti_patterns surface for the auth task |
-| 6 | `risk-aware-tests` | ✓ pass | test-discipline anti_pattern surfaces |
-| 7 | `docs-only-intent` | ✓ pass | F2 fix: terminology anti_pattern now searched (SQLite + in-memory scorer) |
-| 8 | `refactor-cross-file` | ✓ pass | signature-preservation anti_pattern surfaces |
+| 5 | `billing-boundary` | ✓ pass | boundary constraint and chosen billing API surface for the auth task |
+| 6 | `risk-aware-tests` | ✓ pass | test-discipline constraint surfaces |
+| 7 | `docs-only-intent` | ✓ pass | terminology constraint surfaces through file-targeted docs retrieval |
+| 8 | `refactor-cross-file` | ✓ pass | signature-preservation constraint surfaces |
 
-**Score: 8/8 pass.** The two failures from the first baseline
-(F1 superseded-decision, F2 docs-only-intent) were closed by the
-"close context retrieval eval gaps" change shipped on
-2026-04-29. The original failure analysis below is preserved for
-reference — that's the kind of signal the eval is supposed to
-produce, and the closing-the-loop pattern is the right model for
-future v2/v3 cycles.
+**Score: 8/8 pass.** The previous `2/8` local result was not a retrieval
+regression. It was eval contract drift: the scorer and fixtures still
+expected legacy `summary.anti_patterns` to behave as active retrieval
+signals after Mainline moved durable rules to explicit signal events.
+The Layer 1 measuring stick now matches the current explicit-signal model.
 
 ---
 
-## Failure analysis (preserved from first baseline; both now resolved)
+## Failure analysis (preserved from earlier baselines)
 
 ### F1. `superseded-decision`: superseded intent dropped below relevance threshold
 
@@ -99,7 +112,7 @@ decision, never sees that there *was* an old plan. This violates the
 spec's promise that "agents see the full decision lineage" — exactly
 the case Property 3 was added to handle in PR #64.
 
-**v2 candidate fix:** when a superseder is in the result set, its
+**Resolved fix:** when a superseder is in the result set, its
 superseded should be added unconditionally (status="superseded"),
 bypassing the relevance threshold. The threshold should filter
 *independently-discovered* intents, not links to already-included
@@ -128,9 +141,10 @@ the agent doesn't reintroduce the deprecated term.
 chain the signal-write rules now reject: agent seal prose becoming
 future-agent rules.
 
-**Current fix:** keep legacy anti-patterns readable through detailed
-intent views, but remove them from default context scoring and inherited
-constraint propagation.
+**Resolved fix:** keep legacy anti-patterns readable through detailed
+intent views, remove them from default context scoring and inherited
+constraint propagation, and express durable terminology rules as explicit
+constraints in the eval fixture.
 
 ---
 
