@@ -5,12 +5,12 @@
 
 ## TL;DR
 
-| Layer | What it tests | Result |
-|---|---|---|
-| Layer 1 | Retrieval preconditions | **8/8 pass** — explicit constraints/status reach the agent |
-| Layer 2 v1 | Substring scorer | NET-NEGATIVE — inverts real signal |
-| Layer 2 v2 (replay) | LLM-as-judge scorer | **CF=4 violations, IF=0 violations, Δ=4** |
-| Layer 2 live (3-seed) | Agent-spawning, real LLM | **CF=9, IF=0, Δ=9 (consistent across seeds)** |
+| Layer | Scope | What it tests | Result |
+|---|---|---|---|
+| Layer 1 | Current baseline, 2026-05-24 | Retrieval preconditions | **8/8 pass** — explicit constraints/status reach the agent |
+| Layer 2 v1 | Historical baseline, not rerun after explicit-signal migration | Substring scorer | NET-NEGATIVE — inverts real signal |
+| Layer 2 v2 (replay) | Historical baseline, not rerun after explicit-signal migration | LLM-as-judge scorer | **CF=4 violations, IF=0 violations, Δ=4** |
+| Layer 2 live (3-seed) | Historical baseline, not rerun after explicit-signal migration | Agent-spawning, real LLM | **CF=9, IF=0, Δ=9 (consistent across seeds)** |
 
 **Verdict:** Intent-first agents avoid violations that code-first agents commit.
 The advantage is concentrated in abandoned approaches and superseded decisions —
@@ -42,8 +42,9 @@ It has two layers:
    that talks to their LLM of choice (Anthropic / OpenAI / Bedrock /
    local).
 
-This document records layer 1 results plus the preserved Layer 2
-baselines from the earlier runner round.
+This document records current Layer 1 results plus preserved historical Layer 2
+baselines from the earlier runner round. Layer 2 has not yet been rerun against
+the explicit-signal fixture contract.
 
 ---
 

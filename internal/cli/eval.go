@@ -190,24 +190,9 @@ func (f *fixtureRetriever) Retrieve(input eval.RetrievalInput, limit int) ([]eva
 	if err != nil {
 		return nil, err
 	}
-	view, _ := f.svc.Store.ReadMainlineView()
 	constraintsByIntent := map[string][]domain.InheritedConstraint{}
 	for _, c := range res.InheritedConstraints {
 		constraintsByIntent[c.SourceIntent] = append(constraintsByIntent[c.SourceIntent], c)
-	}
-	risksByIntent := map[string][]domain.Risk{}
-	followupsByIntent := map[string][]domain.Followup{}
-	if view != nil {
-		for _, r := range domain.MaterializeRisks(view, "") {
-			if r.Status == "open" && r.SourceIntent != "" {
-				risksByIntent[r.SourceIntent] = append(risksByIntent[r.SourceIntent], r)
-			}
-		}
-		for _, fu := range view.Followups {
-			if fu.Status == "open" && fu.SourceIntent != "" {
-				followupsByIntent[fu.SourceIntent] = append(followupsByIntent[fu.SourceIntent], fu)
-			}
-		}
 	}
 	out := make([]eval.Retrieved, 0, len(res.RelevantIntents))
 	for _, ri := range res.RelevantIntents {
@@ -216,8 +201,6 @@ func (f *fixtureRetriever) Retrieve(input eval.RetrievalInput, limit int) ([]eva
 			Status:       ri.Status,
 			AntiPatterns: ri.AntiPatterns,
 			Constraints:  constraintsByIntent[ri.IntentID],
-			Risks:        risksByIntent[ri.IntentID],
-			Followups:    followupsByIntent[ri.IntentID],
 		})
 	}
 	return out, nil
