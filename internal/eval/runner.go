@@ -11,14 +11,21 @@ package eval
 // engine.Service so this file does not import engine. Callers in
 // internal/cli/eval.go (or future LLM runners) wire the engine in.
 
-// Retriever is the interface eval needs from a retrieval backend.
-// The engine satisfies it, but the indirection keeps eval testable
+// RetrievalInput is the fixture-shaped context request the harness
+// needs from a retrieval backend.
+type RetrievalInput struct {
+	Query string
+	Files []string
+}
+
+// Retriever is the interface eval needs from a retrieval backend. The
+// engine wire-up satisfies it, but the indirection keeps eval testable
 // with a fake.
 type Retriever interface {
-	// RetrieveByQuery runs context retrieval in query mode and
-	// returns the per-intent shape ScoreFixture needs. Implementers
-	// must apply the same logic mainline context --query would.
-	RetrieveByQuery(query string, limit int) ([]Retrieved, error)
+	// Retrieve runs context retrieval and returns the per-intent
+	// shape ScoreFixture needs. Implementers must apply the same
+	// logic mainline context would use for the supplied query/files.
+	Retrieve(input RetrievalInput, limit int) ([]Retrieved, error)
 }
 
 // RunFixture executes one fixture against the retriever and scores
@@ -26,7 +33,10 @@ type Retriever interface {
 // produced by BuildView(fixture); the harness CLI handles that wire-
 // up.
 func RunFixture(f Fixture, r Retriever, limit int) (ScoreResult, error) {
-	got, err := r.RetrieveByQuery(f.Task, limit)
+	got, err := r.Retrieve(RetrievalInput{
+		Query: f.Task,
+		Files: append([]string(nil), f.TaskFiles...),
+	}, limit)
 	if err != nil {
 		return ScoreResult{Fixture: f.Name, Description: f.Description, Pass: false}, err
 	}

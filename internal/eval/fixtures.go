@@ -28,9 +28,9 @@ func Fixtures() []Fixture {
 // keeps a session middleware around for the /oauth callback while
 // the rest of the app moved to JWT. The agent task is to "clean up
 // unused auth middleware". Retrieval must surface the
-// "do not delete legacy session middleware on /oauth" anti-pattern,
-// because that is the only thing standing between the cleanup task
-// and a production outage.
+// "do not delete legacy session middleware on /oauth" explicit
+// constraint, because that is the only thing standing between the
+// cleanup task and a production outage.
 func authMigration() Fixture {
 	return Fixture{
 		Name:        "auth-migration",
@@ -46,9 +46,9 @@ func authMigration() Fixture {
 					{Point: "auth shape", Chose: "JWT for /api", Rationale: "stateless"},
 				},
 				Risks: []string{"old mobile clients still send session cookies"},
-				AntiPatterns: []domain.AntiPattern{
+				Constraints: []SeedConstraint{
 					{
-						What:     "Removing legacy session middleware on /oauth path",
+						What:     "Do not remove legacy session middleware on /oauth path",
 						Why:      "OAuth callback handler still requires session state during the redirect",
 						Severity: "high",
 					},
@@ -67,9 +67,9 @@ func authMigration() Fixture {
 				Decisions: []domain.Decision{
 					{Point: "oauth route", Chose: "session middleware retained", Rationale: "OAuth callback contract"},
 				},
-				AntiPatterns: []domain.AntiPattern{
+				Constraints: []SeedConstraint{
 					{
-						What:     "Removing the /oauth session middleware in any 'cleanup' or 'refactor' pass",
+						What:     "Do not remove the /oauth session middleware in any cleanup or refactor pass",
 						Why:      "OAuth callback handler still requires session state",
 						Severity: "high",
 					},
@@ -80,17 +80,18 @@ func authMigration() Fixture {
 				AgeDays:    7,
 			},
 		},
-		Task: "clean up unused auth middleware",
+		Task:      "clean up unused auth middleware",
+		TaskFiles: []string{"src/auth/middleware.go"},
 		Expected: []ExpectedItem{
 			{
-				IntentID:         "int_oauth_session_kept",
-				AntiPatternMatch: "/oauth session middleware",
-				Note:             "the session-keep intent must surface its own anti_pattern",
+				IntentID: "int_oauth_session_kept",
+				Signal:   ExpectedSignal{Kind: SignalConstraint, Match: "/oauth session middleware"},
+				Note:     "the session-keep intent must surface its explicit constraint",
 			},
 			{
-				IntentID:         "int_auth_migration",
-				AntiPatternMatch: "legacy session middleware on /oauth",
-				Note:             "the migration intent itself flagged /oauth as a no-touch zone",
+				IntentID: "int_auth_migration",
+				Signal:   ExpectedSignal{Kind: SignalConstraint, Match: "legacy session middleware on /oauth"},
+				Note:     "the migration intent itself promoted /oauth as a no-touch zone",
 			},
 		},
 		Forbidden: []string{
@@ -103,26 +104,20 @@ func authMigration() Fixture {
 // abandonedApproach: a previous attempt to solve the same problem
 // was abandoned. A new attempt must NOT silently repeat it.
 // Retrieval must surface the abandoned intent with status=abandoned
-// so the agent can read why it was abandoned before retrying.
+// so the agent can read why it was abandoned before retrying. Its
+// abandoned lifecycle is the signal; legacy anti_patterns are not.
 func abandonedApproach() Fixture {
 	return Fixture{
 		Name:        "abandoned-approach",
 		Description: "Abandoned-approach: don't silently repeat a failed migration plan",
 		Intents: []SeedIntent{
 			{
-				ID:    "int_failed_redis_session",
-				Title: "Replace cookie sessions with Redis-backed sessions",
-				Goal:  "move session state out of cookies into Redis",
-				What:  "Stand up a Redis cluster, write session middleware to read/write keys.",
-				Why:   "Cookie sessions don't scale beyond a single region.",
-				Risks: []string{"Redis cluster ops burden", "p95 latency hit on every request"},
-				AntiPatterns: []domain.AntiPattern{
-					{
-						What:     "Reintroducing Redis-backed sessions without the multi-region replication design",
-						Why:      "We hit unacceptable replication-lag failures during the original rollout",
-						Severity: "high",
-					},
-				},
+				ID:         "int_failed_redis_session",
+				Title:      "Replace cookie sessions with Redis-backed sessions",
+				Goal:       "move session state out of cookies into Redis",
+				What:       "Stand up a Redis cluster, write session middleware to read/write keys.",
+				Why:        "Cookie sessions don't scale beyond a single region.",
+				Risks:      []string{"Redis cluster ops burden", "p95 latency hit on every request"},
 				Files:      []string{"src/session/redis.go", "src/session/store.go"},
 				Subsystems: []string{"session"},
 				Status:     domain.StatusAbandoned,
@@ -132,10 +127,9 @@ func abandonedApproach() Fixture {
 		Task: "scale session storage out of single-region cookies",
 		Expected: []ExpectedItem{
 			{
-				IntentID:         "int_failed_redis_session",
-				MinStatus:        "abandoned",
-				AntiPatternMatch: "redis-backed sessions",
-				Note:             "abandoned intent must surface with status=abandoned and its anti_pattern intact",
+				IntentID:  "int_failed_redis_session",
+				MinStatus: "abandoned",
+				Note:      "abandoned intent must surface with status=abandoned",
 			},
 		},
 		Forbidden: []string{
@@ -177,13 +171,6 @@ func supersededDecision() Fixture {
 				Decisions: []domain.Decision{
 					{Point: "format", Chose: "Parquet", Rationale: "Snowflake-native, smaller, typed"},
 				},
-				AntiPatterns: []domain.AntiPattern{
-					{
-						What:     "Adding new fields to the deprecated CSV export endpoint",
-						Why:      "It is going away; new fields belong on Parquet only",
-						Severity: "medium",
-					},
-				},
 				Files:      []string{"src/export/parquet.go", "src/export/csv.go"},
 				Subsystems: []string{"export"},
 				Status:     domain.StatusMerged,
@@ -213,8 +200,8 @@ func supersededDecision() Fixture {
 // Two intents establish the cross-subsystem rule. The agent task is
 // "make the trial-extension flow work" — the lazy implementation
 // reaches across the boundary; the right implementation calls the
-// billing service. Retrieval must surface the boundary anti-pattern
-// so the agent sees the constraint before drafting the change.
+// billing service. Retrieval must surface the boundary constraint so
+// the agent sees it before drafting the change.
 func billingBoundary() Fixture {
 	return Fixture{
 		Name:        "billing-boundary",
@@ -229,14 +216,14 @@ func billingBoundary() Fixture {
 				Decisions: []domain.Decision{
 					{Point: "boundary direction", Chose: "auth → billing service interface only", Rationale: "billing owns its invariants"},
 				},
-				AntiPatterns: []domain.AntiPattern{
+				Constraints: []SeedConstraint{
 					{
-						What:     "Calling db.UpdateBillingState / writing to the billing table from anything in src/auth/",
+						What:     "Do not call db.UpdateBillingState or write to the billing table from anything in src/auth/",
 						Why:      "Bypasses billing's audit log + proration logic; has caused two prod incidents (BILL-211, BILL-403). Always go through billing.<Action>() RPC.",
 						Severity: "high",
 					},
 					{
-						What:     "Importing src/billing/internal from src/auth/",
+						What:     "Do not import src/billing/internal from src/auth/",
 						Why:      "Internal billing types should not leak into auth. Use the public billing service interface only.",
 						Severity: "high",
 					},
@@ -261,12 +248,13 @@ func billingBoundary() Fixture {
 				AgeDays:    7,
 			},
 		},
-		Task: "make the trial-extension flow work for the new free-tier upgrade button",
+		Task:      "make the trial-extension flow work for the new free-tier upgrade button",
+		TaskFiles: []string{"src/auth/middleware.go"},
 		Expected: []ExpectedItem{
 			{
-				IntentID:         "int_billing_boundary",
-				AntiPatternMatch: "from anything in src/auth/",
-				Note:             "the boundary intent's anti_pattern must reach the agent before they draft the change",
+				IntentID: "int_billing_boundary",
+				Signal:   ExpectedSignal{Kind: SignalConstraint, Match: "from anything in src/auth/"},
+				Note:     "the boundary intent's explicit constraint must reach the agent before they draft the change",
 			},
 			{
 				IntentID: "int_trial_extension_via_billing",
@@ -324,8 +312,8 @@ func staleIntent() Fixture {
 
 // riskAwareTests: a prior intent recorded a hard rule that any
 // change to the rate-limiter MUST run a specific regression-test
-// suite first. Retrieval must surface that anti_pattern so the
-// agent picks up the rule before editing.
+// suite first. Retrieval must surface that explicit constraint so
+// the agent picks up the rule before editing.
 func riskAwareTests() Fixture {
 	return Fixture{
 		Name:        "risk-aware-tests",
@@ -340,14 +328,14 @@ func riskAwareTests() Fixture {
 				Decisions: []domain.Decision{
 					{Point: "test discipline", Chose: "regression/scrapers + limiter_burst_test must pass before seal", Rationale: "outage-driven rule, codified after BUDGET-2024 incident"},
 				},
-				AntiPatterns: []domain.AntiPattern{
+				Constraints: []SeedConstraint{
 					{
-						What:     "Sealing a rate-limiter change without running the regression/scrapers test suite",
+						What:     "Do not seal a rate-limiter change without running the regression/scrapers test suite",
 						Why:      "Unit tests pass on token-bucket changes that fail under realistic burst load. The 2026-Q1 outage came from exactly this gap. The regression suite is the only check that catches it.",
 						Severity: "high",
 					},
 					{
-						What:     "Skipping test/limiter_burst_test.go because it is slow",
+						What:     "Do not skip test/limiter_burst_test.go because it is slow",
 						Why:      "It is slow on purpose — it simulates the burst pattern that broke prod. Skipping it has the same effect as not having it.",
 						Severity: "high",
 					},
@@ -358,12 +346,13 @@ func riskAwareTests() Fixture {
 				AgeDays:    45,
 			},
 		},
-		Task: "loosen the rate limiter on /search to 200rps for the new search-quality experiment",
+		Task:      "loosen the rate limiter on /search to 200rps for the new search-quality experiment",
+		TaskFiles: []string{"src/search/limiter.go"},
 		Expected: []ExpectedItem{
 			{
-				IntentID:         "int_rate_limit_test_rule",
-				AntiPatternMatch: "regression/scrapers test suite",
-				Note:             "the test-discipline anti_pattern must reach the agent before they draft the limiter change",
+				IntentID: "int_rate_limit_test_rule",
+				Signal:   ExpectedSignal{Kind: SignalConstraint, Match: "regression/scrapers test suite"},
+				Note:     "the test-discipline constraint must reach the agent before they draft the limiter change",
 			},
 		},
 		Forbidden: []string{
@@ -393,11 +382,11 @@ func docsOnlyIntent() Fixture {
 					{Point: "user-facing label", Chose: "agent guidance", Rationale: "names the artefact"},
 					{Point: "internal vocabulary", Chose: "managed block stays in Go code", Rationale: "precise engineering term; users do not read it"},
 				},
-				AntiPatterns: []domain.AntiPattern{
+				Constraints: []SeedConstraint{
 					{
-						What:     "Reintroducing 'managed block' or 'Mainline template' in CLI output, help text, README, or AGENTS.md",
+						What:     "Do not reintroduce 'managed block' or 'Mainline template' in CLI output, help text, README, or AGENTS.md",
 						Why:      "Distinct vocabularies for distinct audiences was the whole point of the rewrite; mixing them in user-facing copy reverses the fix.",
-						Severity: "medium",
+						Severity: "high",
 					},
 				},
 				Files:      []string{"docs/style-guide.md", "AGENTS.md"},
@@ -406,12 +395,13 @@ func docsOnlyIntent() Fixture {
 				AgeDays:    30,
 			},
 		},
-		Task: "write a new section in AGENTS.md describing the seal workflow",
+		Task:      "write a new section in AGENTS.md describing the seal workflow",
+		TaskFiles: []string{"AGENTS.md"},
 		Expected: []ExpectedItem{
 			{
-				IntentID:         "int_terminology_guide",
-				AntiPatternMatch: "managed block",
-				Note:             "terminology rule must surface when an agent edits docs even though no .go files are involved",
+				IntentID: "int_terminology_guide",
+				Signal:   ExpectedSignal{Kind: SignalConstraint, Match: "managed block"},
+				Note:     "terminology rule must surface when an agent edits docs even though no .go files are involved",
 			},
 		},
 		Forbidden: []string{
@@ -441,16 +431,16 @@ func refactorCrossFile() Fixture {
 					{Point: "split boundaries", Chose: "reader / lexer / ast as three files under src/parser/", Rationale: "natural three-layer boundary that already existed in code organisation"},
 					{Point: "public surface", Chose: "Parse(input) (*AST, error) stays in src/parser.go, exported", Rationale: "every caller in the codebase imports parser.Parse; preserving it makes the refactor invisible to callers"},
 				},
-				AntiPatterns: []domain.AntiPattern{
+				Constraints: []SeedConstraint{
 					{
-						What:     "Changing the Parse function signature, return type, or error semantics during the split",
+						What:     "Do not change the Parse function signature, return type, or error semantics during the split",
 						Why:      "The split is a refactor — behaviour-preserving by definition. A signature change couples the cleanup to a feature change and breaks every caller silently.",
 						Severity: "high",
 					},
 					{
-						What:     "Modifying the lexer's whitespace or comment handling during the split",
+						What:     "Do not modify the lexer's whitespace or comment handling during the split",
 						Why:      "The original handler tolerated edge cases (CR-only line endings, trailing whitespace before EOF) that the test suite does not directly cover. Touching this in a refactor introduces undetected behaviour drift.",
-						Severity: "medium",
+						Severity: "high",
 					},
 				},
 				Files:      []string{"src/parser.go", "src/parser/reader.go", "src/parser/lexer.go", "src/parser/ast.go"},
@@ -459,12 +449,13 @@ func refactorCrossFile() Fixture {
 				AgeDays:    21,
 			},
 		},
-		Task: "extend the parser to handle backtick-delimited strings",
+		Task:      "extend the parser to handle backtick-delimited strings",
+		TaskFiles: []string{"src/parser.go"},
 		Expected: []ExpectedItem{
 			{
-				IntentID:         "int_parser_split",
-				AntiPatternMatch: "Parse function signature",
-				Note:             "the signature-preservation anti_pattern must reach the agent so the new feature does not silently change Parse",
+				IntentID: "int_parser_split",
+				Signal:   ExpectedSignal{Kind: SignalConstraint, Match: "Parse function signature"},
+				Note:     "the signature-preservation constraint must reach the agent so the new feature does not silently change Parse",
 			},
 		},
 		Forbidden: []string{

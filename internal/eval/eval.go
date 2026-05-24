@@ -54,9 +54,15 @@ type Fixture struct {
 	// retrieval-status classifier reads to decide stale.
 	Intents []SeedIntent
 
-	// Task is the textual description an agent would receive (and
-	// the seed for `mainline context --query "<task>"`).
+	// Task is the textual description an agent would receive. It is
+	// used as query text for the synthetic context request.
 	Task string
+
+	// TaskFiles are the files the synthetic task is expected to touch.
+	// When present, the harness uses file-targeted context retrieval
+	// with Task as extra query text so explicit inherited constraints
+	// can surface through the same file-overlap path agents use.
+	TaskFiles []string
 
 	// Expected pins what the harness looks for in the retrieval
 	// result. At least one item per fixture; the scorer reports how
@@ -74,16 +80,19 @@ type Fixture struct {
 // layer reads. Intentionally narrower than IntentView so fixtures
 // stay readable.
 type SeedIntent struct {
-	ID           string
-	Title        string
-	Goal         string
-	What         string
-	Why          string
-	Decisions    []domain.Decision
-	Risks        []string
-	AntiPatterns []domain.AntiPattern
-	Files        []string
-	Subsystems   []string
+	ID                string
+	Title             string
+	Goal              string
+	What              string
+	Why               string
+	Decisions         []domain.Decision
+	Risks             []string
+	AntiPatterns      []domain.AntiPattern
+	Constraints       []SeedConstraint
+	ExplicitRisks     []SeedRisk
+	ExplicitFollowups []SeedFollowup
+	Files             []string
+	Subsystems        []string
 
 	// Lifecycle. Status is one of merged/proposed/superseded/
 	// abandoned/reverted. SupersededBy + AbandonedReason are
@@ -97,16 +106,68 @@ type SeedIntent struct {
 	AgeDays int
 }
 
+// SeedConstraint is a human-promoted explicit constraint associated
+// with a SeedIntent. BuildView fills SourceIntent, IDs, provenance,
+// and timestamps so fixtures stay readable.
+type SeedConstraint struct {
+	ID         string
+	What       string
+	Why        string
+	Severity   string
+	Files      []string
+	Source     string
+	SourceNote string
+}
+
+// SeedRisk is an explicit review-facing risk associated with a
+// SeedIntent.
+type SeedRisk struct {
+	ID        string
+	Text      string
+	Statement domain.RiskStatement
+	Files     []string
+	Source    string
+}
+
+// SeedFollowup is an explicit deferred work item associated with a
+// SeedIntent.
+type SeedFollowup struct {
+	ID        string
+	Text      string
+	Statement domain.FollowupStatement
+	Files     []string
+	Source    string
+}
+
+type SignalKind string
+
+const (
+	SignalConstraint SignalKind = "constraint"
+	SignalRisk       SignalKind = "risk"
+	SignalFollowup   SignalKind = "followup"
+)
+
+// ExpectedSignal is a single explicit signal expectation attached to
+// an expected intent.
+type ExpectedSignal struct {
+	// Kind is one of "constraint", "risk", or "followup".
+	Kind SignalKind
+
+	// Match is a case-insensitive substring matched against the
+	// explicit signal's agent-facing text.
+	Match string
+}
+
 // ExpectedItem is a single retrieval expectation. The scorer returns
 // per-item pass/fail.
 type ExpectedItem struct {
 	// IntentID must appear in the RetrieveContext result.
 	IntentID string
 
-	// AntiPatternMatch is a substring; if non-empty, the scorer
-	// looks for an AntiPattern on the matched intent whose `What`
-	// contains this substring (case-insensitive).
-	AntiPatternMatch string
+	// Signal optionally requires an explicit signal on the matched
+	// intent. Legacy summary.anti_patterns are deliberately not active
+	// eval expectations.
+	Signal ExpectedSignal
 
 	// MinStatus is the *minimum* retrieval status the matched
 	// intent must carry. Empty means any. Useful for "this intent
@@ -179,8 +240,97 @@ func BuildView(f Fixture) *domain.MainlineView {
 			},
 		}
 		v.Intents = append(v.Intents, iv)
+		appendExplicitSignals(v, s, ts)
 	}
 	return v
+}
+
+func appendExplicitSignals(v *domain.MainlineView, s SeedIntent, ts string) {
+	for i, c := range s.Constraints {
+		id := c.ID
+		if id == "" {
+			id = fmt.Sprintf("guard_eval_%s_%d", s.ID, i)
+		}
+		severity := c.Severity
+		if severity == "" {
+			severity = "high"
+		}
+		source := c.Source
+		if source == "" {
+			source = domain.SignalSourceExplicitUser
+		}
+		files := c.Files
+		if len(files) == 0 {
+			files = s.Files
+		}
+		v.Constraints = append(v.Constraints, domain.Constraint{
+			ID:           id,
+			What:         c.What,
+			Why:          c.Why,
+			Severity:     severity,
+			Files:        append([]string(nil), files...),
+			SourceIntent: s.ID,
+			OpenedAt:     ts,
+			OpenedBy:     "actor_eval",
+			Source:       source,
+			SourceNote:   c.SourceNote,
+		})
+	}
+	for i, r := range s.ExplicitRisks {
+		id := r.ID
+		if id == "" {
+			id = fmt.Sprintf("risk_eval_%s_%d", s.ID, i)
+		}
+		source := r.Source
+		if source == "" {
+			source = domain.SignalSourceCommand
+		}
+		files := r.Files
+		if len(files) == 0 {
+			files = s.Files
+		}
+		statement := r.Statement
+		v.Risks = append(v.Risks, domain.Risk{
+			ID:           id,
+			Text:         r.Text,
+			Statement:    &statement,
+			Status:       "open",
+			SourceIntent: s.ID,
+			Files:        append([]string(nil), files...),
+			OpenedBy:     "actor_eval",
+			OpenedAt:     ts,
+			Source:       source,
+		})
+	}
+	for i, f := range s.ExplicitFollowups {
+		id := f.ID
+		if id == "" {
+			id = fmt.Sprintf("followup_eval_%s_%d", s.ID, i)
+		}
+		source := f.Source
+		if source == "" {
+			source = f.Statement.Source
+		}
+		if source == "" {
+			source = domain.SignalSourceExplicitDefer
+		}
+		files := f.Files
+		if len(files) == 0 {
+			files = s.Files
+		}
+		statement := f.Statement
+		v.Followups = append(v.Followups, domain.Followup{
+			ID:           id,
+			Text:         f.Text,
+			Statement:    &statement,
+			Status:       "open",
+			SourceIntent: s.ID,
+			Files:        append([]string(nil), files...),
+			OpenedBy:     "actor_eval",
+			OpenedAt:     ts,
+			Source:       source,
+		})
+	}
 }
 
 // Retrieved is the minimum shape ScoreFixture needs from a
@@ -192,6 +342,9 @@ type Retrieved struct {
 	IntentID     string
 	Status       string
 	AntiPatterns []domain.AntiPattern
+	Constraints  []domain.InheritedConstraint
+	Risks        []domain.Risk
+	Followups    []domain.Followup
 }
 
 // ScoreFixture compares the fixture's Expected list against the
@@ -201,9 +354,9 @@ type Retrieved struct {
 //
 //   - Each Expected.IntentID must appear in `got` for that item to
 //     pass.
-//   - If Expected.AntiPatternMatch is set, the matched intent must
-//     have at least one AntiPattern whose What contains the
-//     substring (case-insensitive).
+//   - If Expected.Signal is set, the matched intent must have an
+//     explicit signal of that kind whose agent-facing text contains
+//     the substring (case-insensitive).
 //   - If Expected.MinStatus is set, the matched intent's Status
 //     must equal it.
 //
@@ -238,18 +391,11 @@ func ScoreFixture(f Fixture, got []Retrieved) ScoreResult {
 			res.Pass = false
 			continue
 		}
-		if e.AntiPatternMatch != "" {
-			match := strings.ToLower(e.AntiPatternMatch)
-			seen := false
-			for _, ap := range r.AntiPatterns {
-				if strings.Contains(strings.ToLower(ap.What), match) {
-					seen = true
-					break
-				}
-			}
+		if e.Signal.Kind != "" || e.Signal.Match != "" {
+			seen, reason := signalMatches(r, e.Signal)
 			if !seen {
 				item.Pass = false
-				item.Reason = fmt.Sprintf("intent %s has no anti_pattern matching %q", e.IntentID, e.AntiPatternMatch)
+				item.Reason = reason
 				res.Items = append(res.Items, item)
 				res.Pass = false
 				continue
@@ -260,4 +406,60 @@ func ScoreFixture(f Fixture, got []Retrieved) ScoreResult {
 		res.Items = append(res.Items, item)
 	}
 	return res
+}
+
+func signalMatches(r Retrieved, want ExpectedSignal) (bool, string) {
+	if want.Kind == "" {
+		return false, fmt.Sprintf("intent %s expected signal match %q without signal kind", r.IntentID, want.Match)
+	}
+	match := strings.ToLower(want.Match)
+	if match == "" {
+		return false, fmt.Sprintf("intent %s expected %s signal with empty match", r.IntentID, want.Kind)
+	}
+	switch want.Kind {
+	case SignalConstraint:
+		for _, c := range r.Constraints {
+			if containsSignalText(match, c.What, c.Why) {
+				return true, ""
+			}
+		}
+	case SignalRisk:
+		for _, risk := range r.Risks {
+			if containsSignalText(match, risk.Text, riskStatementText(risk.Statement)) {
+				return true, ""
+			}
+		}
+	case SignalFollowup:
+		for _, followup := range r.Followups {
+			if containsSignalText(match, followup.Text, followupStatementText(followup.Statement)) {
+				return true, ""
+			}
+		}
+	default:
+		return false, fmt.Sprintf("intent %s expected unknown signal kind %q", r.IntentID, want.Kind)
+	}
+	return false, fmt.Sprintf("intent %s has no explicit %s matching %q", r.IntentID, want.Kind, want.Match)
+}
+
+func containsSignalText(match string, parts ...string) bool {
+	for _, part := range parts {
+		if strings.Contains(strings.ToLower(part), match) {
+			return true
+		}
+	}
+	return false
+}
+
+func riskStatementText(statement *domain.RiskStatement) string {
+	if statement == nil {
+		return ""
+	}
+	return statement.Text()
+}
+
+func followupStatementText(statement *domain.FollowupStatement) string {
+	if statement == nil {
+		return ""
+	}
+	return statement.Text()
 }
