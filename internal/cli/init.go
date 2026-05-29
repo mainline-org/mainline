@@ -225,6 +225,7 @@ func renderInitAgentIntegrations(r *engine.AgentIntegrationInstallResult) {
 		fmt.Printf("  · skill: skipped (%s)\n", r.Skill.Error)
 	case r.Skill.Error != "":
 		fmt.Printf("  ✗ skill: %s\n", r.Skill.Error)
+		renderIndentedCommandOutput(r.Skill.Output)
 	default:
 		fmt.Println("  · skill: no change")
 	}
@@ -240,4 +241,20 @@ func renderInitAgentIntegrations(r *engine.AgentIntegrationInstallResult) {
 		fmt.Printf("  ✓ hook %-12s %s (%d entries)\n", h.Agent+":", state, h.Report.HookCount)
 	}
 	fmt.Println("  `mainline agents install` remains an explicit repo-policy opt-in for AGENTS.md.")
+}
+
+func renderIndentedCommandOutput(out string) {
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return
+	}
+	const maxLines = 8
+	lines := strings.Split(out, "\n")
+	for i, line := range lines {
+		if i >= maxLines {
+			fmt.Println("    ...<truncated>")
+			return
+		}
+		fmt.Printf("    %s\n", line)
+	}
 }
