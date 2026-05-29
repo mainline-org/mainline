@@ -24,6 +24,34 @@ func TestDefaultSkillInstallCommandIsNonInteractive(t *testing.T) {
 	}
 }
 
+func TestInstallDefaultSkillSkipsWhenGlobalSkillExists(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "")
+	skillPath := filepath.Join(home, ".agents", "skills", "mainline", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("# Mainline\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := svc.installDefaultSkill()
+	if !got.Skipped {
+		t.Fatalf("installDefaultSkill should skip when global skill exists: %+v", got)
+	}
+	if got.Installed {
+		t.Fatalf("installDefaultSkill should not report install when it skipped: %+v", got)
+	}
+	if !strings.Contains(got.Error, skillPath) {
+		t.Fatalf("skip reason should mention existing skill path, got %q", got.Error)
+	}
+}
+
 func TestPrepareIntegrationRepoFilesKeepsFreshHookFilesLocalOnly(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()

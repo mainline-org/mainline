@@ -73,6 +73,11 @@ func (s *Service) installDefaultSkill() SkillInstallResult {
 	}
 
 	res.Command = defaultSkillInstallCommand(source)
+	if path, ok := existingGlobalMainlineSkill(); ok {
+		res.Skipped = true
+		res.Error = "mainline skill already installed at " + path
+		return res
+	}
 	npx, err := exec.LookPath("npx")
 	if err != nil {
 		res.Skipped = true
@@ -105,6 +110,25 @@ func defaultSkillInstallCommand(source string) []string {
 		"--global",
 		"--yes",
 	}
+}
+
+func existingGlobalMainlineSkill() (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", false
+	}
+	candidates := []string{
+		filepath.Join(home, ".codex", "skills", "mainline", "SKILL.md"),
+		filepath.Join(home, ".agents", "skills", "mainline", "SKILL.md"),
+		filepath.Join(home, ".agent", "skills", "mainline", "SKILL.md"),
+		filepath.Join(home, ".claude", "skills", "mainline", "SKILL.md"),
+	}
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, true
+		}
+	}
+	return "", false
 }
 
 func trimCommandOutput(out string) string {
