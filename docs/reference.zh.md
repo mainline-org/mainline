@@ -144,9 +144,10 @@ mainline seal --submit --json < .ml-cache/seal.json
 ```
 
 `preflight` 是 readiness 和 stop-line gate，会告诉 agent 是继续、先检查 overlap，
-还是在生命周期推进前停下。`start` 认领真实工程工作。`append` 记录有意义进展。
-`seal --prepare` 固化准备提交的证据。`seal --submit` 写入最终 intent，并输出 lint
-或 conflict summary。
+还是在生命周期推进前停下。只读诊断或只给方案的工作可以停在只读检查后；在任务
+进入非平凡编辑或其他需要持久记录的工程工作前，不应该跑 `start`。之后 `start`
+才认领真实工程工作。`append` 记录有意义进展。`seal --prepare` 固化准备提交的
+证据。`seal --submit` 写入最终 intent，并输出 lint 或 conflict summary。
 
 Review autonomy 可以推非 `main` 分支并打开或更新 PR，但不授权 push `main`、
 merge、release 或 deploy。

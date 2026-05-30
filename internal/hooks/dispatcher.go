@@ -359,7 +359,8 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 	b.WriteString("## what to do next\n\n")
 	b.WriteString("Follow the Mainline skill workflow — hooks only provide state and do not make semantic decisions:\n\n")
 	b.WriteString("- Before non-trivial work, run task-specific context commands such as `mainline context --current --json`, `mainline context --files <path>... --json`, or `mainline context --query \"<task summary>\" --json` when this snapshot is not enough.\n")
-	b.WriteString("- If `active_intent` above is empty and your turn is real work (not a one-off question or procedural ask), run `mainline start \"<goal>\"`. If it is non-empty, append against it instead.\n")
+	b.WriteString("- For read-only diagnosis, history lookup, or proposal-only work, stay on read-only commands and do not start an intent.\n")
+	b.WriteString("- If `active_intent` above is empty and the work is crossing into non-trivial edits, commit/seal/handoff, or another durable engineering record, run `mainline start \"<goal>\"`. If it is non-empty, append against it instead.\n")
 	b.WriteString("- After each meaningful logical change, run `mainline append \"<what changed>\"`. The hooks DO NOT do this for you — only your judgment can decide what counts as a meaningful change.\n")
 	b.WriteString("- When the task is complete, commit code, then `mainline seal --prepare --json`, fill the SealResult (fingerprint generously), then `mainline seal --submit --json < seal.json`. If the response carries a `conflicts` array, treat it as phase-1 overlap warnings: inspect/classify first, escalate only when uncertain or likely semantic, and do not paste raw JSON by default.\n")
 	b.WriteString("- Re-run `mainline status` whenever you are about to make an architectural decision; sessionStart context is a one-shot snapshot, not a live view.\n")
@@ -408,7 +409,8 @@ func (d *Dispatcher) RenderTurnStartContext(status any, proposals any, statusErr
 	}
 
 	b.WriteString("## reminder\n\n")
-	b.WriteString("- If this prompt is real work and there is no `active_intent`, decide whether to run `mainline start \"<goal>\"` before editing.\n")
+	b.WriteString("- Read-only diagnosis, history lookup, or proposal-only prompts should not start an intent.\n")
+	b.WriteString("- If there is no `active_intent`, start one only when the prompt authorizes non-trivial edits, commit/seal/handoff, or another durable engineering record.\n")
 	b.WriteString("- If there is an `active_intent`, append only after a meaningful logical change; hooks still do not decide that for you.\n")
 	b.WriteString("- Before non-trivial changes, still run task-specific Mainline context commands when this snapshot is not enough.\n")
 	b.WriteString("<!-- /mainline:context -->\n")

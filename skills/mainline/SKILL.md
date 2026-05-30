@@ -157,10 +157,21 @@ block code work solely because hooks are absent.
 
 ## Start Of Task
 
-If the goal is too vague to make a useful intent, prefer one quick clarifying question before `mainline start`; do not turn this into PRD/task planning.
-If you proceed anyway, use the safest narrow interpretation and record the assumption in the first `mainline append`.
+If the goal is too vague to make a useful intent, prefer one quick clarifying
+question before `mainline start`; do not turn this into PRD/task planning. If
+you proceed anyway, use the safest narrow interpretation and record the
+assumption in the first `mainline append`.
 
-At the start of a real task:
+Read-only diagnosis, history archaeology, plan review, and "look first / don't
+change yet" requests are Mainline-aware work, but they are not intent claims.
+Use read-only commands such as `preflight`, `status`, `context`, `show`, and
+`trace` as needed. Do not run `mainline start` until the current instruction
+authorizes non-trivial edits, commits/seal/handoff, or another durable
+engineering record. If investigation later turns into a change, start the
+intent at that transition and capture the useful diagnostic finding in the
+first append.
+
+At the start of a Mainline-aware task, begin with the read-only gate:
 
 ```bash
 mainline preflight --json
@@ -264,8 +275,8 @@ write. Do not run `mainline migrate notes --write` or `--push` unless the user
 explicitly confirms the plan. `--push` changes the shared notes ref and must be
 treated like a high-impact Git operation.
 
-If there is no active intent and the task will make non-trivial changes, start
-one using the user's actual goal:
+If there is no active intent and the task has crossed into non-trivial changes
+or durable engineering record-keeping, start one using the user's actual goal:
 
 ```bash
 mainline start "<user goal>" --json
