@@ -1,6 +1,6 @@
 ## Mainline
 
-<!-- mainline-agents-md-version: 28 -->
+<!-- mainline-agents-md-version: 29 -->
 
 **Stop AI coding agents from repeating old engineering mistakes.**
 
@@ -92,8 +92,12 @@ to `handoff`; push branch / open or update PR maps to `review`; merge / release
 / deploy / package publish remains a separate explicit delivery task, not
 autonomy.
 
-If there is no `active_intent`, start one (use the user's goal verbatim
-when possible — it becomes the headline in `mainline log`):
+Read-only diagnosis, history archaeology, plan review, and "look first / don't
+change yet" requests may use `preflight`, `status`, `context`, `show`, and
+`trace`, but they do not claim an intent. If there is no `active_intent`, start
+one only when the current instruction has crossed into non-trivial edits,
+commit/seal/handoff, or another durable engineering record. Use the user's goal
+verbatim when possible — it becomes the headline in `mainline log`:
 
 ```
 mainline start "<short description of the user's goal>" --json

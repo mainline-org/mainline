@@ -146,10 +146,11 @@ mainline seal --prepare --json > .ml-cache/seal.json
 mainline seal --submit --json < .ml-cache/seal.json
 ```
 
-`context` 是 pre-edit gate。`start` 认领这一单工作。`append` 记录有工程意义
-的 turn：决策、pivot、完成的 slice，或会改变信心的 validation。`seal` 把这次
-工作变成可 review 的 intent：summary、decisions、rejected alternatives、
-validation notes 和 semantic fingerprint。
+`context` 是 pre-edit gate。只读诊断或只给方案的工作可以停在只读检查后；在任务
+进入非平凡编辑或其他需要持久记录的工程工作前，不应该跑 `start`。之后 `start`
+才认领这一单工作。`append` 记录有工程意义的 turn：决策、pivot、完成的 slice，
+或会改变信心的 validation。`seal` 把这次工作变成可 review 的 intent：summary、
+decisions、rejected alternatives、validation notes 和 semantic fingerprint。
 
 架构调整、重构、迁移、删除、auth/billing/permissions/data-model、release/CI，
 以及“这个能不能删？”、“以前试过吗？”这类问题，都应该先跑 Mainline。

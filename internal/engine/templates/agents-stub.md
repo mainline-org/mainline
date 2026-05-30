@@ -17,8 +17,8 @@ mainline log --json --limit 30                       # recent intents
 mainline show <intent_id> --json                     # full why/decisions/signals
 mainline list-proposals --json                       # what's in flight
 
-# Write your own intent:
-mainline start "<goal>" --json                       # claim work
+# Write your own intent only after read-only diagnosis becomes durable work:
+mainline start "<goal>" --json                       # claim non-read-only work
 mainline append "<what changed>" --json              # after meaningful turns
 git add ... && git commit -m ...                     # commit code
 mainline seal --prepare --json > .ml-cache/seal.json # patch the starter

@@ -164,10 +164,13 @@ mainline seal --submit --json < .ml-cache/seal.json
 ```
 
 `preflight` is the readiness and stop-line gate. It tells the agent whether to
-continue, inspect overlaps, or stop before lifecycle advancement. `start` claims
-a real unit of engineering work. `append` records meaningful progress.
-`seal --prepare` freezes the evidence that will be submitted. `seal --submit`
-records the final intent and surfaces lint or conflict summaries.
+continue, inspect overlaps, or stop before lifecycle advancement. Read-only
+diagnosis or proposal-only work can stop after read-only inspection; it should
+not run `start` until the task crosses into non-trivial edits or another durable
+engineering record. `start` then claims a real unit of engineering work.
+`append` records meaningful progress. `seal --prepare` freezes the evidence
+that will be submitted. `seal --submit` records the final intent and surfaces
+lint or conflict summaries.
 
 Review autonomy may push a non-main branch and open or update a PR. It never
 authorizes pushing `main`, merging, releasing, or deploying.
