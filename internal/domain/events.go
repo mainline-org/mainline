@@ -171,16 +171,18 @@ type FollowupResolvedEvent struct {
 // upstream view.
 type ActorLogAcceptedEvent struct {
 	BaseEvent
-	AcceptedActorID    string   `json:"accepted_actor_id"`
-	SourceRemote       string   `json:"source_remote,omitempty"`
-	SourceRef          string   `json:"source_ref"`
-	SourceHead         string   `json:"source_head"`
-	TargetRef          string   `json:"target_ref"`
-	PreviousTargetHead string   `json:"previous_target_head,omitempty"`
-	EventCount         int      `json:"event_count"`
-	SealedIntentIDs    []string `json:"sealed_intent_ids,omitempty"`
-	Verified           bool     `json:"verified"`
-	AuthorSealed       bool     `json:"author_sealed"`
+	AcceptedActorID     string   `json:"accepted_actor_id"`
+	SourceRemote        string   `json:"source_remote,omitempty"`
+	SourceRef           string   `json:"source_ref"`
+	SourceHead          string   `json:"source_head"`
+	TargetRef           string   `json:"target_ref"`
+	PreviousTargetHead  string   `json:"previous_target_head,omitempty"`
+	EventCount          int      `json:"event_count"`
+	SealedIntentIDs     []string `json:"sealed_intent_ids,omitempty"`
+	ImportedBranchRefs  []string `json:"imported_branch_refs,omitempty"`
+	ObjectFetchWarnings []string `json:"object_fetch_warnings,omitempty"`
+	Verified            bool     `json:"verified"`
+	AuthorSealed        bool     `json:"author_sealed"`
 }
 
 // ActorLogEntry wraps a raw event stored in an actor log blob.

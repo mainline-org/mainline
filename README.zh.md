@@ -204,8 +204,22 @@ mainline gaps
 mainline hub export ./mainline-hub
 ```
 
-fork PR 在 contributor 没有 upstream 可见 Mainline actor log 时，可以作为
-imported external contribution 显示：
+如果 fork contributor 也在本地使用 Mainline，优先由 upstream maintainer 显式
+接受他的 actor log：
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+这个命令会从 fork 拉取 `refs/mainline/actors/<actor>/log`，校验事件属于指定
+actor，接受进 upstream actor namespace，并 best-effort 拉取 sealed intent 里引用的
+fork branch 到 `refs/mainline/imports/<actor>/branches/*`。这样即使 PR 是
+squash/rebase merge，upstream 仍能拿到 contributor 原始 code commit/tree object，
+再用正常 auto-pin 把 author-sealed intent pin 到 upstream merge commit。Hub 会显示
+`accepted_actor_log`、接受者、verified 状态和导入的 code refs。
+
+fork PR 在 contributor 没有 upstream 可见 Mainline actor log 时，才作为
+imported external contribution fallback 显示：
 
 ```bash
 mainline hub export ./mainline-hub --external-contributions fork-prs.json

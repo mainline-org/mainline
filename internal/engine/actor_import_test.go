@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -237,6 +238,242 @@ func TestImportActorLogFetchesFromForkRemote(t *testing.T) {
 	}
 	if svc.Git.ReadRef(res.ImportRef) == "" || svc.Git.ReadRef(res.TargetRef) == "" {
 		t.Fatalf("fetch+accept should populate import and target refs: %+v", res)
+	}
+}
+
+func TestImportActorLogFetchesForkBranchObjectsForSquashMergePin(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("maintainer"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	baseMain := svc.Git.ReadRef("refs/heads/main")
+
+	forkDir := t.TempDir()
+	gitCmd(t, dir, "clone", dir, forkDir)
+	gitCmd(t, forkDir, "config", "user.email", "fork@test.com")
+	gitCmd(t, forkDir, "config", "user.name", "Fork")
+	forkSvc := NewServiceFromRoot(forkDir)
+
+	actorID := "actor_squash"
+	intentID := "int_squash"
+	branch := "feature/squash-pi"
+	gitCmd(t, forkDir, "checkout", "-b", branch, "main")
+	writeFile(t, forkDir, "sources/pi.go", "package sources\n\nfunc PiAgentSession() string { return \"pi\" }\n")
+	gitCmd(t, forkDir, "add", "sources/pi.go")
+	gitCmd(t, forkDir, "commit", "-m", "feat(sources): add Pi agent session support")
+	codeCommit := strings.TrimSpace(mustGitRun(t, forkDir, "rev-parse", "HEAD"))
+	codeTree := strings.TrimSpace(mustGitRun(t, forkDir, "rev-parse", "HEAD^{tree}"))
+	sourceRef := "refs/mainline/actors/" + actorID + "/log"
+	event := domain.IntentSealedEvent{
+		BaseEvent: domain.BaseEvent{
+			EventID:       "evt_squash_sealed",
+			SchemaVersion: 1,
+			EventType:     domain.EventIntentSealed,
+			ActorID:       actorID,
+			ActorName:     "jiangge",
+			Timestamp:     "2026-06-01T10:00:00Z",
+		},
+		IntentID:   intentID,
+		Thread:     branch,
+		Goal:       "feat(sources): add Pi agent session support",
+		GitBranch:  branch,
+		BaseCommit: baseMain,
+		CodeCommit: codeCommit,
+		CodeTree:   codeTree,
+		Summary: domain.IntentSummary{
+			Title:    "Add Pi agent session support",
+			What:     "Added Pi agent session source support.",
+			Why:      "Sherlog should ingest Pi agent sessions.",
+			UserGoal: "feat(sources): add Pi agent session support",
+		},
+		Fingerprint: domain.SemanticFingerprint{
+			Subsystems:   []string{"sources"},
+			FilesTouched: []string{"sources/pi.go"},
+		},
+		TurnCount: 1,
+		SealedAt:  "2026-06-01T10:05:00Z",
+	}
+	if err := forkSvc.Git.UpdateRef(sourceRef, writeActorEventCommit(t, forkSvc, event)); err != nil {
+		t.Fatalf("write fork actor ref: %v", err)
+	}
+
+	if _, err := svc.Git.Run("cat-file", "-e", codeCommit+"^{commit}"); err == nil {
+		t.Fatalf("test setup wrong: upstream should not already have fork code commit %s", codeCommit)
+	}
+
+	gitCmd(t, dir, "checkout", "main")
+	writeFile(t, dir, "sources/pi.go", "package sources\n\nfunc PiAgentSession() string { return \"pi\" }\n")
+	gitCmd(t, dir, "add", "sources/pi.go")
+	gitCmd(t, dir, "commit", "-m", "feat(sources): add Pi agent session support (#56)")
+	squashCommit := strings.TrimSpace(mustGitRun(t, dir, "rev-parse", "HEAD"))
+
+	res, err := svc.ImportActorLog(ActorLogImportOptions{
+		ActorID: actorID,
+		Remote:  forkDir,
+	})
+	if err != nil {
+		t.Fatalf("import actor log: %v", err)
+	}
+	wantImportBranchRef := "refs/mainline/imports/" + actorID + "/branches/" + branch
+	if !containsString(res.ImportedBranchRefs, wantImportBranchRef) {
+		t.Fatalf("import should retain fork branch ref %s, got %+v", wantImportBranchRef, res.ImportedBranchRefs)
+	}
+	if len(res.ObjectFetchWarnings) > 0 {
+		t.Fatalf("existing fork branch should not produce object fetch warnings: %+v", res.ObjectFetchWarnings)
+	}
+	if _, err := svc.Git.Run("cat-file", "-e", codeCommit+"^{commit}"); err != nil {
+		t.Fatalf("import should fetch fork code commit object for pinning: %v", err)
+	}
+	if !hasPinnedCommit(res.AutoPinned, intentID, squashCommit) {
+		t.Fatalf("squash merge should auto-pin after branch object import, got %+v", res.AutoPinned)
+	}
+	view, _ := svc.Store.ReadMainlineView()
+	contrib := findIntent(view, intentID)
+	if contrib == nil || contrib.Status != domain.StatusMerged || contrib.StatusEvidence.MergedMainCommit != squashCommit {
+		t.Fatalf("contributor squash intent should be merged on squash commit, got %+v", contrib)
+	}
+	if contrib.Provenance == nil || !containsString(contrib.Provenance.ImportedBranchRefs, wantImportBranchRef) {
+		t.Fatalf("contributor provenance should include imported branch ref, got %+v", contrib.Provenance)
+	}
+}
+
+func TestImportActorLogWarnsWhenForkBranchCannotBeFetched(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("maintainer"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	forkDir, forkCleanup := testRepo(t)
+	defer forkCleanup()
+	forkSvc := NewServiceFromRoot(forkDir)
+	if _, err := forkSvc.Init("jiangge"); err != nil {
+		t.Fatalf("fork init: %v", err)
+	}
+
+	actorID := "actor_deleted_branch"
+	sourceRef := "refs/mainline/actors/" + actorID + "/log"
+	event := actorRefTestSealedEvent("evt_deleted_branch", actorID, "int_deleted_branch", "2026-06-01T00:00:00Z")
+	event.GitBranch = "feature/deleted-before-import"
+	if err := forkSvc.Git.UpdateRef(sourceRef, writeActorEventCommit(t, forkSvc, event)); err != nil {
+		t.Fatalf("write fork actor ref: %v", err)
+	}
+
+	res, err := svc.ImportActorLog(ActorLogImportOptions{
+		ActorID: actorID,
+		Remote:  forkDir,
+	})
+	if err != nil {
+		t.Fatalf("missing fork branch should warn, not reject actor log: %v", err)
+	}
+	if !res.Accepted || len(res.ImportedBranchRefs) != 0 || len(res.ObjectFetchWarnings) != 1 {
+		t.Fatalf("expected accepted actor log with one object-fetch warning, got %+v", res)
+	}
+	view, _ := svc.Store.ReadMainlineView()
+	contrib := findIntent(view, "int_deleted_branch")
+	if contrib == nil || contrib.Provenance == nil || len(contrib.Provenance.ObjectFetchWarnings) != 1 {
+		t.Fatalf("object-fetch warning should survive provenance, got %+v", contrib)
+	}
+}
+
+func TestImportActorLogPushesImportedForkBranchRefs(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	remoteDir, err := os.MkdirTemp("", "mainline-import-remote-*")
+	if err != nil {
+		t.Fatalf("remote temp: %v", err)
+	}
+	defer os.RemoveAll(remoteDir)
+	gitCmd(t, remoteDir, "init", "--bare")
+	gitCmd(t, dir, "remote", "add", "origin", remoteDir)
+	gitCmd(t, dir, "push", "origin", "main")
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("maintainer"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	baseMain := svc.Git.ReadRef("refs/heads/main")
+
+	forkDir := t.TempDir()
+	gitCmd(t, dir, "clone", dir, forkDir)
+	gitCmd(t, forkDir, "config", "user.email", "fork@test.com")
+	gitCmd(t, forkDir, "config", "user.name", "Fork")
+	forkSvc := NewServiceFromRoot(forkDir)
+
+	actorID := "actor_push_branch"
+	branch := "feature/pushed-import"
+	gitCmd(t, forkDir, "checkout", "-b", branch, "main")
+	writeFile(t, forkDir, "sources/pushed.go", "package sources\n\nfunc PushedImport() {}\n")
+	gitCmd(t, forkDir, "add", "sources/pushed.go")
+	gitCmd(t, forkDir, "commit", "-m", "feat: pushed import branch")
+	codeCommit := strings.TrimSpace(mustGitRun(t, forkDir, "rev-parse", "HEAD"))
+	codeTree := strings.TrimSpace(mustGitRun(t, forkDir, "rev-parse", "HEAD^{tree}"))
+	sourceRef := "refs/mainline/actors/" + actorID + "/log"
+	event := domain.IntentSealedEvent{
+		BaseEvent: domain.BaseEvent{
+			EventID:       "evt_push_branch_sealed",
+			SchemaVersion: 1,
+			EventType:     domain.EventIntentSealed,
+			ActorID:       actorID,
+			ActorName:     "jiangge",
+			Timestamp:     "2026-06-01T10:00:00Z",
+		},
+		IntentID:   "int_push_branch",
+		Thread:     branch,
+		Goal:       "feat: pushed import branch",
+		GitBranch:  branch,
+		BaseCommit: baseMain,
+		CodeCommit: codeCommit,
+		CodeTree:   codeTree,
+		Summary: domain.IntentSummary{
+			Title:    "Pushed import branch",
+			What:     "Added a fork branch object transport fixture.",
+			Why:      "Upstream import refs must keep contributor code objects reachable.",
+			UserGoal: "feat: pushed import branch",
+		},
+		TurnCount: 1,
+		SealedAt:  "2026-06-01T10:05:00Z",
+	}
+	if err := forkSvc.Git.UpdateRef(sourceRef, writeActorEventCommit(t, forkSvc, event)); err != nil {
+		t.Fatalf("write fork actor ref: %v", err)
+	}
+
+	res, err := svc.ImportActorLog(ActorLogImportOptions{
+		ActorID: actorID,
+		Remote:  forkDir,
+	})
+	if err != nil {
+		t.Fatalf("import actor log: %v", err)
+	}
+	if !res.Pushed {
+		t.Fatalf("import should push accepted metadata when origin exists")
+	}
+	wantRef := "refs/mainline/imports/" + actorID + "/branches/" + branch
+	if !containsString(res.ImportedBranchRefs, wantRef) {
+		t.Fatalf("expected imported branch ref %s, got %+v", wantRef, res.ImportedBranchRefs)
+	}
+	if got := strings.TrimSpace(mustGitRun(t, remoteDir, "rev-parse", wantRef)); got != codeCommit {
+		t.Fatalf("remote import branch ref mismatch: got %s want %s", got, codeCommit)
+	}
+}
+
+func TestImportedBranchRefSanitizesUnsafeGitRefNames(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	got := svc.importedBranchRef("actor_bad_ref", "topic/../bad.lock")
+	if !strings.HasPrefix(got, "refs/mainline/imports/actor_bad_ref/branches/") {
+		t.Fatalf("imported branch ref should stay in import namespace, got %s", got)
+	}
+	if _, err := svc.Git.Run("check-ref-format", got); err != nil {
+		t.Fatalf("sanitized import ref should be a valid git ref: %v", err)
 	}
 }
 

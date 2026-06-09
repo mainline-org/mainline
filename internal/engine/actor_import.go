@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,21 +19,23 @@ type ActorLogImportOptions struct {
 }
 
 type ActorLogImportResult struct {
-	ActorID            string         `json:"actor_id"`
-	SourceRemote       string         `json:"source_remote,omitempty"`
-	SourceRef          string         `json:"source_ref"`
-	ImportRef          string         `json:"import_ref,omitempty"`
-	SourceHead         string         `json:"source_head"`
-	TargetRef          string         `json:"target_ref"`
-	PreviousTargetHead string         `json:"previous_target_head,omitempty"`
-	EventCount         int            `json:"event_count"`
-	SealedIntentCount  int            `json:"sealed_intent_count"`
-	SealedIntentIDs    []string       `json:"sealed_intent_ids,omitempty"`
-	Accepted           bool           `json:"accepted"`
-	AcceptedBy         string         `json:"accepted_by"`
-	AcceptedEventID    string         `json:"accepted_event_id,omitempty"`
-	Pushed             bool           `json:"pushed"`
-	AutoPinned         []PinnedCommit `json:"auto_pinned,omitempty"`
+	ActorID             string         `json:"actor_id"`
+	SourceRemote        string         `json:"source_remote,omitempty"`
+	SourceRef           string         `json:"source_ref"`
+	ImportRef           string         `json:"import_ref,omitempty"`
+	ImportedBranchRefs  []string       `json:"imported_branch_refs,omitempty"`
+	ObjectFetchWarnings []string       `json:"object_fetch_warnings,omitempty"`
+	SourceHead          string         `json:"source_head"`
+	TargetRef           string         `json:"target_ref"`
+	PreviousTargetHead  string         `json:"previous_target_head,omitempty"`
+	EventCount          int            `json:"event_count"`
+	SealedIntentCount   int            `json:"sealed_intent_count"`
+	SealedIntentIDs     []string       `json:"sealed_intent_ids,omitempty"`
+	Accepted            bool           `json:"accepted"`
+	AcceptedBy          string         `json:"accepted_by"`
+	AcceptedEventID     string         `json:"accepted_event_id,omitempty"`
+	Pushed              bool           `json:"pushed"`
+	AutoPinned          []PinnedCommit `json:"auto_pinned,omitempty"`
 }
 
 func (s *Service) ImportActorLog(opts ActorLogImportOptions) (*ActorLogImportResult, error) {
@@ -89,9 +92,16 @@ func (s *Service) ImportActorLog(opts ActorLogImportOptions) (*ActorLogImportRes
 	if err != nil {
 		return nil, fmt.Errorf("read source actor log: %w", err)
 	}
-	sealedIDs, err := validateImportedActorEvents(actorID, rawEvents)
+	validation, err := validateImportedActorEvents(actorID, rawEvents)
 	if err != nil {
 		return nil, err
+	}
+	sealedIDs := validation.SealedIntentIDs
+
+	var importedBranchRefs []string
+	var objectFetchWarnings []string
+	if remote != "" && len(validation.Branches) > 0 {
+		importedBranchRefs, objectFetchWarnings = s.fetchImportedBranches(remote, actorID, validation.Branches)
 	}
 
 	previousTargetHead := s.Git.ReadRef(targetRef)
@@ -126,16 +136,18 @@ func (s *Service) ImportActorLog(opts ActorLogImportOptions) (*ActorLogImportRes
 				ActorName:     identity.ActorName,
 				Timestamp:     core.Now(),
 			},
-			AcceptedActorID:    actorID,
-			SourceRemote:       remote,
-			SourceRef:          resultSourceRef,
-			SourceHead:         sourceHead,
-			TargetRef:          targetRef,
-			PreviousTargetHead: previousTargetHead,
-			EventCount:         len(rawEvents),
-			SealedIntentIDs:    sealedIDs,
-			Verified:           true,
-			AuthorSealed:       true,
+			AcceptedActorID:     actorID,
+			SourceRemote:        remote,
+			SourceRef:           resultSourceRef,
+			SourceHead:          sourceHead,
+			TargetRef:           targetRef,
+			PreviousTargetHead:  previousTargetHead,
+			EventCount:          len(rawEvents),
+			SealedIntentIDs:     sealedIDs,
+			ImportedBranchRefs:  importedBranchRefs,
+			ObjectFetchWarnings: objectFetchWarnings,
+			Verified:            true,
+			AuthorSealed:        true,
 		}
 		if err := s.Store.AppendActorLogEvent(identity.ActorID, cfg.Mainline.ActorLogPrefix, acceptEvent); err != nil {
 			if previousTargetHead != "" {
@@ -167,6 +179,9 @@ func (s *Service) ImportActorLog(opts ActorLogImportOptions) (*ActorLogImportRes
 		if s.Git.ReadRef(acceptActorRef) != "" {
 			pushRefspecs = append(pushRefspecs, acceptActorRef+":"+acceptActorRef)
 		}
+		for _, ref := range importedBranchRefs {
+			pushRefspecs = append(pushRefspecs, ref+":"+ref)
+		}
 		if len(autoPinned) > 0 {
 			pushRefspecs = append(pushRefspecs, "refs/notes/mainline/intents")
 		}
@@ -180,32 +195,41 @@ func (s *Service) ImportActorLog(opts ActorLogImportOptions) (*ActorLogImportRes
 	}
 
 	return &ActorLogImportResult{
-		ActorID:            actorID,
-		SourceRemote:       remote,
-		SourceRef:          resultSourceRef,
-		ImportRef:          importRef,
-		SourceHead:         sourceHead,
-		TargetRef:          targetRef,
-		PreviousTargetHead: previousTargetHead,
-		EventCount:         len(rawEvents),
-		SealedIntentCount:  len(sealedIDs),
-		SealedIntentIDs:    sealedIDs,
-		Accepted:           accepted,
-		AcceptedBy:         identity.ActorID,
-		AcceptedEventID:    eventID,
-		Pushed:             pushed,
-		AutoPinned:         autoPinned,
+		ActorID:             actorID,
+		SourceRemote:        remote,
+		SourceRef:           resultSourceRef,
+		ImportRef:           importRef,
+		ImportedBranchRefs:  importedBranchRefs,
+		ObjectFetchWarnings: objectFetchWarnings,
+		SourceHead:          sourceHead,
+		TargetRef:           targetRef,
+		PreviousTargetHead:  previousTargetHead,
+		EventCount:          len(rawEvents),
+		SealedIntentCount:   len(sealedIDs),
+		SealedIntentIDs:     sealedIDs,
+		Accepted:            accepted,
+		AcceptedBy:          identity.ActorID,
+		AcceptedEventID:     eventID,
+		Pushed:              pushed,
+		AutoPinned:          autoPinned,
 	}, nil
 }
 
-func validateImportedActorEvents(actorID string, rawEvents []json.RawMessage) ([]string, error) {
+type importedActorValidation struct {
+	SealedIntentIDs []string
+	Branches        []string
+}
+
+func validateImportedActorEvents(actorID string, rawEvents []json.RawMessage) (*importedActorValidation, error) {
 	if len(rawEvents) == 0 {
 		return nil, domain.NewError(domain.ErrInvalidInput,
 			fmt.Sprintf("source actor log for %s contains no events", actorID))
 	}
 
 	seenSealed := map[string]bool{}
+	seenBranches := map[string]bool{}
 	var sealedIDs []string
+	var branches []string
 	for i, raw := range rawEvents {
 		var base domain.BaseEvent
 		if err := json.Unmarshal(raw, &base); err != nil {
@@ -240,9 +264,14 @@ func validateImportedActorEvents(actorID string, rawEvents []json.RawMessage) ([
 				seenSealed[evt.IntentID] = true
 				sealedIDs = append(sealedIDs, evt.IntentID)
 			}
+			branch := strings.TrimSpace(evt.GitBranch)
+			if branch != "" && !seenBranches[branch] {
+				seenBranches[branch] = true
+				branches = append(branches, branch)
+			}
 		}
 	}
-	return sealedIDs, nil
+	return &importedActorValidation{SealedIntentIDs: sealedIDs, Branches: branches}, nil
 }
 
 func knownImportedActorEventType(eventType domain.EventType) bool {
@@ -274,4 +303,59 @@ func (s *Service) gitIsAncestor(ancestor, descendant string) (bool, error) {
 	} else {
 		return false, err
 	}
+}
+
+func (s *Service) fetchImportedBranches(remote, actorID string, branches []string) ([]string, []string) {
+	imported := make([]string, 0, len(branches))
+	var errs []string
+	for _, branch := range branches {
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			continue
+		}
+		target := s.importedBranchRef(actorID, branch)
+		refspec := "+refs/heads/" + branch + ":" + target
+		if err := s.Git.Fetch(remote, refspec); err != nil {
+			errs = append(errs, fmt.Sprintf("fetch branch %s from %s failed: %v", branch, remote, err))
+			continue
+		}
+		imported = append(imported, target)
+	}
+	return imported, errs
+}
+
+func (s *Service) importedBranchRef(actorID, branch string) string {
+	base := "refs/mainline/imports/" + actorID + "/branches/"
+	candidate := base + sanitizeImportedBranchRef(branch)
+	if _, err := s.Git.Run("check-ref-format", candidate); err == nil {
+		return candidate
+	}
+	sum := sha256.Sum256([]byte(branch))
+	return fmt.Sprintf("%sbranch-%x", base, sum[:6])
+}
+
+func sanitizeImportedBranchRef(branch string) string {
+	branch = strings.TrimSpace(branch)
+	var b strings.Builder
+	lastSlash := false
+	for _, r := range branch {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_':
+			b.WriteRune(r)
+			lastSlash = false
+		case r == '/':
+			if !lastSlash {
+				b.WriteByte('/')
+				lastSlash = true
+			}
+		default:
+			b.WriteByte('-')
+			lastSlash = false
+		}
+	}
+	out := strings.Trim(b.String(), "/.")
+	if out == "" {
+		return "branch"
+	}
+	return out
 }

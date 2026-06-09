@@ -456,17 +456,19 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				continue
 			}
 			prov := domain.IntentProvenance{
-				Kind:            "accepted_actor_log",
-				SourceRemote:    evt.SourceRemote,
-				SourceRef:       evt.SourceRef,
-				SourceHead:      evt.SourceHead,
-				TargetRef:       evt.TargetRef,
-				AcceptedByActor: evt.ActorID,
-				AcceptedByName:  evt.ActorName,
-				AcceptedAt:      evt.Timestamp,
-				AcceptedEventID: evt.EventID,
-				AuthorSealed:    evt.AuthorSealed,
-				Verified:        evt.Verified,
+				Kind:                "accepted_actor_log",
+				SourceRemote:        evt.SourceRemote,
+				SourceRef:           evt.SourceRef,
+				SourceHead:          evt.SourceHead,
+				TargetRef:           evt.TargetRef,
+				AcceptedByActor:     evt.ActorID,
+				AcceptedByName:      evt.ActorName,
+				AcceptedAt:          evt.Timestamp,
+				AcceptedEventID:     evt.EventID,
+				ImportedBranchRefs:  append([]string(nil), evt.ImportedBranchRefs...),
+				ObjectFetchWarnings: append([]string(nil), evt.ObjectFetchWarnings...),
+				AuthorSealed:        evt.AuthorSealed,
+				Verified:            evt.Verified,
 			}
 			for _, id := range evt.SealedIntentIDs {
 				acceptedProvenance[id] = prov

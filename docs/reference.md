@@ -285,14 +285,25 @@ mainline actor import --actor actor_jiangge --remote jiangge
 command fetches `refs/mainline/actors/<actor>/log` into
 `refs/mainline/imports/<actor>/log`, validates that the events belong to the
 expected actor, accepts the log into the upstream actor namespace, rebuilds the
-view, and runs the normal auto-pin cascade. When the upstream remote is
-configured, Mainline pushes the accepted contributor actor ref, the maintainer's
-acceptance event, and any new pin notes so the next `mainline sync` in another
-clone sees the same author-sealed intent.
+view, and runs the normal auto-pin cascade. It also best-effort fetches fork
+branches referenced by the accepted sealed intents into
+`refs/mainline/imports/<actor>/branches/*`. Those hidden import refs keep the
+contributor's original code commits and trees reachable in upstream, which is
+what lets a squash/rebase PR pin by tree/content even when the original fork
+commit is not in `main`.
 
-This command imports actor-log intent metadata only. It deliberately does not
-copy fork git notes into upstream because notes are evidence about upstream main
-commits and should be written by upstream pinning.
+When the upstream remote is configured, Mainline pushes the accepted contributor
+actor ref, the maintainer's acceptance event, the imported fork branch refs, and
+any new pin notes so the next `mainline sync` in another clone sees the same
+author-sealed intent and the code objects needed to reason about it.
+
+This command imports actor-log intent metadata and the referenced fork code
+objects. It deliberately does not copy fork git notes into upstream because
+notes are evidence about upstream main commits and should be written by upstream
+pinning. If a referenced fork branch was deleted or cannot be fetched, the
+actor-log accept can still succeed, but Mainline records object-fetch warnings
+in the result/provenance and auto-pin may require a later manual fetch or
+explicit `mainline pin`.
 
 Maintainer backfills can coexist with later accepted contributor intents. A
 backfill or explicit maintainer pin is the upstream maintainer's rescue record;

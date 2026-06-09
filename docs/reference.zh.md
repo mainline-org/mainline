@@ -252,14 +252,23 @@ mainline actor import --actor actor_jiangge --remote jiangge
 `--remote` 可以是已配置的 Git remote，也可以是可 fetch 的 URL。默认会从 fork 拉
 `refs/mainline/actors/<actor>/log` 到
 `refs/mainline/imports/<actor>/log`，校验 event 都属于指定 actor，然后把这条
-actor log 接受到 upstream actor namespace，重建 view，并运行正常的 auto-pin。
-如果 upstream remote 已配置，Mainline 会把已接受的 contributor actor ref、
-maintainer 写下的 accept event，以及新增 pin notes 推上去；其他 clone 下一次
-`mainline sync` 就能看到同一条 author-sealed intent。
+actor log 接受到 upstream actor namespace，重建 view，并运行正常的 auto-pin。它还会
+best-effort 拉取 accepted sealed intent 引用的 fork branch 到
+`refs/mainline/imports/<actor>/branches/*`。这些 hidden import refs 让 contributor
+原始 code commit/tree object 在 upstream 可达；即使 PR 是 squash/rebase merge，
+Mainline 也能按 tree/content 把 contributor 自己 sealed 的 intent pin 到 upstream
+merge commit。
 
-这个命令只导入 actor-log intent metadata，不会把 fork 里的 git notes 原样复制到
-upstream。notes 是关于 upstream main commit 的 pin 证据，应该由 upstream 这边的
-pin 逻辑写入。
+如果 upstream remote 已配置，Mainline 会把已接受的 contributor actor ref、
+maintainer 写下的 accept event、导入的 fork branch refs，以及新增 pin notes 推上去；
+其他 clone 下一次 `mainline sync` 就能看到同一条 author-sealed intent，以及解释它所需
+的 code objects。
+
+这个命令导入 actor-log intent metadata 和被引用的 fork code objects，但不会把 fork 里的
+git notes 原样复制到 upstream。notes 是关于 upstream main commit 的 pin 证据，应该由
+upstream 这边的 pin 逻辑写入。如果 fork branch 已删除或不可 fetch，accept actor log 仍可
+成功，但 Mainline 会在结果/provenance 里记录 object-fetch warning，auto-pin 可能需要后续
+手动 fetch 或 explicit `mainline pin`。
 
 maintainer 回填可以和之后接受的 contributor intent 共存。回填 / explicit pin 是
 upstream maintainer 的 rescue 记录；accepted fork actor log 是 contributor 自己

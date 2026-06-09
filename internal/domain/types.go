@@ -108,18 +108,20 @@ type StatusEvidence struct {
 // of the author's sealed intent content. The default nil provenance
 // means the intent was read from the normal team actor-log sync path.
 type IntentProvenance struct {
-	Kind            string `json:"kind"` // "accepted_actor_log" | future values
-	SourceRemote    string `json:"source_remote,omitempty"`
-	SourceRef       string `json:"source_ref,omitempty"`
-	SourceHead      string `json:"source_head,omitempty"`
-	TargetRef       string `json:"target_ref,omitempty"`
-	AcceptedByActor string `json:"accepted_by_actor,omitempty"`
-	AcceptedByName  string `json:"accepted_by_name,omitempty"`
-	AcceptedAt      string `json:"accepted_at,omitempty"`
-	AcceptedEventID string `json:"accepted_event_id,omitempty"`
-	AuthorSealed    bool   `json:"author_sealed"`
-	NotAuthorSealed bool   `json:"not_author_sealed,omitempty"`
-	Verified        bool   `json:"verified"`
+	Kind                string   `json:"kind"` // "accepted_actor_log" | future values
+	SourceRemote        string   `json:"source_remote,omitempty"`
+	SourceRef           string   `json:"source_ref,omitempty"`
+	SourceHead          string   `json:"source_head,omitempty"`
+	TargetRef           string   `json:"target_ref,omitempty"`
+	AcceptedByActor     string   `json:"accepted_by_actor,omitempty"`
+	AcceptedByName      string   `json:"accepted_by_name,omitempty"`
+	AcceptedAt          string   `json:"accepted_at,omitempty"`
+	AcceptedEventID     string   `json:"accepted_event_id,omitempty"`
+	ImportedBranchRefs  []string `json:"imported_branch_refs,omitempty"`
+	ObjectFetchWarnings []string `json:"object_fetch_warnings,omitempty"`
+	AuthorSealed        bool     `json:"author_sealed"`
+	NotAuthorSealed     bool     `json:"not_author_sealed,omitempty"`
+	Verified            bool     `json:"verified"`
 }
 
 // CommitNote is the structured JSON attached as a git note to main commits.

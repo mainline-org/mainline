@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -220,14 +221,16 @@ func TestBuildHubModel_PreservesAcceptedActorLogProvenance(t *testing.T) {
 	contributor.ActorName = "jiangge"
 	contributor.StatusEvidence.MergedMainCommit = "8006baae417d3ac3c8fe646ad77f67527480a17f"
 	contributor.Provenance = &domain.IntentProvenance{
-		Kind:            "accepted_actor_log",
-		SourceRemote:    "jiangge",
-		SourceRef:       "refs/mainline/actors/actor_jiangge/log",
-		TargetRef:       "refs/mainline/actors/actor_jiangge/log",
-		AcceptedByActor: "actor_maintainer",
-		AcceptedByName:  "catoncat",
-		AuthorSealed:    true,
-		Verified:        true,
+		Kind:                "accepted_actor_log",
+		SourceRemote:        "jiangge",
+		SourceRef:           "refs/mainline/actors/actor_jiangge/log",
+		TargetRef:           "refs/mainline/actors/actor_jiangge/log",
+		AcceptedByActor:     "actor_maintainer",
+		AcceptedByName:      "catoncat",
+		ImportedBranchRefs:  []string{"refs/mainline/imports/actor_jiangge/branches/feature/pi-agent"},
+		ObjectFetchWarnings: []string{"fetch branch deleted from jiangge failed"},
+		AuthorSealed:        true,
+		Verified:            true,
 	}
 
 	m := buildHubModel(makeView(contributor))
@@ -237,6 +240,10 @@ func TestBuildHubModel_PreservesAcceptedActorLogProvenance(t *testing.T) {
 	prov := m.Intents[0].Provenance
 	if prov.Kind != "accepted_actor_log" || !prov.AuthorSealed || !prov.Verified || prov.AcceptedByActor != "actor_maintainer" {
 		t.Fatalf("wrong accepted provenance: %+v", prov)
+	}
+	if !slices.Contains(prov.ImportedBranchRefs, "refs/mainline/imports/actor_jiangge/branches/feature/pi-agent") ||
+		!slices.Contains(prov.ObjectFetchWarnings, "fetch branch deleted from jiangge failed") {
+		t.Fatalf("accepted provenance should preserve imported code refs and warnings: %+v", prov)
 	}
 	if m.Dashboard.ActorCount != 1 || len(m.ActorIndex) != 1 || m.ActorIndex[0].ActorID != "actor_jiangge" {
 		t.Fatalf("accepted author-sealed intent should count as contributor actor intent, dashboard=%+v actors=%+v", m.Dashboard, m.ActorIndex)

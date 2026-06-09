@@ -34,7 +34,10 @@ actor ref, validate that the events belong to the expected actor, accept
 that ref, rebuild the view, and run the normal auto-pin cascade.
 
 It imports author-sealed Mainline metadata. It does not parse GitHub PR
-body templates and it does not copy fork git notes into upstream.`,
+body templates and it does not copy fork git notes into upstream. When a
+remote is provided, it also best-effort fetches fork branches referenced by
+sealed intents into refs/mainline/imports/<actor>/branches/* so squash/rebase
+PRs can still auto-pin by tree/content.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -64,10 +67,16 @@ body templates and it does not copy fork git notes into upstream.`,
 		if result.ImportRef != "" {
 			fmt.Printf("  Import:  %s\n", result.ImportRef)
 		}
+		if len(result.ImportedBranchRefs) > 0 {
+			fmt.Printf("  Code refs: %v\n", result.ImportedBranchRefs)
+		}
 		fmt.Printf("  Target:  %s\n", result.TargetRef)
 		fmt.Printf("  Events:  %d (%d sealed intent(s))\n", result.EventCount, result.SealedIntentCount)
 		if len(result.SealedIntentIDs) > 0 {
 			fmt.Printf("  Intents: %v\n", result.SealedIntentIDs)
+		}
+		for _, warning := range result.ObjectFetchWarnings {
+			fmt.Printf("  Warning: %s\n", warning)
 		}
 		if len(result.AutoPinned) > 0 {
 			fmt.Printf("  Auto-pinned %d intent(s):\n", len(result.AutoPinned))
