@@ -25,6 +25,12 @@ type ExportOptions struct {
 	CoverageRows  []CoverageInputCommit
 	Source        HubSource
 	SiblingDrafts []HubWorktreeDraft
+	// ExternalContributions are explicit imported/inferred records
+	// such as merged fork PRs whose contributor did not publish an
+	// upstream-visible Mainline actor log. Hub displays them with
+	// provenance and trust flags but keeps them out of intent-derived
+	// actor/review/coverage indexes.
+	ExternalContributions []HubExternalContribution
 	// CoverageWindow is the engine's window size (commits scanned).
 	// Echoed into HubCoverageDetail.WindowSize so the page can show
 	// "last N commits on main" honestly.
@@ -66,6 +72,7 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	model.Source.IncludesCurrentWorktreeDrafts = true
 	model.Source.IncludesSiblingWorktreeDraftList = model.Source.IncludesSiblingWorktreeDraftList || len(opts.SiblingDrafts) > 0
 	model.SiblingDrafts = append([]HubWorktreeDraft(nil), opts.SiblingDrafts...)
+	attachExternalContributions(model, opts.ExternalContributions)
 	enrichIntentsWithTurns(store, model)
 	model.Dashboard = buildDashboard(model)
 	if len(opts.CoverageRows) > 0 {
@@ -105,6 +112,129 @@ func hubSourceWithDefaults(store *storage.Store, source HubSource) HubSource {
 		source.CurrentWorktreeDraftsDir = filepath.Join(source.RepoPath, ".ml-cache", "drafts")
 	}
 	return source
+}
+
+func attachExternalContributions(m *HubModel, contributions []HubExternalContribution) {
+	if m == nil || len(contributions) == 0 {
+		return
+	}
+	byCommit := map[string][]string{}
+	for _, in := range m.Intents {
+		if in.MergedMainCommit == "" {
+			continue
+		}
+		byCommit[in.MergedMainCommit] = append(byCommit[in.MergedMainCommit], in.ID)
+	}
+	out := make([]HubExternalContribution, 0, len(contributions))
+	for _, in := range contributions {
+		c := normalizeExternalContribution(in)
+		if c.MergedCommit != "" {
+			c.AssociatedIntentIDs = mergeStringList(c.AssociatedIntentIDs, byCommit[c.MergedCommit])
+		}
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].MergedAt != out[j].MergedAt {
+			return out[i].MergedAt > out[j].MergedAt
+		}
+		if out[i].ImportedAt != out[j].ImportedAt {
+			return out[i].ImportedAt > out[j].ImportedAt
+		}
+		return out[i].ID < out[j].ID
+	})
+	m.ExternalContributions = out
+}
+
+func normalizeExternalContribution(in HubExternalContribution) HubExternalContribution {
+	out := in
+	out.ID = strings.TrimSpace(out.ID)
+	out.Title = strings.TrimSpace(out.Title)
+	out.Source = strings.TrimSpace(out.Source)
+	out.Repository = strings.TrimSpace(out.Repository)
+	out.PRURL = strings.TrimSpace(out.PRURL)
+	out.HeadRef = strings.TrimSpace(out.HeadRef)
+	out.BaseRef = strings.TrimSpace(out.BaseRef)
+	out.AuthorLogin = strings.TrimSpace(out.AuthorLogin)
+	out.AuthorName = strings.TrimSpace(out.AuthorName)
+	out.MergedCommit = strings.TrimSpace(out.MergedCommit)
+	out.MergedAt = strings.TrimSpace(out.MergedAt)
+	out.Provenance = strings.TrimSpace(out.Provenance)
+	out.BodyIntentNote = strings.TrimSpace(out.BodyIntentNote)
+	out.ImportedBy = strings.TrimSpace(out.ImportedBy)
+	out.ImportedAt = strings.TrimSpace(out.ImportedAt)
+
+	if out.Source == "" {
+		out.Source = "github"
+	}
+	if out.Provenance == "" {
+		out.Provenance = "github_pr_imported"
+	}
+	if out.ID == "" {
+		out.ID = externalContributionID(out)
+	}
+	out.AuthorSealed = false
+	out.NotAuthorSealed = true
+	out.Verified = false
+	out.AssociatedIntentIDs = mergeStringList(nil, out.AssociatedIntentIDs)
+	return out
+}
+
+func externalContributionID(c HubExternalContribution) string {
+	if c.Source == "github" && c.Repository != "" && c.PRNumber > 0 {
+		return "github-pr-" + sanitizeExternalContributionID(c.Repository) + "-" + fmt.Sprintf("%d", c.PRNumber)
+	}
+	if c.MergedCommit != "" {
+		return "external-" + shortExternalCommit(c.MergedCommit)
+	}
+	return "external-" + sanitizeExternalContributionID(c.Title)
+}
+
+func sanitizeExternalContributionID(in string) string {
+	in = strings.ToLower(strings.TrimSpace(in))
+	if in == "" {
+		return "contribution"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range in {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "contribution"
+	}
+	return out
+}
+
+func shortExternalCommit(commit string) string {
+	if len(commit) > 12 {
+		return commit[:12]
+	}
+	return commit
+}
+
+func mergeStringList(existing, additions []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(existing)+len(additions))
+	for _, list := range [][]string{existing, additions} {
+		for _, v := range list {
+			v = strings.TrimSpace(v)
+			if v == "" || seen[v] {
+				continue
+			}
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // buildHubModel is the pure model-derivation step: given a view,
@@ -740,6 +870,15 @@ func writeSearchIndex(dir string, m *HubModel) error {
 		}
 		entries = append(entries, searchEntry{
 			Type: "file", Title: f.Path, URL: "files/" + fileSlug(f.Path) + ".html", Text: text,
+		})
+	}
+	for _, c := range m.ExternalContributions {
+		text := strings.Join([]string{
+			c.Title, c.Description, c.AuthorLogin, c.AuthorName, c.Repository,
+			c.Provenance, c.BodyIntentNote, c.MergedCommit, strings.Join(c.AssociatedIntentIDs, " "),
+		}, " ")
+		entries = append(entries, searchEntry{
+			Type: "external", Title: c.Title, URL: "index.html", Text: text,
 		})
 	}
 	data, err := json.Marshal(entries)

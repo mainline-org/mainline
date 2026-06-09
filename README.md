@@ -224,6 +224,18 @@ For static export:
 mainline hub export ./mainline-hub
 ```
 
+Fork PRs may be shown as imported external contributions when the contributor
+has no upstream-visible Mainline actor log:
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+Those records are labeled with provenance such as `github_pr_imported` and
+`not author-sealed`. Hub does not treat GitHub PR metadata or an empty
+`## Mainline Intent` PR-body template as a contributor-authored sealed
+Mainline intent.
+
 The public hosted Hub for Mainline is https://mainline.sh/hub/.
 
 The detailed reference covers install variants, recovery rules, hook behavior,

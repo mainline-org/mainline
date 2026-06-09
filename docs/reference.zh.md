@@ -242,6 +242,27 @@ open ./mainline-hub/index.html      # macOS
 xdg-open ./mainline-hub/index.html  # Linux
 ```
 
+如果一个已 merge 的 fork PR 作者没有把 Mainline actor log 发布到 upstream repo，
+可以传入显式 import 文件，让 Hub 解释这条外部贡献：
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+文件可以是数组，也可以是 `{ "external_contributions": [...] }`。每行通常携带
+`author_login`、`repository`、`pr_number`、`pr_url`、`merged_commit` 和
+`provenance` 等 GitHub PR metadata。Hub 会把这些记录当成 imported / inferred
+contribution，而不是作者自己的 Mainline intent：导入时强制
+`author_sealed=false`、`not_author_sealed=true`、`verified=false`，并把它关联到
+同一 merge commit 上已有的 upstream Mainline intent。这样 Hub 能说明“这个已
+merge PR 的原作者是谁”，但不会污染 actor count、review queue、coverage 或 pin
+语义。
+
+不要把 GitHub PR body 里空的 `## Mainline Intent` 模板当作 intent 证据。
+PR description 是 review-time artifact；Mainline sealed intent 来自 actor log。
+fork actor metadata 只有经过单独的 fetch / accept trust flow 后，才能被当成作者
+sealed 的 intent。
+
 Hub 输出是本地生成状态，不应提交。
 
 ### 用 GitHub Pages 发布 Hub
@@ -253,6 +274,11 @@ Pages 部署这份静态 artifact。
 在仓库设置里把 Pages source 设成 **GitHub Actions**。workflow 会在 `main` 更新、
 手动触发、每天定时跑一次。这个定时不是装饰：Mainline intent state 也会通过 Git
 refs 和 notes 流动，所以 hosted Hub 需要一条不依赖代码 diff 的刷新路径。
+
+fork contributor 是 trust-boundary 场景。upstream repo 只能看见已经 fetch 并接受
+进 Mainline view 的 actor log。在这之前，Hub 可以显示带 provenance
+（`github_pr_imported` 或 `inferred`）和 importer metadata 的 GitHub PR import，
+但不能把它展示成 verified contributor-sealed intent。
 
 ## 常用命令
 

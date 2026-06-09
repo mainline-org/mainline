@@ -35,6 +35,12 @@ type HubModel struct {
 	Intents       []HubIntent        `json:"intents"`
 	OpenIntents   []HubOpenIntent    `json:"open_intents,omitempty"`
 	SiblingDrafts []HubWorktreeDraft `json:"sibling_worktree_drafts,omitempty"`
+	// ExternalContributions are imported/inferred contribution records
+	// whose author did not publish a Mainline actor log into this
+	// upstream view. They are intentionally not HubIntent rows: they
+	// must not affect actor counts, review queues, coverage, pinning,
+	// or conflict checks.
+	ExternalContributions []HubExternalContribution `json:"external_contributions,omitempty"`
 
 	// Derived indexes. These are pure functions of Intents; they live
 	// on the model so the renderer doesn't have to recompute them and
@@ -77,6 +83,52 @@ type HubWorktreeDraft struct {
 	DraftPath      string `json:"draft_path"`
 	TurnCount      int    `json:"turn_count,omitempty"`
 	LastModifiedAt string `json:"last_modified_at,omitempty"`
+}
+
+// HubExternalContribution is Hub's explicit trust-boundary record
+// for fork PRs and other upstream-visible contributions that do not
+// have an author-owned Mainline sealed intent in the synced actor-log
+// view. It explains the contribution without pretending it is a
+// Mainline intent authored/sealed by the contributor.
+type HubExternalContribution struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+
+	Source     string `json:"source"` // "github" in v1
+	Repository string `json:"repository,omitempty"`
+	PRNumber   int    `json:"pr_number,omitempty"`
+	PRURL      string `json:"pr_url,omitempty"`
+	HeadRef    string `json:"head_ref,omitempty"`
+	BaseRef    string `json:"base_ref,omitempty"`
+
+	AuthorLogin string `json:"author_login"`
+	AuthorName  string `json:"author_name,omitempty"`
+
+	MergedCommit string `json:"merged_commit,omitempty"`
+	MergedAt     string `json:"merged_at,omitempty"`
+
+	// Provenance is one of github_pr_imported, inferred, or a future
+	// more-specific value. BodyIntentNote carries lossy PR-body truth
+	// such as empty_template so readers know an empty "Mainline Intent"
+	// section was not parsed as a real author-sealed intent.
+	Provenance     string `json:"provenance"`
+	BodyIntentNote string `json:"body_intent_note,omitempty"`
+	ImportedBy     string `json:"imported_by,omitempty"`
+	ImportedAt     string `json:"imported_at,omitempty"`
+
+	// Trust flags: AuthorSealed is true only for a real author-owned
+	// Mainline actor seal. GitHub PR imports must keep it false and
+	// NotAuthorSealed true. Verified is reserved for a future accept /
+	// verification flow and is false for inferred/imported v1 records.
+	AuthorSealed    bool `json:"author_sealed"`
+	NotAuthorSealed bool `json:"not_author_sealed"`
+	Verified        bool `json:"verified"`
+
+	// AssociatedIntentIDs are upstream Mainline intents pinned to the
+	// same merge commit, e.g. maintainer review/fix intents. They help
+	// Hub explain the relationship without merging the identities.
+	AssociatedIntentIDs []string `json:"associated_intent_ids,omitempty"`
 }
 
 // HubInheritedHotspot mirrors domain.InheritedConstraintHotspot. We

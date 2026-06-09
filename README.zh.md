@@ -204,6 +204,17 @@ mainline gaps
 mainline hub export ./mainline-hub
 ```
 
+fork PR 在 contributor 没有 upstream 可见 Mainline actor log 时，可以作为
+imported external contribution 显示：
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+这类记录会标明 `github_pr_imported`、`not author-sealed` 等 provenance /
+trust boundary。Hub 不会把 GitHub PR metadata，或 PR body 里空的
+`## Mainline Intent` 模板，当成 contributor 自己 sealed 的 Mainline intent。
+
 Mainline 的公开 Hosted Hub 入口是：https://mainline.sh/hub/
 
 安装变体、恢复规则、hooks 行为、webhooks、配置、静态 Hub 发布、存储布局和开发命令，放在

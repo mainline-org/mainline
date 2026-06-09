@@ -274,6 +274,28 @@ open ./mainline-hub/index.html      # macOS
 xdg-open ./mainline-hub/index.html  # Linux
 ```
 
+To explain merged fork PRs whose authors did not publish Mainline actor logs to
+the upstream repo, pass an explicit import file:
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+The file may be either an array or `{ "external_contributions": [...] }`.
+Each row should carry GitHub PR metadata such as `author_login`,
+`repository`, `pr_number`, `pr_url`, `merged_commit`, and `provenance`.
+Hub currently treats these as imported/inferred contribution records, not as
+author-owned Mainline intents. It forces `author_sealed=false`,
+`not_author_sealed=true`, and `verified=false`, then links the row to any
+upstream Mainline intent pinned to the same merge commit. This lets Hub explain
+"who originally contributed this merged PR" without polluting actor counts,
+review queues, coverage, or pin logic.
+
+Do not use an empty `## Mainline Intent` section in a GitHub PR body as intent
+evidence. PR descriptions are review-time artifacts; Mainline sealed intents
+come from actor logs, and fork actor metadata needs a separate fetch/accept
+trust flow before it can be treated as author-sealed.
+
 Hub output is generated local state and should not be committed.
 
 ### Publishing Hub With GitHub Pages
@@ -461,6 +483,12 @@ sealed intent is the long-term decision record.
 Durable team data lives in Git. Per-actor logs live under
 `refs/mainline/actors/<id>/log`; merged-code pins live in Git notes under
 `refs/notes/mainline/intents`. `.ml-cache/` is local-only cache.
+
+Fork contributors are a trust-boundary case. An upstream repo only sees actor
+logs that have been fetched and accepted into its Mainline view. Until that
+exists, Hub can display an imported GitHub PR contribution with provenance
+(`github_pr_imported` or `inferred`) and importer metadata, but it must not
+present that row as a verified contributor-sealed intent.
 
 **Why not use commit messages or PR descriptions?**
 

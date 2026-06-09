@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,7 +24,8 @@ import (
 // internal/hub/model.go) is the contract we plan to keep.
 
 var (
-	hubExportOpen bool
+	hubExportOpen                bool
+	hubExternalContributionsPath string
 )
 
 var hubCmd = &cobra.Command{
@@ -70,7 +72,12 @@ var hubExportCmd = &cobra.Command{
 	Long: `Export the local intent view as a static HTML site.
 
 If [dir] is omitted, the site is written to
-<os-temp>/mainline-hub/<repo-basename>.`,
+<os-temp>/mainline-hub/<repo-basename>.
+
+Use --external-contributions <file.json> to include imported or
+inferred fork PR contribution records. Hub displays those records
+with provenance/trust labels and does not treat them as author-sealed
+Mainline intents.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
@@ -83,6 +90,10 @@ If [dir] is omitted, the site is written to
 			out = args[0]
 		}
 		opts := buildHubExportOptions(svc, out)
+		if err := addExternalContributionsToHubOptions(&opts); err != nil {
+			outputError(err)
+			return
+		}
 		res, err := hub.Export(svc.Store, opts)
 		if err != nil {
 			outputError(err)
@@ -105,6 +116,10 @@ If [dir] is omitted, the site is written to
 var hubOpenCmd = &cobra.Command{
 	Use:   "open",
 	Short: "Build (if needed) and open the default Hub in your browser",
+	Long: `Build the default Hub export and open it in your browser.
+
+Use --external-contributions <file.json> to include imported or
+inferred fork PR contribution records in the opened Hub.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
@@ -113,6 +128,10 @@ var hubOpenCmd = &cobra.Command{
 		}
 		out := defaultHubDir(svc.Git.RepoRoot)
 		opts := buildHubExportOptions(svc, out)
+		if err := addExternalContributionsToHubOptions(&opts); err != nil {
+			outputError(err)
+			return
+		}
 		res, err := hub.Export(svc.Store, opts)
 		if err != nil {
 			outputError(err)
@@ -147,6 +166,18 @@ func buildHubExportOptions(svc *engine.Service, out string) hub.ExportOptions {
 	}
 }
 
+func addExternalContributionsToHubOptions(opts *hub.ExportOptions) error {
+	if hubExternalContributionsPath == "" {
+		return nil
+	}
+	contribs, err := readExternalContributionsFile(hubExternalContributionsPath)
+	if err != nil {
+		return err
+	}
+	opts.ExternalContributions = contribs
+	return nil
+}
+
 func hubSiblingDrafts(in []engine.WorktreeDraft) []hub.HubWorktreeDraft {
 	out := make([]hub.HubWorktreeDraft, 0, len(in))
 	for _, d := range in {
@@ -163,6 +194,35 @@ func hubSiblingDrafts(in []engine.WorktreeDraft) []hub.HubWorktreeDraft {
 		})
 	}
 	return out
+}
+
+func readExternalContributionsFile(path string) ([]hub.HubExternalContribution, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read external contributions: %w", err)
+	}
+	var list []hub.HubExternalContribution
+	if err := json.Unmarshal(data, &list); err != nil {
+		var wrapped struct {
+			ExternalContributions []hub.HubExternalContribution `json:"external_contributions"`
+		}
+		if err2 := json.Unmarshal(data, &wrapped); err2 != nil {
+			return nil, fmt.Errorf("parse external contributions: %w", err)
+		}
+		list = wrapped.ExternalContributions
+	}
+	for i := range list {
+		list[i].AuthorSealed = false
+		list[i].NotAuthorSealed = true
+		list[i].Verified = false
+		if strings.TrimSpace(list[i].Provenance) == "" {
+			list[i].Provenance = "github_pr_imported"
+		}
+		if strings.TrimSpace(list[i].Source) == "" {
+			list[i].Source = "github"
+		}
+	}
+	return list, nil
 }
 
 // openInBrowser asks the OS to open the file. Best-effort: a missing
@@ -270,5 +330,9 @@ func isLikelyHighRisk(subject string) bool {
 func init() {
 	hubExportCmd.Flags().BoolVar(&hubExportOpen, "open", false,
 		"open the generated index.html after export")
+	hubExportCmd.Flags().StringVar(&hubExternalContributionsPath, "external-contributions", "",
+		"JSON file of imported/inferred external PR contributions to show in Hub")
+	hubOpenCmd.Flags().StringVar(&hubExternalContributionsPath, "external-contributions", "",
+		"JSON file of imported/inferred external PR contributions to show in Hub")
 	hubCmd.AddCommand(hubExportCmd, hubOpenCmd)
 }

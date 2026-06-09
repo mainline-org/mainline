@@ -170,6 +170,51 @@ func TestBuildActorIndex_GroupsByActor(t *testing.T) {
 	}
 }
 
+func TestBuildHubModel_AttachesExternalPRContributionWithoutPollutingActorOrReviewState(t *testing.T) {
+	maintainer := intent("int_maintainer_fix", "actor_maintainer", "2026-06-09T01:00:00Z", domain.StatusMerged, "src/pi.go")
+	maintainer.ActorName = "catoncat"
+	maintainer.StatusEvidence.MergedMainCommit = "8006baae417d3ac3c8fe646ad77f67527480a17f"
+	v := makeView(maintainer)
+
+	m := buildHubModel(v)
+	attachExternalContributions(m, []HubExternalContribution{
+		{
+			ID:             "github-pr-catoncat-cxs-56",
+			Title:          "feat(sources): add Pi agent session support",
+			AuthorLogin:    "jiangge",
+			Source:         "github",
+			Repository:     "catoncat/cxs",
+			PRNumber:       56,
+			PRURL:          "https://github.com/catoncat/cxs/pull/56",
+			MergedCommit:   "8006baae417d3ac3c8fe646ad77f67527480a17f",
+			Provenance:     "github_pr_imported",
+			ImportedBy:     "actor_maintainer",
+			ImportedAt:     "2026-06-09T02:00:00Z",
+			BodyIntentNote: "empty_template",
+		},
+	})
+
+	if len(m.ExternalContributions) != 1 {
+		t.Fatalf("expected one external contribution, got %+v", m.ExternalContributions)
+	}
+	contrib := m.ExternalContributions[0]
+	if contrib.AuthorLogin != "jiangge" || contrib.Provenance != "github_pr_imported" {
+		t.Fatalf("external contribution should preserve GitHub author + provenance, got %+v", contrib)
+	}
+	if contrib.AuthorSealed || !contrib.NotAuthorSealed || contrib.Verified {
+		t.Fatalf("github-pr import must not masquerade as an author-sealed verified intent, got %+v", contrib)
+	}
+	if len(contrib.AssociatedIntentIDs) != 1 || contrib.AssociatedIntentIDs[0] != "int_maintainer_fix" {
+		t.Fatalf("external contribution should link to maintainer pin on same merge commit, got %+v", contrib.AssociatedIntentIDs)
+	}
+	if m.Dashboard.ActorCount != 1 || len(m.ActorIndex) != 1 || m.ActorIndex[0].ActorID != "actor_maintainer" {
+		t.Fatalf("external contributor must not pollute actor index/count, dashboard=%+v actors=%+v", m.Dashboard, m.ActorIndex)
+	}
+	if len(m.Dashboard.Focus) != 0 {
+		t.Fatalf("external contribution must not enter review queue/focus, got %+v", m.Dashboard.Focus)
+	}
+}
+
 func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 	withRisk := intent("int_risky", "a", "2026-04-28T01:00:00Z", domain.StatusMerged)
 	plain := intent("int_plain", "a", "2026-04-28T02:00:00Z", domain.StatusMerged)
@@ -393,6 +438,7 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 
 	a := intent("int_a", "actor_alice", "2026-04-28T01:00:00Z", domain.StatusMerged, "src/auth.go")
 	a.ActorName = "Alice"
+	a.StatusEvidence.MergedMainCommit = "8006baae417d3ac3c8fe646ad77f67527480a17f"
 	b := intent("int_b", "actor_bob", "2026-04-28T02:00:00Z", domain.StatusSuperseded, "src/auth.go")
 	b.StatusEvidence.SupersededByIntent = "int_a"
 	v := makeView(a, b)
@@ -416,7 +462,21 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	}
 
 	out := filepath.Join(dir, "site")
-	res, err := Export(store, ExportOptions{OutputDir: out})
+	res, err := Export(store, ExportOptions{
+		OutputDir: out,
+		ExternalContributions: []HubExternalContribution{{
+			Title:          "feat(sources): add Pi agent session support",
+			AuthorLogin:    "jiangge",
+			Repository:     "catoncat/cxs",
+			PRNumber:       56,
+			PRURL:          "https://github.com/catoncat/cxs/pull/56",
+			MergedCommit:   "8006baae417d3ac3c8fe646ad77f67527480a17f",
+			Provenance:     "github_pr_imported",
+			ImportedBy:     "actor_alice",
+			ImportedAt:     "2026-06-09T02:00:00Z",
+			BodyIntentNote: "empty_template",
+		}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,12 +538,33 @@ func TestExport_ProducesAllPageTypes(t *testing.T) {
 	if len(roundTrip.OpenIntents) != 1 || roundTrip.OpenIntents[0].ID != "int_draft" || roundTrip.OpenIntents[0].TurnCount != 1 {
 		t.Errorf("round-trip lost open intents: %+v", roundTrip.OpenIntents)
 	}
+	if len(roundTrip.ExternalContributions) != 1 {
+		t.Fatalf("round-trip lost external contribution: %+v", roundTrip.ExternalContributions)
+	}
+	contrib := roundTrip.ExternalContributions[0]
+	if contrib.AuthorLogin != "jiangge" || contrib.Provenance != "github_pr_imported" ||
+		!contrib.NotAuthorSealed || contrib.AuthorSealed || contrib.Verified {
+		t.Fatalf("external contribution trust/provenance fields wrong: %+v", contrib)
+	}
+	if len(contrib.AssociatedIntentIDs) != 1 || contrib.AssociatedIntentIDs[0] != "int_a" {
+		t.Fatalf("external contribution should be associated with maintainer intent int_a, got %+v", contrib.AssociatedIntentIDs)
+	}
+	if roundTrip.Dashboard.ActorCount != 2 || len(roundTrip.ActorIndex) != 2 {
+		t.Fatalf("external contribution must not affect actor count/index: dashboard=%+v actors=%+v", roundTrip.Dashboard, roundTrip.ActorIndex)
+	}
+	searchData, err := os.ReadFile(filepath.Join(out, "data", "search_index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(searchData), `"type":"external"`) || !strings.Contains(string(searchData), "jiangge") {
+		t.Fatalf("search index should include external contribution, got %s", string(searchData))
+	}
 
 	// Spot-check that the index page mentions both intents — links
 	// across pages must resolve, and this confirms the main table is
 	// populated rather than just the chrome.
 	idx, _ := os.ReadFile(filepath.Join(out, "index.html"))
-	for _, fragment := range []string{"int_a", "int_b", "View in-flight work"} {
+	for _, fragment := range []string{"int_a", "int_b", "View in-flight work", "jiangge", "github_pr_imported", "not author-sealed"} {
 		if !strings.Contains(string(idx), fragment) {
 			t.Errorf("index.html missing %q", fragment)
 		}
