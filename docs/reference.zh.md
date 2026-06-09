@@ -246,6 +246,13 @@ xdg-open ./mainline-hub/index.html  # Linux
 upstream maintainer 应该显式接受他的 actor log：
 
 ```bash
+mainline publish --intent <id> --remote <fork>
+```
+
+Contributor 没有 upstream Mainline remote 写权限、但能写自己的 fork remote 时，先用
+上面的命令把 actor log 推到 fork，之后 maintainer 才能从 fork import。
+
+```bash
 mainline actor import --actor actor_jiangge --remote jiangge
 ```
 
@@ -361,7 +368,7 @@ Reviewer / maintainer 额外命令：
 | `mainline merge --intent <id>` | 非 PR pipeline 里 squash 并写 note。 |
 | `mainline list-proposals` | 浏览团队里的 proposed intents。 |
 | `mainline pr-description --intent <id>` | 生成 PR description markdown。 |
-| `mainline publish --intent <id>` | 显式 push actor log。 |
+| `mainline publish --intent <id>` | 显式 push actor log。fork contributor 可加 `--remote <fork>` 推到可写 fork remote。 |
 | `mainline thread {new,list,close}` | 把多个 intents 归到一个 thread。 |
 | `mainline canonical-hash <id>` | 调试某条 intent 的 canonical hash。 |
 

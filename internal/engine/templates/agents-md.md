@@ -429,6 +429,13 @@ mainline status --json
 mainline publish --intent <intent_id> --json
 ```
 
+For a fork PR where the contributor cannot write upstream Mainline refs, publish
+metadata to the configured fork remote instead:
+
+```
+mainline publish --intent <intent_id> --remote <fork> --json
+```
+
 When the user does ask you to open or update a PR, generate the PR body
 from the sealed intent:
 

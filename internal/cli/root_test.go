@@ -35,3 +35,13 @@ func TestActorImportCommandIsRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestPublishCommandHasForkRemoteFlag(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"publish"})
+	if err != nil || cmd.Name() != "publish" {
+		t.Fatalf("publish command missing: cmd=%v err=%v", cmd, err)
+	}
+	if cmd.Flags().Lookup("remote") == nil {
+		t.Fatal("publish missing --remote flag")
+	}
+}

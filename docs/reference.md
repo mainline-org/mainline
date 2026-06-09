@@ -278,6 +278,14 @@ For merged fork PRs, first ask whether the contributor also used Mainline. If
 they did, import their actor log as an explicit upstream trust decision:
 
 ```bash
+mainline publish --intent <id> --remote <fork>
+```
+
+Contributors use the command above when they can write to their fork but not to
+the upstream Mainline remote. It pushes the actor log to the fork so an upstream
+maintainer can import it.
+
+```bash
 mainline actor import --actor actor_jiangge --remote jiangge
 ```
 
@@ -397,7 +405,7 @@ of the auto-sync wrapper.
 | `mainline merge --intent <id>` | Squash and write a note in one step for non-PR pipelines. |
 | `mainline list-proposals` | Browse proposed intents across the team. |
 | `mainline pr-description --intent <id>` | Generate PR description markdown. |
-| `mainline publish --intent <id>` | Push actor log explicitly. |
+| `mainline publish --intent <id>` | Push actor log explicitly. Add `--remote <fork>` when publishing fork-contributor metadata to a writable fork remote. |
 | `mainline thread {new,list,close}` | Group multiple intents into a named thread. |
 | `mainline canonical-hash <id>` | Debug the canonical hash of an intent. |
 

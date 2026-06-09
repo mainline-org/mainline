@@ -582,7 +582,7 @@ func (s *Service) SealSubmitWithOptions(input json.RawMessage, opts *SealSubmitO
 			published = true
 			finalStatus = domain.StatusProposed
 		} else {
-			warning = "Sealed locally but failed to publish. Run 'mainline publish' to retry."
+			warning = "Sealed locally but failed to publish to the team remote. Retry with `mainline publish --intent " + sr.IntentID + "`, or for a fork PR run `mainline publish --intent " + sr.IntentID + " --remote <fork>` and use `mainline pr-description --intent " + sr.IntentID + "` for the upstream PR body."
 		}
 	} else if offline {
 		warning = "Sealed locally (--offline). Run 'mainline publish' when online."

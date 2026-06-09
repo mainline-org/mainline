@@ -69,6 +69,7 @@ var syncCmd = &cobra.Command{
 }
 
 var publishIntentID string
+var publishRemote string
 
 var publishCmd = &cobra.Command{
 	Use:   "publish",
@@ -80,7 +81,7 @@ var publishCmd = &cobra.Command{
 			return
 		}
 
-		result, err := svc.Publish(publishIntentID)
+		result, err := svc.Publish(publishIntentID, publishRemote)
 		if err != nil {
 			outputError(err)
 			return
@@ -91,10 +92,14 @@ var publishCmd = &cobra.Command{
 		} else {
 			fmt.Printf("Published intent %s\n", result.IntentID)
 			fmt.Printf("  Ref:    %s\n", result.Ref)
+			fmt.Printf("  Status: %s\n", result.Status)
 			if result.Pushed {
-				fmt.Printf("  Pushed to %s\n", svc.RemoteName())
+				fmt.Printf("  Pushed to %s\n", result.Remote)
 			} else {
 				fmt.Println("  (no remote; local only)")
+			}
+			if result.Warning != "" {
+				fmt.Printf("  Warning: %s\n", result.Warning)
 			}
 		}
 	},
@@ -102,4 +107,5 @@ var publishCmd = &cobra.Command{
 
 func init() {
 	publishCmd.Flags().StringVar(&publishIntentID, "intent", "", "intent ID to publish")
+	publishCmd.Flags().StringVar(&publishRemote, "remote", "", "remote to push actor-log metadata to (defaults to the configured Mainline remote)")
 }
