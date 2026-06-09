@@ -245,6 +245,9 @@ into the upstream namespace, best-effort fetches referenced fork branches into
 auto-pin. The contributor's intent remains author-sealed, while Hub shows
 provenance such as `accepted_actor_log`, who accepted it, whether it was
 verified, and which imported code refs made the fork commits reachable.
+The import path requires at least one author-sealed intent and does not import
+fork-side constraints, risks, follow-ups, or check judgments as upstream team
+signals.
 
 The `--external-contributions` file is only the fallback when no author-owned
 actor log is available. Those records are labeled with provenance such as

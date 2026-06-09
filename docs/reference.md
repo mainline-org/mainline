@@ -313,6 +313,11 @@ actor-log accept can still succeed, but Mainline records object-fetch warnings
 in the result/provenance and auto-pin may require a later manual fetch or
 explicit `mainline pin`.
 
+The accepted actor log must contain at least one author-sealed intent. Import
+accepts only intent lifecycle metadata from the fork actor log; fork-side
+constraints, risks, follow-ups, and check judgments are rejected instead of
+being promoted into upstream team signals.
+
 Maintainer backfills can coexist with later accepted contributor intents. A
 backfill or explicit maintainer pin is the upstream maintainer's rescue record;
 an accepted fork actor log is the contributor's author-sealed record. If both

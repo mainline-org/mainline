@@ -271,6 +271,10 @@ func validateImportedActorEvents(actorID string, rawEvents []json.RawMessage) (*
 			}
 		}
 	}
+	if len(sealedIDs) == 0 {
+		return nil, domain.NewError(domain.ErrInvalidInput,
+			fmt.Sprintf("source actor log for %s contains no author-sealed intents", actorID))
+	}
 	return &importedActorValidation{SealedIntentIDs: sealedIDs, Branches: branches}, nil
 }
 
@@ -279,13 +283,7 @@ func knownImportedActorEventType(eventType domain.EventType) bool {
 	case domain.EventIntentSealed,
 		domain.EventIntentSuperseded,
 		domain.EventIntentAbandoned,
-		domain.EventIntentMergeAcknowledged,
-		domain.EventCheckJudgment,
-		domain.EventConstraintAdded,
-		domain.EventRiskAdded,
-		domain.EventRiskResolved,
-		domain.EventFollowupAdded,
-		domain.EventFollowupResolved:
+		domain.EventIntentMergeAcknowledged:
 		return true
 	default:
 		return false

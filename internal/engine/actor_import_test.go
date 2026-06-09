@@ -203,6 +203,94 @@ func TestImportActorLogRejectsForeignAcceptanceEvents(t *testing.T) {
 	}
 }
 
+func TestImportActorLogRequiresAuthorSealedIntent(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("maintainer"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, _ := svc.getTeamConfig()
+
+	actorID := "actor_no_seal"
+	importRef := "refs/mainline/imports/" + actorID + "/log"
+	event := domain.IntentAbandonedEvent{
+		BaseEvent: domain.BaseEvent{
+			EventID:       "evt_abandoned_only",
+			SchemaVersion: 1,
+			EventType:     domain.EventIntentAbandoned,
+			ActorID:       actorID,
+			Timestamp:     "2026-06-01T00:00:00Z",
+		},
+		IntentID: "int_missing_seal",
+		Reason:   "fixture has no author-sealed intent",
+	}
+	if err := svc.Git.UpdateRef(importRef, writeActorEventCommit(t, svc, event)); err != nil {
+		t.Fatalf("write import ref: %v", err)
+	}
+
+	if _, err := svc.ImportActorLog(ActorLogImportOptions{
+		ActorID:   actorID,
+		SourceRef: importRef,
+	}); err == nil {
+		t.Fatalf("expected actor log without sealed intent to be rejected")
+	}
+	if got := svc.Git.ReadRef(domain.ActorLogRef(actorID, cfg.Mainline.ActorLogPrefix)); got != "" {
+		t.Fatalf("actor log without sealed intent must not be accepted, target ref=%s", got)
+	}
+}
+
+func TestImportActorLogRejectsImportedSignalEventsBeforeContextPollution(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("maintainer"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, _ := svc.getTeamConfig()
+
+	actorID := "actor_signal_smuggle"
+	intentID := "int_signal_smuggle"
+	importRef := "refs/mainline/imports/" + actorID + "/log"
+	sealed := actorRefTestSealedEvent("evt_signal_smuggle_sealed", actorID, intentID, "2026-06-01T00:00:00Z")
+	constraint := domain.ConstraintAddedEvent{
+		BaseEvent: domain.BaseEvent{
+			EventID:       "evt_smuggled_constraint",
+			SchemaVersion: 1,
+			EventType:     domain.EventConstraintAdded,
+			ActorID:       actorID,
+			Timestamp:     "2026-06-01T00:01:00Z",
+		},
+		ConstraintID: "guard_smuggled",
+		IntentID:     intentID,
+		Files:        []string{"internal/engine/actor_import.go"},
+		What:         "Do not let fork actor logs create upstream constraints",
+		Why:          "Contributor actor logs cross an explicit maintainer trust boundary",
+		Severity:     "high",
+		Source:       "fork_actor_log",
+	}
+	head := writeActorEventChain(t, svc, sealed, constraint)
+	if err := svc.Git.UpdateRef(importRef, head); err != nil {
+		t.Fatalf("write import ref: %v", err)
+	}
+
+	if _, err := svc.ImportActorLog(ActorLogImportOptions{
+		ActorID:   actorID,
+		SourceRef: importRef,
+	}); err == nil {
+		t.Fatalf("expected imported constraint signal to be rejected")
+	}
+	if got := svc.Git.ReadRef(domain.ActorLogRef(actorID, cfg.Mainline.ActorLogPrefix)); got != "" {
+		t.Fatalf("actor log with imported signal must not be accepted, target ref=%s", got)
+	}
+	view, _ := svc.Store.ReadMainlineView()
+	if view != nil && len(view.Constraints) > 0 {
+		t.Fatalf("imported fork signal must not pollute upstream constraints: %+v", view.Constraints)
+	}
+}
+
 func TestImportActorLogFetchesFromForkRemote(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -543,4 +631,28 @@ func hasPinnedCommit(links []PinnedCommit, intentID, commit string) bool {
 		}
 	}
 	return false
+}
+
+func writeActorEventChain(t *testing.T, svc *Service, events ...any) string {
+	t.Helper()
+	parent := ""
+	for _, event := range events {
+		data, err := json.Marshal(event)
+		if err != nil {
+			t.Fatalf("marshal event: %v", err)
+		}
+		blobHash, err := svc.Git.HashObject(data)
+		if err != nil {
+			t.Fatalf("hash event blob: %v", err)
+		}
+		treeHash, err := svc.Git.MakeTree("event.json", blobHash)
+		if err != nil {
+			t.Fatalf("make tree: %v", err)
+		}
+		parent, err = svc.Git.CommitTree(treeHash, parent, "actor-log-event")
+		if err != nil {
+			t.Fatalf("commit tree: %v", err)
+		}
+	}
+	return parent
 }
