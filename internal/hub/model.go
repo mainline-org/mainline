@@ -360,10 +360,11 @@ type HubIntent struct {
 	ActorID   string `json:"actor_id"`
 	ActorName string `json:"actor_name,omitempty"`
 
-	SealedAt         string `json:"sealed_at,omitempty"`
-	MergedMainCommit string `json:"merged_main_commit,omitempty"`
-	BaseCommit       string `json:"base_commit,omitempty"`
-	CodeCommit       string `json:"code_commit,omitempty"`
+	SealedAt         string                   `json:"sealed_at,omitempty"`
+	MergedMainCommit string                   `json:"merged_main_commit,omitempty"`
+	BaseCommit       string                   `json:"base_commit,omitempty"`
+	CodeCommit       string                   `json:"code_commit,omitempty"`
+	Provenance       *domain.IntentProvenance `json:"provenance,omitempty"`
 
 	What         string               `json:"what,omitempty"`
 	Why          string               `json:"why,omitempty"`
@@ -519,6 +520,7 @@ func hubIntentFromView(v *domain.IntentView) HubIntent {
 		MergedMainCommit:   v.StatusEvidence.MergedMainCommit,
 		BaseCommit:         v.BaseCommit,
 		CodeCommit:         v.CodeCommit,
+		Provenance:         v.Provenance,
 		SupersededByIntent: v.StatusEvidence.SupersededByIntent,
 	}
 	if s := v.Summary; s != nil {

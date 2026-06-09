@@ -231,10 +231,24 @@ has no upstream-visible Mainline actor log:
 mainline hub export ./mainline-hub --external-contributions fork-prs.json
 ```
 
-Those records are labeled with provenance such as `github_pr_imported` and
-`not author-sealed`. Hub does not treat GitHub PR metadata or an empty
-`## Mainline Intent` PR-body template as a contributor-authored sealed
-Mainline intent.
+If the fork contributor also uses Mainline, prefer importing their actor log
+first. This is an explicit trust-boundary action by an upstream maintainer:
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+The command fetches that actor's `refs/mainline/actors/<actor>/log` from the
+fork into a temporary import ref, validates the events, accepts the actor log
+into the upstream namespace, rebuilds the view, and runs normal auto-pin. The
+contributor's intent remains author-sealed, while Hub shows provenance such as
+`accepted_actor_log`, who accepted it, and whether it was verified.
+
+The `--external-contributions` file is only the fallback when no author-owned
+actor log is available. Those records are labeled with provenance such as
+`github_pr_imported` and `not author-sealed`. Hub does not treat GitHub PR
+metadata or an empty `## Mainline Intent` PR-body template as a
+contributor-authored sealed Mainline intent.
 
 The public hosted Hub for Mainline is https://mainline.sh/hub/.
 

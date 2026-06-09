@@ -215,6 +215,34 @@ func TestBuildHubModel_AttachesExternalPRContributionWithoutPollutingActorOrRevi
 	}
 }
 
+func TestBuildHubModel_PreservesAcceptedActorLogProvenance(t *testing.T) {
+	contributor := intent("int_contributor", "actor_jiangge", "2026-06-09T01:00:00Z", domain.StatusMerged, "src/pi.go")
+	contributor.ActorName = "jiangge"
+	contributor.StatusEvidence.MergedMainCommit = "8006baae417d3ac3c8fe646ad77f67527480a17f"
+	contributor.Provenance = &domain.IntentProvenance{
+		Kind:            "accepted_actor_log",
+		SourceRemote:    "jiangge",
+		SourceRef:       "refs/mainline/actors/actor_jiangge/log",
+		TargetRef:       "refs/mainline/actors/actor_jiangge/log",
+		AcceptedByActor: "actor_maintainer",
+		AcceptedByName:  "catoncat",
+		AuthorSealed:    true,
+		Verified:        true,
+	}
+
+	m := buildHubModel(makeView(contributor))
+	if len(m.Intents) != 1 || m.Intents[0].Provenance == nil {
+		t.Fatalf("accepted actor-log provenance should survive hub flattening: %+v", m.Intents)
+	}
+	prov := m.Intents[0].Provenance
+	if prov.Kind != "accepted_actor_log" || !prov.AuthorSealed || !prov.Verified || prov.AcceptedByActor != "actor_maintainer" {
+		t.Fatalf("wrong accepted provenance: %+v", prov)
+	}
+	if m.Dashboard.ActorCount != 1 || len(m.ActorIndex) != 1 || m.ActorIndex[0].ActorID != "actor_jiangge" {
+		t.Fatalf("accepted author-sealed intent should count as contributor actor intent, dashboard=%+v actors=%+v", m.Dashboard, m.ActorIndex)
+	}
+}
+
 func TestBuildRiskList_SelectsIntentsWithRisks(t *testing.T) {
 	withRisk := intent("int_risky", "a", "2026-04-28T01:00:00Z", domain.StatusMerged)
 	plain := intent("int_plain", "a", "2026-04-28T02:00:00Z", domain.StatusMerged)

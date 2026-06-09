@@ -274,8 +274,36 @@ open ./mainline-hub/index.html      # macOS
 xdg-open ./mainline-hub/index.html  # Linux
 ```
 
-To explain merged fork PRs whose authors did not publish Mainline actor logs to
-the upstream repo, pass an explicit import file:
+For merged fork PRs, first ask whether the contributor also used Mainline. If
+they did, import their actor log as an explicit upstream trust decision:
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+`--remote` may be a configured Git remote or a fetchable URL. By default the
+command fetches `refs/mainline/actors/<actor>/log` into
+`refs/mainline/imports/<actor>/log`, validates that the events belong to the
+expected actor, accepts the log into the upstream actor namespace, rebuilds the
+view, and runs the normal auto-pin cascade. When the upstream remote is
+configured, Mainline pushes the accepted contributor actor ref, the maintainer's
+acceptance event, and any new pin notes so the next `mainline sync` in another
+clone sees the same author-sealed intent.
+
+This command imports actor-log intent metadata only. It deliberately does not
+copy fork git notes into upstream because notes are evidence about upstream main
+commits and should be written by upstream pinning.
+
+Maintainer backfills can coexist with later accepted contributor intents. A
+backfill or explicit maintainer pin is the upstream maintainer's rescue record;
+an accepted fork actor log is the contributor's author-sealed record. If both
+refer to the same merge commit, the commit note may contain both intent
+references. Coverage remains commit-level: one or more valid intent refs make
+the commit covered, and accepting the contributor intent must not create a
+review-queue conflict with the earlier backfill.
+
+When the contributor has no upstream-visible Mainline actor log, Hub can still
+explain the merged PR with an explicit external-contribution file:
 
 ```bash
 mainline hub export ./mainline-hub --external-contributions fork-prs.json
@@ -293,8 +321,9 @@ review queues, coverage, or pin logic.
 
 Do not use an empty `## Mainline Intent` section in a GitHub PR body as intent
 evidence. PR descriptions are review-time artifacts; Mainline sealed intents
-come from actor logs, and fork actor metadata needs a separate fetch/accept
-trust flow before it can be treated as author-sealed.
+come from actor logs. GitHub PR imports must be labeled with provenance such as
+`github_pr_imported` or `inferred` and must remain `not_author_sealed` unless a
+real actor log has been accepted.
 
 Hub output is generated local state and should not be committed.
 

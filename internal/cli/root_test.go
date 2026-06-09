@@ -23,3 +23,15 @@ func TestSealStructuredSignalsFlagIsDeprecatedButParsed(t *testing.T) {
 		t.Fatal("deprecated --allow-structured-signals flag should remain parseable for migration errors")
 	}
 }
+
+func TestActorImportCommandIsRegistered(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"actor", "import"})
+	if err != nil || cmd.Name() != "import" {
+		t.Fatalf("actor import command missing: cmd=%v err=%v", cmd, err)
+	}
+	for _, name := range []string{"actor", "remote", "source-ref", "import-ref", "force"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Fatalf("actor import missing --%s flag", name)
+		}
+	}
+}

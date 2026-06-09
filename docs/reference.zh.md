@@ -242,8 +242,34 @@ open ./mainline-hub/index.html      # macOS
 xdg-open ./mainline-hub/index.html  # Linux
 ```
 
-如果一个已 merge 的 fork PR 作者没有把 Mainline actor log 发布到 upstream repo，
-可以传入显式 import 文件，让 Hub 解释这条外部贡献：
+对于已 merge 的 fork PR，先判断 contributor 是否也使用了 Mainline。如果有，
+upstream maintainer 应该显式接受他的 actor log：
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+`--remote` 可以是已配置的 Git remote，也可以是可 fetch 的 URL。默认会从 fork 拉
+`refs/mainline/actors/<actor>/log` 到
+`refs/mainline/imports/<actor>/log`，校验 event 都属于指定 actor，然后把这条
+actor log 接受到 upstream actor namespace，重建 view，并运行正常的 auto-pin。
+如果 upstream remote 已配置，Mainline 会把已接受的 contributor actor ref、
+maintainer 写下的 accept event，以及新增 pin notes 推上去；其他 clone 下一次
+`mainline sync` 就能看到同一条 author-sealed intent。
+
+这个命令只导入 actor-log intent metadata，不会把 fork 里的 git notes 原样复制到
+upstream。notes 是关于 upstream main commit 的 pin 证据，应该由 upstream 这边的
+pin 逻辑写入。
+
+maintainer 回填可以和之后接受的 contributor intent 共存。回填 / explicit pin 是
+upstream maintainer 的 rescue 记录；accepted fork actor log 是 contributor 自己
+sealed 的记录。如果两者指向同一个 merge commit，这个 commit note 可以同时包含两条
+intent reference。coverage 仍然是 commit-level：一个 commit 只要有一个或多个有效
+intent ref 就是 covered；接受 contributor intent 不应该和已有回填形成 review queue
+冲突。
+
+如果 contributor 没有 upstream-visible Mainline actor log，可以传入显式 import
+文件，让 Hub 解释这条外部贡献：
 
 ```bash
 mainline hub export ./mainline-hub --external-contributions fork-prs.json
@@ -260,8 +286,8 @@ merge PR 的原作者是谁”，但不会污染 actor count、review queue、co
 
 不要把 GitHub PR body 里空的 `## Mainline Intent` 模板当作 intent 证据。
 PR description 是 review-time artifact；Mainline sealed intent 来自 actor log。
-fork actor metadata 只有经过单独的 fetch / accept trust flow 后，才能被当成作者
-sealed 的 intent。
+GitHub PR import 必须标注 `github_pr_imported` / `inferred` 这类 provenance，并保持
+`not_author_sealed`，除非已经接受了真实 actor log。
 
 Hub 输出是本地生成状态，不应提交。
 
@@ -275,8 +301,8 @@ Pages 部署这份静态 artifact。
 手动触发、每天定时跑一次。这个定时不是装饰：Mainline intent state 也会通过 Git
 refs 和 notes 流动，所以 hosted Hub 需要一条不依赖代码 diff 的刷新路径。
 
-fork contributor 是 trust-boundary 场景。upstream repo 只能看见已经 fetch 并接受
-进 Mainline view 的 actor log。在这之前，Hub 可以显示带 provenance
+fork contributor 是 trust-boundary 场景。upstream repo 只能信任已经由 maintainer
+显式接受进 Mainline view 的 actor log。在这之前，Hub 可以显示带 provenance
 （`github_pr_imported` 或 `inferred`）和 importer metadata 的 GitHub PR import，
 但不能把它展示成 verified contributor-sealed intent。
 
