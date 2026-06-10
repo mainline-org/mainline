@@ -282,8 +282,7 @@ func knownImportedActorEventType(eventType domain.EventType) bool {
 	switch eventType {
 	case domain.EventIntentSealed,
 		domain.EventIntentSuperseded,
-		domain.EventIntentAbandoned,
-		domain.EventIntentMergeAcknowledged:
+		domain.EventIntentAbandoned:
 		return true
 	default:
 		return false

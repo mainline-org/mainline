@@ -278,8 +278,9 @@ upstream 这边的 pin 逻辑写入。如果 fork branch 已删除或不可 fetc
 手动 fetch 或 explicit `mainline pin`。
 
 被接受的 actor log 必须至少包含一条作者 sealed intent。import 只接受 fork actor log
-里的 intent lifecycle metadata；fork 侧 constraints、risks、follow-ups 和 check
-judgments 会被拒绝，不会提升为 upstream 团队信号。
+里的作者 seal / supersession / abandonment metadata；fork 侧 constraints、risks、
+follow-ups、check judgments 和 merge acknowledgements 会被拒绝，不会提升为 upstream
+团队信号。merged evidence 仍以 upstream pin notes 为准。
 
 maintainer 回填可以和之后接受的 contributor intent 共存。回填 / explicit pin 是
 upstream maintainer 的 rescue 记录；accepted fork actor log 是 contributor 自己

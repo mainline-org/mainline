@@ -218,7 +218,8 @@ squash/rebase merge，upstream 仍能拿到 contributor 原始 code commit/tree 
 再用正常 auto-pin 把 author-sealed intent pin 到 upstream merge commit。Hub 会显示
 `accepted_actor_log`、接受者、verified 状态和导入的 code refs。
 import 路径要求至少有一条作者 sealed intent；fork 侧的 constraints、risks、
-follow-ups 或 check judgments 不会被导入成 upstream 团队信号。
+follow-ups、check judgments 或 merge acknowledgements 不会被导入成 upstream
+团队信号。merged evidence 仍以 upstream pin notes 为准。
 
 fork PR 在 contributor 没有 upstream 可见 Mainline actor log 时，才作为
 imported external contribution fallback 显示：

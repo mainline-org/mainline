@@ -291,6 +291,47 @@ func TestImportActorLogRejectsImportedSignalEventsBeforeContextPollution(t *test
 	}
 }
 
+func TestImportActorLogRejectsForkMergeAcknowledgement(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("maintainer"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cfg, _ := svc.getTeamConfig()
+
+	actorID := "actor_merge_ack"
+	intentID := "int_merge_ack"
+	importRef := "refs/mainline/imports/" + actorID + "/log"
+	sealed := actorRefTestSealedEvent("evt_merge_ack_sealed", actorID, intentID, "2026-06-01T00:00:00Z")
+	ack := domain.IntentMergeAcknowledgedEvent{
+		BaseEvent: domain.BaseEvent{
+			EventID:       "evt_fork_merge_ack",
+			SchemaVersion: 1,
+			EventType:     domain.EventIntentMergeAcknowledged,
+			ActorID:       actorID,
+			Timestamp:     "2026-06-01T00:01:00Z",
+		},
+		IntentID:    intentID,
+		MergeCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	head := writeActorEventChain(t, svc, sealed, ack)
+	if err := svc.Git.UpdateRef(importRef, head); err != nil {
+		t.Fatalf("write import ref: %v", err)
+	}
+
+	if _, err := svc.ImportActorLog(ActorLogImportOptions{
+		ActorID:   actorID,
+		SourceRef: importRef,
+	}); err == nil {
+		t.Fatalf("expected fork merge acknowledgement to be rejected")
+	}
+	if got := svc.Git.ReadRef(domain.ActorLogRef(actorID, cfg.Mainline.ActorLogPrefix)); got != "" {
+		t.Fatalf("actor log with fork merge acknowledgement must not be accepted, target ref=%s", got)
+	}
+}
+
 func TestImportActorLogFetchesFromForkRemote(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()

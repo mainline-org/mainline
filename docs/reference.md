@@ -314,9 +314,10 @@ in the result/provenance and auto-pin may require a later manual fetch or
 explicit `mainline pin`.
 
 The accepted actor log must contain at least one author-sealed intent. Import
-accepts only intent lifecycle metadata from the fork actor log; fork-side
-constraints, risks, follow-ups, and check judgments are rejected instead of
-being promoted into upstream team signals.
+accepts only author seal/supersession/abandonment metadata from the fork actor
+log; fork-side constraints, risks, follow-ups, check judgments, and merge
+acknowledgements are rejected instead of being promoted into upstream team
+signals. Upstream pin notes remain the source of merged evidence.
 
 Maintainer backfills can coexist with later accepted contributor intents. A
 backfill or explicit maintainer pin is the upstream maintainer's rescue record;
