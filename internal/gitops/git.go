@@ -361,6 +361,11 @@ type TreeEntry struct {
 	Hash string
 }
 
+type RemoteRef struct {
+	Hash string
+	Ref  string
+}
+
 // CommitTree creates a commit object.
 func (g *Git) CommitTree(tree, parent, message string) (string, error) {
 	args := []string{"commit-tree", tree, "-m", message}
@@ -455,6 +460,27 @@ func (g *Git) Fetch(remote string, refspecs ...string) error {
 	args := append([]string{"fetch", remote}, refspecs...)
 	_, err := g.run(args...)
 	return err
+}
+
+// LsRemote lists refs from a remote matching optional patterns.
+func (g *Git) LsRemote(remote string, patterns ...string) ([]RemoteRef, error) {
+	args := append([]string{"ls-remote", remote}, patterns...)
+	out, err := g.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	var refs []RemoteRef
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		refs = append(refs, RemoteRef{Hash: fields[0], Ref: fields[1]})
+	}
+	return refs, nil
 }
 
 // Push pushes refs to a remote.

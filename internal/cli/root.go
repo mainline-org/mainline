@@ -57,6 +57,9 @@ var (
 //     cobra's cmd.Name() returns just the leaf
 //     ("export"/"open") which would collide if another
 //     top-level command ever used those names.
+//   - pr-import — writes accepted fork actor refs and pin notes after
+//     a merged PR. It needs the freshest upstream notes/custom refs
+//     before pushing, especially in GitHub Actions checkouts.
 //
 // Notably absent:
 //
@@ -84,6 +87,7 @@ var autoSyncCommands = map[string]bool{
 	"hub export": true,
 	"hub open":   true,
 	"pr-comment": true,
+	"pr-import":  true,
 }
 
 var rootCmd = &cobra.Command{
@@ -228,6 +232,7 @@ func init() {
 	publishCmd.GroupID = groupAdvanced.ID
 	prDescriptionCmd.GroupID = groupAdvanced.ID
 	prCommentCmd.GroupID = groupAdvanced.ID
+	prImportCmd.GroupID = groupAdvanced.ID
 	threadCmd.GroupID = groupAdvanced.ID
 
 	// Hidden — debug utility, not in the user mental model.
@@ -264,7 +269,7 @@ func init() {
 	rootCmd.AddCommand(
 		initCmd, statusCmd, preflightCmd, startCmd, appendCmd, sealCmd, syncCmd,
 		publishCmd, doctorCmd, checkCmd, logCmd, showCmd,
-		threadCmd, prDescriptionCmd, prCommentCmd, pinCmd, contextCmd,
+		threadCmd, prDescriptionCmd, prCommentCmd, prImportCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd, migrateCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,

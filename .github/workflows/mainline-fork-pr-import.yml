@@ -1,0 +1,174 @@
+name: Mainline Fork PR Import
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  import:
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Prepare Mainline actor
+        run: |
+          go run . init --actor-name "github-actions[bot]" --json > "$RUNNER_TEMP/mainline-init.json"
+
+      - name: Retain PR head objects
+        run: |
+          git fetch --no-tags origin \
+            "refs/pull/${{ github.event.pull_request.number }}/head:refs/mainline/imports/pr-heads/pr-${{ github.event.pull_request.number }}" \
+            || true
+
+      - name: Import fork PR intent
+        id: import
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          FORK_URL: ${{ github.event.pull_request.head.repo.clone_url }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          result="$RUNNER_TEMP/mainline-pr-import.json"
+          stderr="$RUNNER_TEMP/mainline-pr-import.err"
+          set +e
+          go run . pr-import \
+            --pr "$PR_NUMBER" \
+            --fork-url "$FORK_URL" \
+            --head-ref "$HEAD_REF" \
+            --head-sha "$HEAD_SHA" \
+            --json > "$result" 2> "$stderr"
+          exit_code=$?
+          if [ "$exit_code" -ne 0 ]; then
+            jq -n --arg stderr "$(cat "$stderr")" \
+              '{status:"error", error_text:$stderr}' > "$result"
+          fi
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          echo "result_path=$result" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upsert Mainline fork PR import comment
+        uses: actions/github-script@v7
+        env:
+          RESULT_PATH: ${{ steps.import.outputs.result_path }}
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- mainline:fork-pr-import:v1 -->";
+            const result = JSON.parse(fs.readFileSync(process.env.RESULT_PATH, "utf8"));
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const issue_number = pr.number;
+
+            const selected = result.selected || {};
+            const imported = result.import || {};
+            const reasons = selected.match_reasons || [];
+            const warnings = result.warnings || [];
+
+            const statusLabels = {
+              imported: "Imported contributor intent",
+              already_imported: "Contributor intent was already imported",
+              no_actor_logs: "No published Mainline actor log found",
+              no_match: "No matching contributor intent found",
+              ambiguous: "Multiple matching contributor intents found",
+              error: "Mainline fork PR import failed",
+            };
+            const status = result.status || "error";
+            const lines = [
+              marker,
+              "### Mainline fork PR import",
+              "",
+              `Status: **${statusLabels[status] || status}**`,
+            ];
+
+            if (selected.actor_id) {
+              lines.push("", `Actor: \`${selected.actor_id}\``);
+            }
+            if (selected.intent_id) {
+              lines.push(`Intent: \`${selected.intent_id}\``);
+            }
+            if (reasons.length > 0) {
+              lines.push(`Matched by: ${reasons.map((r) => `\`${r}\``).join(", ")}`);
+            }
+            if (imported.accepted !== undefined) {
+              lines.push(`Accepted new metadata: \`${imported.accepted}\``);
+            }
+            if (imported.pushed !== undefined) {
+              lines.push(`Pushed upstream refs/notes: \`${imported.pushed}\``);
+            }
+
+            if (status === "no_actor_logs") {
+              lines.push(
+                "",
+                "The contributor can run `mainline publish --intent <id> --remote <fork>` and a maintainer can rerun the workflow or import manually."
+              );
+            } else if (status === "no_match") {
+              lines.push(
+                "",
+                "Mainline found actor logs in the fork, but none matched this PR head by commit, tree, or branch."
+              );
+            } else if (status === "ambiguous") {
+              lines.push(
+                "",
+                "Mainline found more than one equally strong match, so it did not accept any actor log automatically."
+              );
+            } else if (status === "error") {
+              lines.push("", "```text", result.error_text || "unknown error", "```");
+            }
+
+            if (warnings.length > 0) {
+              lines.push("", "Warnings:");
+              for (const warning of warnings) {
+                lines.push(`- ${warning}`);
+              }
+            }
+
+            const body = lines.join("\n");
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number, per_page: 100 }
+            );
+            const existing = comments.find((comment) =>
+              comment.user.type === "Bot" &&
+              comment.body &&
+              comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Fail on import command error
+        if: steps.import.outputs.exit_code != '0'
+        run: exit 1

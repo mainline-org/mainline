@@ -36,6 +36,18 @@ func TestActorImportCommandIsRegistered(t *testing.T) {
 	}
 }
 
+func TestPRImportCommandIsRegistered(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"pr-import"})
+	if err != nil || cmd.Name() != "pr-import" {
+		t.Fatalf("pr-import command missing: cmd=%v err=%v", cmd, err)
+	}
+	for _, name := range []string{"pr", "fork-url", "head-ref", "head-sha", "actor"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Fatalf("pr-import missing --%s flag", name)
+		}
+	}
+}
+
 func TestPublishCommandHasForkRemoteFlag(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"publish"})
 	if err != nil || cmd.Name() != "publish" {

@@ -329,6 +329,36 @@ references. Coverage remains commit-level: one or more valid intent refs make
 the commit covered, and accepting the contributor intent must not create a
 review-queue conflict with the earlier backfill.
 
+Upstream repositories can automate this maintainer-side import with
+`.github/workflows/mainline-fork-pr-import.yml`. The workflow runs on
+`pull_request_target` when a fork PR is closed as merged. It checks out the
+trusted upstream base branch, initializes a `github-actions[bot]` Mainline
+actor in the runner, retains the PR head object from `refs/pull/<number>/head`,
+and runs:
+
+```bash
+mainline pr-import \
+  --pr <number> \
+  --fork-url <fork clone URL> \
+  --head-ref <PR head branch> \
+  --head-sha <PR head sha>
+```
+
+`pr-import` treats GitHub PR metadata only as locator information. It discovers
+published actor logs under `refs/mainline/actors/*/log` in the fork, scores
+sealed intents by matching `code_commit`, `code_tree`, and `git_branch`, and
+imports only when there is a single best match. `imported` and
+`already_imported` are both successful/idempotent outcomes. `no_actor_logs`,
+`no_match`, and `ambiguous` leave upstream refs untouched and are reported in a
+sticky PR comment so a maintainer can ask the contributor to publish or import
+manually with `mainline actor import --actor ... --remote ...`.
+
+The action needs `contents: write` to push Mainline refs/notes and
+`pull-requests: write` / `issues: write` to upsert the PR comment. Because it
+uses `pull_request_target`, the workflow must never checkout or execute fork
+code. The shipped workflow checks out the upstream base ref and fetches fork
+refs only as Git data for Mainline import.
+
 When the contributor has no upstream-visible Mainline actor log, Hub can still
 explain the merged PR with an explicit external-contribution file:
 
@@ -412,6 +442,7 @@ of the auto-sync wrapper.
 | `mainline pin <intent> <commit>` | Manual escape hatch when auto-pin misses after rebase, cherry-pick, or unusual CI scripting. |
 | `mainline list-proposals` | Browse proposed intents across the team. |
 | `mainline pr-description --intent <id>` | Generate PR description markdown. |
+| `mainline pr-import --fork-url <url> --head-ref <branch> --head-sha <sha>` | Automation helper for importing a fork contributor intent after a merged PR. |
 | `mainline publish --intent <id>` | Push actor log explicitly. Add `--remote <fork>` when publishing fork-contributor metadata to a writable fork remote. |
 | `mainline thread {new,list,close}` | Group multiple intents into a named thread. |
 | `mainline canonical-hash <id>` | Debug the canonical hash of an intent. |
