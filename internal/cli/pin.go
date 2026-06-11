@@ -6,51 +6,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var mergeIntentID string
-
-var mergeCmd = &cobra.Command{
-	Use:   "merge",
-	Short: "(advanced) Squash-merge a sealed intent into main and write its note in one step",
-	Long: `For most teams this command is unnecessary. After merging a PR via
-the GitHub/GitLab web UI, run 'mainline sync' (or any auto-syncing
-command) and 'mainline pin' will automatically link the merged commit
-to the intent — no special merge command required.
-
-Use 'mainline merge' only when you don't have a PR system, are
-scripting an automation pipeline, or want a single-step squash-merge
-that also writes the mainline note. The PR-driven path is the
-supported default.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		svc, err := getService()
-		if err != nil {
-			outputError(err)
-			return
-		}
-
-		if mergeIntentID == "" && len(args) > 0 {
-			mergeIntentID = args[0]
-		}
-		if mergeIntentID == "" {
-			outputError(fmt.Errorf("--intent or intent ID argument is required"))
-			return
-		}
-
-		result, err := svc.Merge(mergeIntentID)
-		if err != nil {
-			outputError(err)
-			return
-		}
-
-		if jsonOutput {
-			outputJSON(result)
-		} else {
-			fmt.Printf("Merged intent %s\n", result.IntentID)
-			fmt.Printf("  Commit:   %s\n", result.MergeCommit)
-			fmt.Printf("  Strategy: %s\n", result.Strategy)
-		}
-	},
-}
-
 // pinCmd is the manual-fallback escape hatch — required arguments
 // `<intent> <commit>`. Auto-pin (the no-args variant that scanned all
 // proposed intents) was removed in v0.2 because it is now an internal
@@ -97,8 +52,4 @@ actor.`,
 			fmt.Printf("Pinned %s -> %s (%s)\n", pinned.IntentID, pinned.Commit, pinned.MatchStrategy)
 		}
 	},
-}
-
-func init() {
-	mergeCmd.Flags().StringVar(&mergeIntentID, "intent", "", "intent ID to merge")
 }

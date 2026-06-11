@@ -562,23 +562,9 @@ func TestPropertyCannotAbandonMerged(t *testing.T) {
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	gitCmd(t, dir, "checkout", "-b", "feature/no-abandon-merged")
-	start, _ := svc.Start("merged then abandon", "")
-	writeFile(t, dir, "x.go", "package main\n")
-	gitCmd(t, dir, "add", "x.go")
-	gitCmd(t, dir, "commit", "-m", "x")
-	svc.Append("work")
+	intentID, _ := seedMergedIntent(t, dir, svc, "no-abandon-merged", "x.go")
 
-	sr := validSealResult(start.IntentID)
-	data, _ := json.Marshal(sr)
-	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
-		t.Fatalf("seal: %v", err)
-	}
-	if _, err := svc.Merge(start.IntentID); err != nil {
-		t.Fatalf("merge: %v", err)
-	}
-
-	if _, err := svc.Abandon(start.IntentID, "should fail"); err == nil {
+	if _, err := svc.Abandon(intentID, "should fail"); err == nil {
 		t.Error("merged → abandoned must be rejected")
 	}
 }
@@ -910,9 +896,7 @@ func TestSealSubmitSurfacesInheritedLintWarningsWithoutBlocking(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("add constraint: %v", err)
 	}
-	if _, err := svc.Merge(seedStart.IntentID); err != nil {
-		t.Fatalf("seed merge: %v", err)
-	}
+	squashMergeNoNote(t, dir, "feature/seed-constraint", "merge seed constraint")
 	if _, err := svc.Sync(); err != nil {
 		t.Fatalf("sync after seed merge: %v", err)
 	}

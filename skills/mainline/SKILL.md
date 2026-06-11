@@ -600,7 +600,6 @@ just because Mainline metadata is ready.
 Do not run these unless the user explicitly asks:
 
 ```bash
-mainline merge --intent <id>
 mainline pin <intent> <commit>
 mainline init --rewire
 mainline doctor --setup --fix

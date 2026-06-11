@@ -418,20 +418,27 @@ func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error
 		return nil, domain.NewError(domain.ErrNoActiveIntent, fmt.Sprintf("intent %s not found", intentID))
 	}
 
-	if err := core.ValidateStateTransition(draft.Status, domain.StatusAbandoned); err != nil {
+	effectiveStatus := draft.Status
+	// Sync/pin is the modern source of merged truth. A local draft can lag
+	// behind the view after another workflow pins the intent to main.
+	if iv := s.readIntentViewByID(intentID); iv != nil && isTerminalIntentStatus(iv.Status) {
+		effectiveStatus = iv.Status
+	}
+
+	if err := core.ValidateStateTransition(effectiveStatus, domain.StatusAbandoned); err != nil {
 		return nil, domain.NewError(domain.ErrInvalidStatus, err.Error())
 	}
 
 	res := &AbandonResult{
 		IntentID:    intentID,
-		PriorStatus: string(draft.Status),
+		PriorStatus: string(effectiveStatus),
 		Reason:      reason,
 	}
 
 	// Drafting → fully local. No event needed; the draft files are
 	// the entire footprint. Delete them (DeleteDraft also wipes the
 	// turns + prepare snapshot if any).
-	if draft.Status == domain.StatusDrafting {
+	if effectiveStatus == domain.StatusDrafting {
 		if err := s.Store.DeleteDraft(intentID); err != nil {
 			return nil, fmt.Errorf("delete draft: %w", err)
 		}

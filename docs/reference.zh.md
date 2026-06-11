@@ -195,7 +195,9 @@ Pin
   下一次 mainline sync 把 merged commit 绑定到 intent
 ```
 
-`mainline merge` 适合非 PR pipeline，不是 GitHub/GitLab 团队的默认路径。
+Mainline 不再提供自己的 merge 命令。代码合并应继续使用普通 Git、GitHub 或
+GitLab 流程，然后让 `mainline sync` 自动把 merged commit pin 到 sealed intent。
+如果特殊历史形态导致 auto-pin miss，再使用 `mainline pin <intent> <commit>` 手动兜底。
 
 ## Mainline 记录什么
 
@@ -297,7 +299,6 @@ Reviewer / maintainer 额外命令：
 | Command | 什么时候用 |
 |---|---|
 | `mainline pin <intent> <commit>` | rebase、cherry-pick 或特殊 CI 脚本导致 auto-pin miss 时手动修正。 |
-| `mainline merge --intent <id>` | 非 PR pipeline 里 squash 并写 note。 |
 | `mainline list-proposals` | 浏览团队里的 proposed intents。 |
 | `mainline pr-description --intent <id>` | 生成 PR description markdown。 |
 | `mainline publish --intent <id>` | 显式 push actor log。 |

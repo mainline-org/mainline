@@ -92,7 +92,7 @@ type StatusEvidence struct {
 	SupersededByIntent string `json:"superseded_by_intent,omitempty"`
 	AbandonedEventID   string `json:"abandoned_event_id,omitempty"`
 	MergedMainCommit   string `json:"merged_main_commit,omitempty"`
-	MergedVia          string `json:"merged_via,omitempty"` // "merge" | "pin"
+	MergedVia          string `json:"merged_via,omitempty"` // "merge" (legacy) | "pin"
 	RevertedMainCommit string `json:"reverted_main_commit,omitempty"`
 
 	// v0.3: seal-time worktree state, surfaced in `mainline show`.
@@ -113,7 +113,7 @@ type CommitNote struct {
 	AddedAt       string            `json:"added_at"`
 	AddedBy       string            `json:"added_by"`
 	// Via records how the note came to exist:
-	//   "merge"             — written by Service.Merge.
+	//   "merge"             — legacy value written by the removed mainline merge command.
 	//   "reconcile_auto"    — written by Service.Reconcile after a
 	//                         high-confidence automatic match.
 	//   "reconcile_manual"  — written by Service.ReconcileManual on an

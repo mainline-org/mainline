@@ -2,7 +2,6 @@ package engine
 
 import (
 	"encoding/json"
-	"os/exec"
 	"testing"
 
 	"github.com/mainline-org/mainline/internal/core"
@@ -13,77 +12,9 @@ import (
 // Git Notes integration tests (rc3)
 // -----------------------------------------------------------
 
-// TestMergeWritesNote verifies that merge writes a git note, not a trailer.
-func TestMergeWritesNote(t *testing.T) {
-	dir, cleanup := testRepo(t)
-	defer cleanup()
-
-	svc := NewServiceFromRoot(dir)
-	svc.Init("agent")
-
-	// Create feature branch, start intent, seal it
-	gitCmd(t, dir, "checkout", "-b", "feature/notes-test")
-	start, _ := svc.Start("test notes on merge", "")
-	writeFile(t, dir, "notes_test.go", "package main\n")
-	gitCmd(t, dir, "add", "notes_test.go")
-	gitCmd(t, dir, "commit", "-m", "add file")
-	svc.Append("added test file")
-
-	sr := validSealResult(start.IntentID)
-	data, _ := json.Marshal(sr)
-	svc.SealSubmit(json.RawMessage(data))
-
-	// Merge
-	result, err := svc.Merge(start.IntentID)
-	if err != nil {
-		t.Fatalf("merge: %v", err)
-	}
-
-	// Verify commit message is clean (no Mainline-* fields)
-	cmd := exec.Command("git", "log", "-1", "--format=%B", result.MergeCommit)
-	cmd.Dir = dir
-	msgOut, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git log: %v", err)
-	}
-	msg := string(msgOut)
-	if containsAny(msg, "Mainline-Intent:", "Mainline-Seal:", "Mainline-Thread:") {
-		t.Errorf("commit message should be clean, got trailers: %s", msg)
-	}
-
-	// Verify note exists on the merge commit
-	noteContent, err := svc.Git.NotesShow(result.MergeCommit)
-	if err != nil {
-		t.Fatalf("notes show: %v", err)
-	}
-	if noteContent == "" {
-		t.Fatal("expected git note on merge commit, got none")
-	}
-
-	// Parse note and verify structure
-	var note domain.CommitNote
-	if err := json.Unmarshal([]byte(noteContent), &note); err != nil {
-		t.Fatalf("parse note: %v", err)
-	}
-	if note.Kind != "mainline.commit_note" {
-		t.Errorf("expected kind mainline.commit_note, got %s", note.Kind)
-	}
-	if len(note.Intents) != 1 {
-		t.Fatalf("expected 1 intent ref, got %d", len(note.Intents))
-	}
-	if note.Intents[0].IntentID != start.IntentID {
-		t.Errorf("note intent ID mismatch: %s != %s", note.Intents[0].IntentID, start.IntentID)
-	}
-	if note.Via != "merge" {
-		t.Errorf("expected via=merge, got %s", note.Via)
-	}
-	if note.AddedBy == "" {
-		t.Error("added_by should be set")
-	}
-}
-
-// TestSyncReadsNotes verifies that sync rebuilds view from notes, not trailers.
-func TestSyncReadsNotes(t *testing.T) {
+// TestSyncReadsLegacyMergeNotes verifies that sync still understands notes
+// written by the removed mainline merge command.
+func TestSyncReadsLegacyMergeNotes(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
 
@@ -101,7 +32,20 @@ func TestSyncReadsNotes(t *testing.T) {
 	sr := validSealResult(start.IntentID)
 	data, _ := json.Marshal(sr)
 	svc.SealSubmit(json.RawMessage(data))
-	svc.Merge(start.IntentID)
+
+	mergeCommit := squashMergeNoNote(t, dir, "feature/sync-notes", "merge feature/sync-notes")
+	draft, _ := svc.Store.ReadDraft(start.IntentID)
+	hash, _ := core.CanonicalHash(draft)
+	identity, _ := svc.Store.ReadIdentity()
+	if err := upsertCommitNote(svc.Git, mergeCommit, domain.CommitNote{
+		Intents: []domain.IntentReference{
+			{IntentID: start.IntentID, SealResultHash: "sha256:" + hash},
+		},
+		AddedBy: identity.ActorID,
+		Via:     "merge",
+	}); err != nil {
+		t.Fatalf("write legacy merge note: %v", err)
+	}
 
 	// Sync should pick up the merged intent via notes
 	syncResult, err := svc.Sync()
@@ -122,7 +66,7 @@ func TestSyncReadsNotes(t *testing.T) {
 				t.Errorf("expected merged, got %s", iv.Status)
 			}
 			if iv.StatusEvidence.MergedVia != "merge" {
-				t.Errorf("expected merged_via=merge, got %s", iv.StatusEvidence.MergedVia)
+				t.Errorf("expected legacy merged_via=merge, got %s", iv.StatusEvidence.MergedVia)
 			}
 			found = true
 		}
@@ -345,128 +289,9 @@ func TestPropertyEmptyNoteValid(t *testing.T) {
 	}
 }
 
-// Property: merge note always has via="merge"
-func TestPropertyMergeNoteHasViaMerge(t *testing.T) {
-	dir, cleanup := testRepo(t)
-	defer cleanup()
-
-	svc := NewServiceFromRoot(dir)
-	svc.Init("agent")
-
-	for i := 0; i < 5; i++ {
-		branch := "feature/merge-pbt-" + randomTestString(4)
-		gitCmd(t, dir, "checkout", "main")
-		gitCmd(t, dir, "checkout", "-b", branch)
-		start, _ := svc.Start("pbt goal "+randomTestString(3), "")
-		writeFile(t, dir, "f_"+randomTestString(4)+".go", "package main\n")
-		gitCmd(t, dir, "add", ".")
-		gitCmd(t, dir, "commit", "-m", "work")
-		svc.Append("work")
-
-		sr := validSealResult(start.IntentID)
-		data, _ := json.Marshal(sr)
-		svc.SealSubmit(json.RawMessage(data))
-
-		result, err := svc.Merge(start.IntentID)
-		if err != nil {
-			t.Fatalf("merge %d: %v", i, err)
-		}
-
-		noteContent, _ := svc.Git.NotesShow(result.MergeCommit)
-		if noteContent == "" {
-			t.Fatalf("merge %d: no note on commit", i)
-		}
-		var note domain.CommitNote
-		json.Unmarshal([]byte(noteContent), &note)
-		if note.Via != "merge" {
-			t.Errorf("merge %d: via should be 'merge', got '%s'", i, note.Via)
-		}
-		if note.Intents[0].IntentID != start.IntentID {
-			t.Errorf("merge %d: intent_id mismatch in note", i)
-		}
-	}
-}
-
-// Property: after merge+sync, view shows merged with merged_via="merge"
-func TestPropertySyncAfterMergeShowsCorrectVia(t *testing.T) {
-	dir, cleanup := testRepo(t)
-	defer cleanup()
-
-	svc := NewServiceFromRoot(dir)
-	svc.Init("agent")
-
-	gitCmd(t, dir, "checkout", "-b", "feature/via-test")
-	start, _ := svc.Start("via test", "")
-	writeFile(t, dir, "via.go", "package main\n")
-	gitCmd(t, dir, "add", "via.go")
-	gitCmd(t, dir, "commit", "-m", "via test")
-	svc.Append("via test work")
-
-	sr := validSealResult(start.IntentID)
-	data, _ := json.Marshal(sr)
-	svc.SealSubmit(json.RawMessage(data))
-	svc.Merge(start.IntentID)
-	svc.Sync()
-
-	view, _ := svc.Store.ReadMainlineView()
-	for _, iv := range view.Intents {
-		if iv.IntentID == start.IntentID {
-			if iv.StatusEvidence.MergedVia != "merge" {
-				t.Errorf("expected merged_via=merge, got %s", iv.StatusEvidence.MergedVia)
-			}
-			return
-		}
-	}
-	t.Error("intent not found in view after merge+sync")
-}
-
-// Property: no commit message ever contains Mainline- after merge
-func TestPropertyCleanCommitMessages(t *testing.T) {
-	dir, cleanup := testRepo(t)
-	defer cleanup()
-
-	svc := NewServiceFromRoot(dir)
-	svc.Init("agent")
-
-	for i := 0; i < 3; i++ {
-		branch := "feature/clean-" + randomTestString(4)
-		gitCmd(t, dir, "checkout", "main")
-		gitCmd(t, dir, "checkout", "-b", branch)
-		start, _ := svc.Start("clean msg "+randomTestString(3), "")
-		writeFile(t, dir, "c_"+randomTestString(4)+".go", "package main\n")
-		gitCmd(t, dir, "add", ".")
-		gitCmd(t, dir, "commit", "-m", "work")
-		svc.Append("work")
-
-		sr := validSealResult(start.IntentID)
-		data, _ := json.Marshal(sr)
-		svc.SealSubmit(json.RawMessage(data))
-		result, _ := svc.Merge(start.IntentID)
-
-		// Check commit message is clean
-		msg, _ := svc.Git.FullCommitMessage(result.MergeCommit)
-		if containsAny(msg, "Mainline-Intent:", "Mainline-Seal:", "Mainline-Thread:") {
-			t.Errorf("merge %d: commit message should not contain trailers: %s", i, msg)
-		}
-	}
-}
-
 // -----------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------
-
-func containsAny(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		if len(s) >= len(sub) {
-			for i := 0; i <= len(s)-len(sub); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
 
 func randomCommitNote() domain.CommitNote {
 	nIntents := randomInt(4) + 1

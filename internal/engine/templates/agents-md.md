@@ -550,14 +550,13 @@ modifies repo files outside the user-chosen output directory.
 - `mainline pin` — runs automatically after every sync; the strategy
   cascade (tree_hash → commit_hash → goal_text) catches GitHub
   squash-merges with near-100 % reliability.
-- `mainline merge` — humans merge via the GitHub PR UI; the next
-  `mainline sync` auto-pins the squash commit.
+- code merges — humans merge via the normal Git, GitHub, or GitLab flow;
+  the next `mainline sync` auto-pins the merged commit.
 
 ### Do not run unless the user explicitly asks
 
 ```
 mainline pin <intent> <commit>      # manual fallback
-mainline merge --intent <id>        # non-PR pipeline only
 mainline init --rewire              # repo setup repair
 mainline doctor --setup --fix       # repo setup repair
 ```

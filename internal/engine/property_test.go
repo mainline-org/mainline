@@ -138,10 +138,10 @@ func TestPropertySyncIdempotent(t *testing.T) {
 // no new commits must be a no-op. Otherwise we risk piling up duplicate notes
 // every time `mainline sync` runs.
 //
-// To exercise the catch-up path, we deliberately wipe the merge note that
-// Service.Merge writes, demoting the intents from "merged" back to "proposed"
-// in the rebuilt view; reconcile must then re-attach a note on the first call
-// and stay quiet thereafter.
+// To exercise the catch-up path, we deliberately wipe the pin note that sync
+// writes, demoting the intents from "merged" back to "proposed" in the rebuilt
+// view; reconcile must then re-attach a note on the first call and stay quiet
+// thereafter.
 func TestPropertyReconcileIdempotent(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		nMerged := rapid.IntRange(1, 3).Draw(rt, "nMerged")

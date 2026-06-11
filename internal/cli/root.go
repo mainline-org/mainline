@@ -224,7 +224,6 @@ func init() {
 	// covers the normal case.
 	pinCmd.GroupID = groupAdvanced.ID
 	migrateCmd.GroupID = groupAdvanced.ID
-	mergeCmd.GroupID = groupAdvanced.ID
 	publishCmd.GroupID = groupAdvanced.ID
 	prDescriptionCmd.GroupID = groupAdvanced.ID
 	prCommentCmd.GroupID = groupAdvanced.ID
@@ -263,7 +262,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		initCmd, statusCmd, preflightCmd, startCmd, appendCmd, sealCmd, syncCmd,
-		publishCmd, doctorCmd, checkCmd, mergeCmd, logCmd, showCmd,
+		publishCmd, doctorCmd, checkCmd, logCmd, showCmd,
 		threadCmd, prDescriptionCmd, prCommentCmd, pinCmd, contextCmd,
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd, migrateCmd,
