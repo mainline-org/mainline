@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
 )
 
@@ -33,9 +34,11 @@ func gitRunIn(t helperTB, dir string, args ...string) (string, error) {
 	return svc.Git.Run(args...)
 }
 
-// seedMergedIntent creates a feature branch, runs the modern
-// start→commit→append→seal→ordinary squash merge→sync auto-pin cycle and
-// returns (intent ID, merged main commit hash). Lives here (rather than
+// seedMergedIntent creates a feature branch, seals it, performs an ordinary
+// squash merge, and writes the same commit note that auto-pin would attach.
+// It intentionally avoids a full post-merge Sync: high-volume PBT callers only
+// need a merged intent fixture, while dedicated reconcile tests exercise the
+// real squash-merge → sync auto-pin path. Lives here (rather than
 // property_test.go) so non-PBT builds with -tags quick still see it.
 func seedMergedIntent(t helperTB, dir string, svc *Service, branchSuffix, fileName string) (intentID, mergeCommit string) {
 	t.Helper()
@@ -59,10 +62,81 @@ func seedMergedIntent(t helperTB, dir string, svc *Service, branchSuffix, fileNa
 		t.Fatalf("seal: %v", err)
 	}
 	mergeCommit = squashMergeNoNote(t, dir, branch, "merge "+branchSuffix)
-	if _, err := svc.Sync(); err != nil {
-		t.Fatalf("sync after merge: %v", err)
-	}
+	seedPinnedMergeNote(t, svc, start.IntentID, mergeCommit)
+	seedMergedFixtureState(t, svc, start.IntentID, mergeCommit)
 	return start.IntentID, mergeCommit
+}
+
+func seedPinnedMergeNote(t helperTB, svc *Service, intentID, mergeCommit string) {
+	t.Helper()
+	identity, err := svc.Store.ReadIdentity()
+	if err != nil {
+		t.Fatalf("read identity: %v", err)
+	}
+	hash, _ := core.CanonicalHash(intentID)
+	note := domain.CommitNote{
+		SchemaVersion: 1,
+		Kind:          "mainline.commit_note",
+		Intents: []domain.IntentReference{
+			{IntentID: intentID, SealResultHash: "sha256:" + hash},
+		},
+		AddedAt:       core.Now(),
+		AddedBy:       identity.ActorID,
+		Via:           "pin_auto",
+		MatchStrategy: "tree_hash",
+		ReconciledAt:  core.Now(),
+		ReconciledBy:  identity.ActorID,
+	}
+	if err := upsertCommitNote(svc.Git, mergeCommit, note); err != nil {
+		t.Fatalf("write merge note: %v", err)
+	}
+}
+
+func seedMergedFixtureState(t helperTB, svc *Service, intentID, mergeCommit string) {
+	t.Helper()
+	draft, err := svc.Store.ReadDraft(intentID)
+	if err == nil && draft != nil {
+		draft.Status = domain.StatusMerged
+		draft.LastModifiedAt = core.Now()
+		if err := svc.Store.WriteDraft(draft); err != nil {
+			t.Fatalf("write merged draft: %v", err)
+		}
+	}
+
+	view, err := svc.Store.ReadMainlineView()
+	if err != nil {
+		t.Fatalf("read view: %v", err)
+	}
+	if view == nil {
+		view = &domain.MainlineView{
+			SchemaVersion: 1,
+			MainBranch:    "main",
+		}
+	}
+	for i := range view.Intents {
+		if view.Intents[i].IntentID == intentID {
+			view.Intents[i].Status = domain.StatusMerged
+			view.Intents[i].StatusEvidence.MergedMainCommit = mergeCommit
+			view.Intents[i].StatusEvidence.MergedVia = "pin"
+			if err := svc.Store.WriteMainlineView(view); err != nil {
+				t.Fatalf("write merged view: %v", err)
+			}
+			return
+		}
+	}
+	view.Intents = append(view.Intents, domain.IntentView{
+		IntentID:      intentID,
+		SchemaVersion: 1,
+		Status:        domain.StatusMerged,
+		StatusEvidence: domain.StatusEvidence{
+			MergedMainCommit: mergeCommit,
+			MergedVia:        "pin",
+		},
+		ViewRebuiltAt: core.Now(),
+	})
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write merged view: %v", err)
+	}
 }
 
 // seedSealedIntent walks the agent flow up to seal but stops before any
