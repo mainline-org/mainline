@@ -166,11 +166,11 @@ func TestUpsertCommitNoteReplacesNonMainlineKind(t *testing.T) {
 // End-to-end: Reconcile no longer kicks an existing intent off a commit.
 // -----------------------------------------------------------
 
-// Replicates the dogfood failure exactly. svc.Merge writes a note for
-// intent A on a main commit C. A second intent B happens to be sealed
-// against a feature whose tree, after squash, equals C. Reconcile hits
-// tree_hash on B → upsert merges B into C's note instead of replacing
-// A. After sync both intents read as merged.
+// Replicates the dogfood failure: intent A already has a note on main
+// commit C. A second intent B happens to be sealed against a feature
+// whose tree, after squash, equals C. Reconcile hits tree_hash on B →
+// upsert merges B into C's note instead of replacing A. After sync both
+// intents read as merged.
 func TestReconcileDoesNotEvictExistingIntent(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -179,7 +179,7 @@ func TestReconcileDoesNotEvictExistingIntent(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 
-	// Intent A: full pipeline through mainline merge — note attached to mergeCommit.
+	// Intent A: full modern pipeline through ordinary squash merge + sync auto-pin.
 	idA, mergeA := seedMergedIntent(t, dir, svc, "evict-A", "evict_a.go")
 	_ = mergeA
 

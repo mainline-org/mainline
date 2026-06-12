@@ -9,10 +9,10 @@ import (
 )
 
 // squashMergeNoNote replicates `git merge --squash` followed by a commit
-// without writing the mainline note Service.Merge would normally attach.
+// without writing any mainline note.
 // The result is the state created by clicking "Squash and merge" in the
 // GitHub UI: feature tree on main, no mainline metadata anywhere.
-func squashMergeNoNote(t *testing.T, dir, branch, commitMsg string) (mainCommit string) {
+func squashMergeNoNote(t helperTB, dir, branch, commitMsg string) (mainCommit string) {
 	t.Helper()
 	gitCmd(t, dir, "checkout", "main")
 	gitCmd(t, dir, "merge", "--squash", branch)
@@ -27,16 +27,16 @@ func squashMergeNoNote(t *testing.T, dir, branch, commitMsg string) (mainCommit 
 // gitRunIn shells out to git inside dir and returns stdout. Different from
 // the existing gitCmd helper because we need the captured output, not just
 // success.
-func gitRunIn(t *testing.T, dir string, args ...string) (string, error) {
+func gitRunIn(t helperTB, dir string, args ...string) (string, error) {
 	t.Helper()
 	svc := NewServiceFromRoot(dir)
 	return svc.Git.Run(args...)
 }
 
-// seedMergedIntent creates a feature branch, runs the full
-// start→commit→append→seal→merge cycle and returns (intent ID, merge
-// commit hash). Lives here (rather than property_test.go) so non-PBT
-// builds with -tags quick still see it.
+// seedMergedIntent creates a feature branch, runs the modern
+// start→commit→append→seal→ordinary squash merge→sync auto-pin cycle and
+// returns (intent ID, merged main commit hash). Lives here (rather than
+// property_test.go) so non-PBT builds with -tags quick still see it.
 func seedMergedIntent(t helperTB, dir string, svc *Service, branchSuffix, fileName string) (intentID, mergeCommit string) {
 	t.Helper()
 	branch := "feature/" + branchSuffix
@@ -58,11 +58,11 @@ func seedMergedIntent(t helperTB, dir string, svc *Service, branchSuffix, fileNa
 	if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
 		t.Fatalf("seal: %v", err)
 	}
-	mr, err := svc.Merge(start.IntentID)
-	if err != nil {
-		t.Fatalf("merge: %v", err)
+	mergeCommit = squashMergeNoNote(t, dir, branch, "merge "+branchSuffix)
+	if _, err := svc.Sync(); err != nil {
+		t.Fatalf("sync after merge: %v", err)
 	}
-	return start.IntentID, mr.MergeCommit
+	return start.IntentID, mergeCommit
 }
 
 // seedSealedIntent walks the agent flow up to seal but stops before any
@@ -407,15 +407,8 @@ func TestReconcileManualRejectsMergedIntent(t *testing.T) {
 	svc := NewServiceFromRoot(dir)
 	svc.Init("agent")
 
-	intentID, _ := seedSealedIntent(t, dir, svc, "rmi", "rmi.go")
-	if _, err := svc.Merge(intentID); err != nil {
-		t.Fatalf("merge: %v", err)
-	}
-	svc.Sync()
-
-	gitCmd(t, dir, "checkout", "main")
-	headOut, _ := gitRunIn(t, dir, "rev-parse", "HEAD")
-	if _, err := svc.PinExplicit(intentID, strings.TrimSpace(headOut)); err == nil {
+	intentID, mergeCommit := seedMergedIntent(t, dir, svc, "rmi", "rmi.go")
+	if _, err := svc.PinExplicit(intentID, mergeCommit); err == nil {
 		t.Error("expected error reconciling already-merged intent, got nil")
 	}
 }

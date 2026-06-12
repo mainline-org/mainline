@@ -14,7 +14,6 @@ const (
 	ErrInvalidStatus      ErrorCode = "INVALID_STATUS"
 	ErrSealFailed         ErrorCode = "SEAL_FAILED"
 	ErrCheckFailed        ErrorCode = "CHECK_FAILED"
-	ErrMergeFailed        ErrorCode = "MERGE_FAILED"
 	ErrPublishFailed      ErrorCode = "PUBLISH_FAILED"
 	ErrSyncFailed         ErrorCode = "SYNC_FAILED"
 	ErrInvalidInput       ErrorCode = "INVALID_INPUT"

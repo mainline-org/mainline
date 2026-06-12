@@ -225,8 +225,10 @@ Pin
   the next mainline sync links the merged commit to the intent
 ```
 
-`mainline merge` exists for non-PR pipelines, but it is not the supported default
-path for teams using GitHub or GitLab review.
+Mainline no longer provides its own merge command. Merge code through your
+normal Git, GitHub, or GitLab workflow, then let `mainline sync` auto-pin the
+merged commit to the sealed intent. If auto-pin misses an unusual history shape,
+use the manual `mainline pin <intent> <commit>` fallback.
 
 ## What Mainline Records
 
@@ -332,7 +334,6 @@ of the auto-sync wrapper.
 | Command | When you might use it |
 |---|---|
 | `mainline pin <intent> <commit>` | Manual escape hatch when auto-pin misses after rebase, cherry-pick, or unusual CI scripting. |
-| `mainline merge --intent <id>` | Squash and write a note in one step for non-PR pipelines. |
 | `mainline list-proposals` | Browse proposed intents across the team. |
 | `mainline pr-description --intent <id>` | Generate PR description markdown. |
 | `mainline publish --intent <id>` | Push actor log explicitly. |

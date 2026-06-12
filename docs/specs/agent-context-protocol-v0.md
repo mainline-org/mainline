@@ -272,7 +272,6 @@ durable signals.
 |---|---|
 | `mainline sync` | Runs automatically inside `seal --submit`. |
 | `mainline pin` | Runs automatically after sync. |
-| `mainline merge` | Humans merge via PR UI; sync auto-pins. |
 
 ## 11. Compatibility
 
