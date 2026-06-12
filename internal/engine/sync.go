@@ -230,6 +230,7 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 
 	// Build intent views from events
 	intentMap := make(map[string]*domain.IntentView)
+	acceptedProvenance := make(map[string]domain.IntentProvenance)
 	riskResolutions := make(map[string][]domain.RiskResolution)
 	followupResolutions := make(map[string][]domain.FollowupResolution)
 	var constraints []domain.Constraint
@@ -293,6 +294,9 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 					SealedAtBranch:   sealedBranch,
 				},
 				Publication: "published",
+			}
+			if prov, ok := acceptedProvenance[evt.IntentID]; ok {
+				iv.Provenance = &prov
 			}
 			intentMap[evt.IntentID] = iv
 
@@ -445,6 +449,34 @@ func (s *Service) rebuildView(cfg *domain.TeamConfig) (*domain.MainlineView, err
 				Rationale: evt.Rationale,
 				At:        evt.Timestamp,
 			})
+
+		case domain.EventActorLogAccepted:
+			var evt domain.ActorLogAcceptedEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			prov := domain.IntentProvenance{
+				Kind:                "accepted_actor_log",
+				SourceRemote:        evt.SourceRemote,
+				SourceRef:           evt.SourceRef,
+				SourceHead:          evt.SourceHead,
+				TargetRef:           evt.TargetRef,
+				AcceptedByActor:     evt.ActorID,
+				AcceptedByName:      evt.ActorName,
+				AcceptedAt:          evt.Timestamp,
+				AcceptedEventID:     evt.EventID,
+				ImportedBranchRefs:  append([]string(nil), evt.ImportedBranchRefs...),
+				ObjectFetchWarnings: append([]string(nil), evt.ObjectFetchWarnings...),
+				AuthorSealed:        evt.AuthorSealed,
+				Verified:            evt.Verified,
+			}
+			for _, id := range evt.SealedIntentIDs {
+				acceptedProvenance[id] = prov
+				if iv, ok := intentMap[id]; ok {
+					p := prov
+					iv.Provenance = &p
+				}
+			}
 		}
 	}
 

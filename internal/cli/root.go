@@ -217,6 +217,7 @@ func init() {
 	initCmd.GroupID = groupSetup.ID
 	doctorCmd.GroupID = groupSetup.ID
 	agentsCmd.GroupID = groupSetup.ID
+	actorCmd.GroupID = groupSetup.ID
 
 	// Advanced — manual fallbacks. AGENTS.md instructs agents NOT to
 	// run these unless the user explicitly asks; the auto-flow
@@ -267,7 +268,7 @@ func init() {
 		listProposalsCmd, canonicalHashCmd, gapsCmd, digestCmd, abandonCmd,
 		traceCmd, agentsCmd, migrateCmd,
 		hooksCmd, webhookCmd, webhookDispatchCmd,
-		hubCmd, lintCmd, evalCmd, guardCmd, risksCmd, followupsCmd, versionCmd,
+		hubCmd, lintCmd, evalCmd, actorCmd, guardCmd, risksCmd, followupsCmd, versionCmd,
 	)
 }
 

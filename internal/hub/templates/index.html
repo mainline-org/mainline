@@ -33,6 +33,42 @@
   {{if .SiblingDrafts}}<a href="open.html">Sibling drafts: {{len .SiblingDrafts}}</a>{{end}}
 </section>
 
+{{if .ExternalContributions}}
+<section>
+  <h2>Imported external PR contributions</h2>
+  <p class="muted">These records explain merged outside contributions that are visible through GitHub metadata but are not author-sealed Mainline intents.</p>
+  <div class="external-list">
+  {{range .ExternalContributions}}
+    <article class="external-contribution">
+      <div class="external-main">
+        <strong>{{.Title}}</strong>
+        <span class="external-meta">
+          {{if .AuthorLogin}}by {{.AuthorLogin}}{{end}}
+          {{if .Repository}} · {{.Repository}}{{end}}
+          {{if .PRNumber}} · PR #{{.PRNumber}}{{end}}
+          {{if .MergedCommit}} · merge <code>{{shortCommit .MergedCommit}}</code>{{end}}
+        </span>
+      </div>
+      <div class="external-trust">
+        <span class="status status-imported">{{.Provenance}}</span>
+        {{if .NotAuthorSealed}}<span class="status status-unverified">not author-sealed</span>{{end}}
+        {{if .Verified}}<span class="status status-verified">verified</span>{{else}}<span class="status status-unverified">unverified</span>{{end}}
+      </div>
+      <div class="external-links">
+        {{if .PRURL}}<a href="{{.PRURL}}">GitHub PR</a>{{end}}
+        {{if .AssociatedIntentIDs}}
+          <span class="muted">Associated Mainline intent{{if ne (len .AssociatedIntentIDs) 1}}s{{end}}:</span>
+          {{range .AssociatedIntentIDs}}<a href="intents/{{.}}.html"><code>{{shortID .}}</code></a>{{end}}
+        {{end}}
+        {{if .ImportedBy}}<span class="muted">Imported by <code>{{shortID .ImportedBy}}</code></span>{{end}}
+        {{if .BodyIntentNote}}<span class="muted">PR body: {{.BodyIntentNote}}</span>{{end}}
+      </div>
+    </article>
+  {{end}}
+  </div>
+</section>
+{{end}}
+
 <section>
   <h2>{{t .Lang "section.needs_attention"}}</h2>
   {{if not .Dashboard.Focus}}<p class="muted">{{t .Lang "section.needs_attention_empty"}}</p>{{end}}

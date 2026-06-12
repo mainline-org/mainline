@@ -276,6 +276,82 @@ open ./mainline-hub/index.html      # macOS
 xdg-open ./mainline-hub/index.html  # Linux
 ```
 
+For merged fork PRs, first ask whether the contributor also used Mainline. If
+they did, import their actor log as an explicit upstream trust decision:
+
+```bash
+mainline publish --intent <id> --remote <fork>
+```
+
+Contributors use the command above when they can write to their fork but not to
+the upstream Mainline remote. It pushes the actor log to the fork so an upstream
+maintainer can import it.
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+`--remote` may be a configured Git remote or a fetchable URL. By default the
+command fetches `refs/mainline/actors/<actor>/log` into
+`refs/mainline/imports/<actor>/log`, validates that the events belong to the
+expected actor, accepts the log into the upstream actor namespace, rebuilds the
+view, and runs the normal auto-pin cascade. It also best-effort fetches fork
+branches referenced by the accepted sealed intents into
+`refs/mainline/imports/<actor>/branches/*`. Those hidden import refs keep the
+contributor's original code commits and trees reachable in upstream, which is
+what lets a squash/rebase PR pin by tree/content even when the original fork
+commit is not in `main`.
+
+When the upstream remote is configured, Mainline pushes the accepted contributor
+actor ref, the maintainer's acceptance event, the imported fork branch refs, and
+any new pin notes so the next `mainline sync` in another clone sees the same
+author-sealed intent and the code objects needed to reason about it.
+
+This command imports actor-log intent metadata and the referenced fork code
+objects. It deliberately does not copy fork git notes into upstream because
+notes are evidence about upstream main commits and should be written by upstream
+pinning. If a referenced fork branch was deleted or cannot be fetched, the
+actor-log accept can still succeed, but Mainline records object-fetch warnings
+in the result/provenance and auto-pin may require a later manual fetch or
+explicit `mainline pin`.
+
+The accepted actor log must contain at least one author-sealed intent. Import
+accepts only author seal/supersession/abandonment metadata from the fork actor
+log; fork-side constraints, risks, follow-ups, check judgments, and merge
+acknowledgements are rejected instead of being promoted into upstream team
+signals. Upstream pin notes remain the source of merged evidence.
+
+Maintainer backfills can coexist with later accepted contributor intents. A
+backfill or explicit maintainer pin is the upstream maintainer's rescue record;
+an accepted fork actor log is the contributor's author-sealed record. If both
+refer to the same merge commit, the commit note may contain both intent
+references. Coverage remains commit-level: one or more valid intent refs make
+the commit covered, and accepting the contributor intent must not create a
+review-queue conflict with the earlier backfill.
+
+When the contributor has no upstream-visible Mainline actor log, Hub can still
+explain the merged PR with an explicit external-contribution file:
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+The file may be either an array or `{ "external_contributions": [...] }`.
+Each row should carry GitHub PR metadata such as `author_login`,
+`repository`, `pr_number`, `pr_url`, `merged_commit`, and `provenance`.
+Hub currently treats these as imported/inferred contribution records, not as
+author-owned Mainline intents. It forces `author_sealed=false`,
+`not_author_sealed=true`, and `verified=false`, then links the row to any
+upstream Mainline intent pinned to the same merge commit. This lets Hub explain
+"who originally contributed this merged PR" without polluting actor counts,
+review queues, coverage, or pin logic.
+
+Do not use an empty `## Mainline Intent` section in a GitHub PR body as intent
+evidence. PR descriptions are review-time artifacts; Mainline sealed intents
+come from actor logs. GitHub PR imports must be labeled with provenance such as
+`github_pr_imported` or `inferred` and must remain `not_author_sealed` unless a
+real actor log has been accepted.
+
 Hub output is generated local state and should not be committed.
 
 ### Publishing Hub With GitHub Pages
@@ -336,7 +412,7 @@ of the auto-sync wrapper.
 | `mainline pin <intent> <commit>` | Manual escape hatch when auto-pin misses after rebase, cherry-pick, or unusual CI scripting. |
 | `mainline list-proposals` | Browse proposed intents across the team. |
 | `mainline pr-description --intent <id>` | Generate PR description markdown. |
-| `mainline publish --intent <id>` | Push actor log explicitly. |
+| `mainline publish --intent <id>` | Push actor log explicitly. Add `--remote <fork>` when publishing fork-contributor metadata to a writable fork remote. |
 | `mainline thread {new,list,close}` | Group multiple intents into a named thread. |
 | `mainline canonical-hash <id>` | Debug the canonical hash of an intent. |
 
@@ -462,6 +538,12 @@ sealed intent is the long-term decision record.
 Durable team data lives in Git. Per-actor logs live under
 `refs/mainline/actors/<id>/log`; merged-code pins live in Git notes under
 `refs/notes/mainline/intents`. `.ml-cache/` is local-only cache.
+
+Fork contributors are a trust-boundary case. An upstream repo only sees actor
+logs that have been fetched and accepted into its Mainline view. Until that
+exists, Hub can display an imported GitHub PR contribution with provenance
+(`github_pr_imported` or `inferred`) and importer metadata, but it must not
+present that row as a verified contributor-sealed intent.
 
 **Why not use commit messages or PR descriptions?**
 

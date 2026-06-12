@@ -224,6 +224,38 @@ For static export:
 mainline hub export ./mainline-hub
 ```
 
+Fork PRs may be shown as imported external contributions when the contributor
+has no upstream-visible Mainline actor log:
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+If the fork contributor also uses Mainline, prefer importing their actor log
+first. This is an explicit trust-boundary action by an upstream maintainer:
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+The command fetches that actor's `refs/mainline/actors/<actor>/log` from the
+fork into a temporary import ref, validates the events, accepts the actor log
+into the upstream namespace, best-effort fetches referenced fork branches into
+`refs/mainline/imports/<actor>/branches/*`, rebuilds the view, and runs normal
+auto-pin. The contributor's intent remains author-sealed, while Hub shows
+provenance such as `accepted_actor_log`, who accepted it, whether it was
+verified, and which imported code refs made the fork commits reachable.
+The import path requires at least one author-sealed intent and does not import
+fork-side constraints, risks, follow-ups, check judgments, or merge
+acknowledgements as upstream team signals. Upstream pin notes remain the source
+of merged evidence.
+
+The `--external-contributions` file is only the fallback when no author-owned
+actor log is available. Those records are labeled with provenance such as
+`github_pr_imported` and `not author-sealed`. Hub does not treat GitHub PR
+metadata or an empty `## Mainline Intent` PR-body template as a
+contributor-authored sealed Mainline intent.
+
 The public hosted Hub for Mainline is https://mainline.sh/hub/.
 
 The detailed reference covers install variants, recovery rules, hook behavior,

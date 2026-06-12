@@ -302,15 +302,16 @@ type pageCtx struct {
 	// OtherLangPath so a single template variable drives the link.
 	OtherLangLabel string
 
-	Dashboard         HubDashboard
-	TeamHealth        HubTeamHealth
-	InheritedHotspots []HubInheritedHotspot
-	Intents           []HubIntent
-	OpenIntents       []HubOpenIntent
-	SiblingDrafts     []HubWorktreeDraft
-	Source            HubSource
-	FileIndex         []HubFileEntry
-	ReviewRows        []HubIntent
+	Dashboard             HubDashboard
+	TeamHealth            HubTeamHealth
+	InheritedHotspots     []HubInheritedHotspot
+	Intents               []HubIntent
+	OpenIntents           []HubOpenIntent
+	SiblingDrafts         []HubWorktreeDraft
+	ExternalContributions []HubExternalContribution
+	Source                HubSource
+	FileIndex             []HubFileEntry
+	ReviewRows            []HubIntent
 
 	Intent       *HubIntent
 	RelatedFiles []string
@@ -370,17 +371,18 @@ func indexByID(intents []HubIntent) map[string]HubIntent {
 
 func indexCtx(m *HubModel) pageCtx {
 	return pageCtx{
-		Title:             "Recent intents",
-		GeneratedAt:       m.GeneratedAt,
-		MainBranch:        m.MainBranch,
-		MainHead:          m.MainHead,
-		NavActive:         "index",
-		RootPath:          "",
-		Dashboard:         m.Dashboard,
-		TeamHealth:        m.TeamHealth,
-		InheritedHotspots: m.InheritedHotspots,
-		Intents:           m.Intents,
-		OpenIntents:       m.OpenIntents,
+		Title:                 "Recent intents",
+		GeneratedAt:           m.GeneratedAt,
+		MainBranch:            m.MainBranch,
+		MainHead:              m.MainHead,
+		NavActive:             "index",
+		RootPath:              "",
+		Dashboard:             m.Dashboard,
+		TeamHealth:            m.TeamHealth,
+		InheritedHotspots:     m.InheritedHotspots,
+		Intents:               m.Intents,
+		OpenIntents:           m.OpenIntents,
+		ExternalContributions: m.ExternalContributions,
 	}
 }
 

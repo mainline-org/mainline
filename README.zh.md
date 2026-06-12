@@ -204,6 +204,34 @@ mainline gaps
 mainline hub export ./mainline-hub
 ```
 
+如果 fork contributor 也在本地使用 Mainline，优先由 upstream maintainer 显式
+接受他的 actor log：
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+这个命令会从 fork 拉取 `refs/mainline/actors/<actor>/log`，校验事件属于指定
+actor，接受进 upstream actor namespace，并 best-effort 拉取 sealed intent 里引用的
+fork branch 到 `refs/mainline/imports/<actor>/branches/*`。这样即使 PR 是
+squash/rebase merge，upstream 仍能拿到 contributor 原始 code commit/tree object，
+再用正常 auto-pin 把 author-sealed intent pin 到 upstream merge commit。Hub 会显示
+`accepted_actor_log`、接受者、verified 状态和导入的 code refs。
+import 路径要求至少有一条作者 sealed intent；fork 侧的 constraints、risks、
+follow-ups、check judgments 或 merge acknowledgements 不会被导入成 upstream
+团队信号。merged evidence 仍以 upstream pin notes 为准。
+
+fork PR 在 contributor 没有 upstream 可见 Mainline actor log 时，才作为
+imported external contribution fallback 显示：
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+这类记录会标明 `github_pr_imported`、`not author-sealed` 等 provenance /
+trust boundary。Hub 不会把 GitHub PR metadata，或 PR body 里空的
+`## Mainline Intent` 模板，当成 contributor 自己 sealed 的 Mainline intent。
+
 Mainline 的公开 Hosted Hub 入口是：https://mainline.sh/hub/
 
 安装变体、恢复规则、hooks 行为、webhooks、配置、静态 Hub 发布、存储布局和开发命令，放在

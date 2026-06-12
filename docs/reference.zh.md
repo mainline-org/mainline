@@ -244,6 +244,74 @@ open ./mainline-hub/index.html      # macOS
 xdg-open ./mainline-hub/index.html  # Linux
 ```
 
+对于已 merge 的 fork PR，先判断 contributor 是否也使用了 Mainline。如果有，
+upstream maintainer 应该显式接受他的 actor log：
+
+```bash
+mainline publish --intent <id> --remote <fork>
+```
+
+Contributor 没有 upstream Mainline remote 写权限、但能写自己的 fork remote 时，先用
+上面的命令把 actor log 推到 fork，之后 maintainer 才能从 fork import。
+
+```bash
+mainline actor import --actor actor_jiangge --remote jiangge
+```
+
+`--remote` 可以是已配置的 Git remote，也可以是可 fetch 的 URL。默认会从 fork 拉
+`refs/mainline/actors/<actor>/log` 到
+`refs/mainline/imports/<actor>/log`，校验 event 都属于指定 actor，然后把这条
+actor log 接受到 upstream actor namespace，重建 view，并运行正常的 auto-pin。它还会
+best-effort 拉取 accepted sealed intent 引用的 fork branch 到
+`refs/mainline/imports/<actor>/branches/*`。这些 hidden import refs 让 contributor
+原始 code commit/tree object 在 upstream 可达；即使 PR 是 squash/rebase merge，
+Mainline 也能按 tree/content 把 contributor 自己 sealed 的 intent pin 到 upstream
+merge commit。
+
+如果 upstream remote 已配置，Mainline 会把已接受的 contributor actor ref、
+maintainer 写下的 accept event、导入的 fork branch refs，以及新增 pin notes 推上去；
+其他 clone 下一次 `mainline sync` 就能看到同一条 author-sealed intent，以及解释它所需
+的 code objects。
+
+这个命令导入 actor-log intent metadata 和被引用的 fork code objects，但不会把 fork 里的
+git notes 原样复制到 upstream。notes 是关于 upstream main commit 的 pin 证据，应该由
+upstream 这边的 pin 逻辑写入。如果 fork branch 已删除或不可 fetch，accept actor log 仍可
+成功，但 Mainline 会在结果/provenance 里记录 object-fetch warning，auto-pin 可能需要后续
+手动 fetch 或 explicit `mainline pin`。
+
+被接受的 actor log 必须至少包含一条作者 sealed intent。import 只接受 fork actor log
+里的作者 seal / supersession / abandonment metadata；fork 侧 constraints、risks、
+follow-ups、check judgments 和 merge acknowledgements 会被拒绝，不会提升为 upstream
+团队信号。merged evidence 仍以 upstream pin notes 为准。
+
+maintainer 回填可以和之后接受的 contributor intent 共存。回填 / explicit pin 是
+upstream maintainer 的 rescue 记录；accepted fork actor log 是 contributor 自己
+sealed 的记录。如果两者指向同一个 merge commit，这个 commit note 可以同时包含两条
+intent reference。coverage 仍然是 commit-level：一个 commit 只要有一个或多个有效
+intent ref 就是 covered；接受 contributor intent 不应该和已有回填形成 review queue
+冲突。
+
+如果 contributor 没有 upstream-visible Mainline actor log，可以传入显式 import
+文件，让 Hub 解释这条外部贡献：
+
+```bash
+mainline hub export ./mainline-hub --external-contributions fork-prs.json
+```
+
+文件可以是数组，也可以是 `{ "external_contributions": [...] }`。每行通常携带
+`author_login`、`repository`、`pr_number`、`pr_url`、`merged_commit` 和
+`provenance` 等 GitHub PR metadata。Hub 会把这些记录当成 imported / inferred
+contribution，而不是作者自己的 Mainline intent：导入时强制
+`author_sealed=false`、`not_author_sealed=true`、`verified=false`，并把它关联到
+同一 merge commit 上已有的 upstream Mainline intent。这样 Hub 能说明“这个已
+merge PR 的原作者是谁”，但不会污染 actor count、review queue、coverage 或 pin
+语义。
+
+不要把 GitHub PR body 里空的 `## Mainline Intent` 模板当作 intent 证据。
+PR description 是 review-time artifact；Mainline sealed intent 来自 actor log。
+GitHub PR import 必须标注 `github_pr_imported` / `inferred` 这类 provenance，并保持
+`not_author_sealed`，除非已经接受了真实 actor log。
+
 Hub 输出是本地生成状态，不应提交。
 
 ### 用 GitHub Pages 发布 Hub
@@ -255,6 +323,11 @@ Pages 部署这份静态 artifact。
 在仓库设置里把 Pages source 设成 **GitHub Actions**。workflow 会在 `main` 更新、
 手动触发、每天定时跑一次。这个定时不是装饰：Mainline intent state 也会通过 Git
 refs 和 notes 流动，所以 hosted Hub 需要一条不依赖代码 diff 的刷新路径。
+
+fork contributor 是 trust-boundary 场景。upstream repo 只能信任已经由 maintainer
+显式接受进 Mainline view 的 actor log。在这之前，Hub 可以显示带 provenance
+（`github_pr_imported` 或 `inferred`）和 importer metadata 的 GitHub PR import，
+但不能把它展示成 verified contributor-sealed intent。
 
 ## 常用命令
 
@@ -301,7 +374,7 @@ Reviewer / maintainer 额外命令：
 | `mainline pin <intent> <commit>` | rebase、cherry-pick 或特殊 CI 脚本导致 auto-pin miss 时手动修正。 |
 | `mainline list-proposals` | 浏览团队里的 proposed intents。 |
 | `mainline pr-description --intent <id>` | 生成 PR description markdown。 |
-| `mainline publish --intent <id>` | 显式 push actor log。 |
+| `mainline publish --intent <id>` | 显式 push actor log。fork contributor 可加 `--remote <fork>` 推到可写 fork remote。 |
 | `mainline thread {new,list,close}` | 把多个 intents 归到一个 thread。 |
 | `mainline canonical-hash <id>` | 调试某条 intent 的 canonical hash。 |
 

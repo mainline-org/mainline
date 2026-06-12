@@ -39,8 +39,9 @@ type IntentView struct {
 	SchemaVersion int          `json:"schema_version"`
 	Status        IntentStatus `json:"status"`
 
-	StatusEvidence StatusEvidence `json:"status_evidence"`
-	Publication    string         `json:"publication"` // "local_only" | "published"
+	StatusEvidence StatusEvidence    `json:"status_evidence"`
+	Publication    string            `json:"publication"` // "local_only" | "published"
+	Provenance     *IntentProvenance `json:"provenance,omitempty"`
 
 	ActorID   string `json:"actor_id"`
 	ActorName string `json:"actor_name,omitempty"`
@@ -101,6 +102,26 @@ type StatusEvidence struct {
 	EvidenceComplete bool   `json:"evidence_complete,omitempty"`
 	WorktreeStatus   string `json:"worktree_status,omitempty"` // "clean" | "dirty" | "untracked"
 	SealedAtBranch   string `json:"sealed_at_branch,omitempty"`
+}
+
+// IntentProvenance explains trust-boundary metadata that is not part
+// of the author's sealed intent content. The default nil provenance
+// means the intent was read from the normal team actor-log sync path.
+type IntentProvenance struct {
+	Kind                string   `json:"kind"` // "accepted_actor_log" | future values
+	SourceRemote        string   `json:"source_remote,omitempty"`
+	SourceRef           string   `json:"source_ref,omitempty"`
+	SourceHead          string   `json:"source_head,omitempty"`
+	TargetRef           string   `json:"target_ref,omitempty"`
+	AcceptedByActor     string   `json:"accepted_by_actor,omitempty"`
+	AcceptedByName      string   `json:"accepted_by_name,omitempty"`
+	AcceptedAt          string   `json:"accepted_at,omitempty"`
+	AcceptedEventID     string   `json:"accepted_event_id,omitempty"`
+	ImportedBranchRefs  []string `json:"imported_branch_refs,omitempty"`
+	ObjectFetchWarnings []string `json:"object_fetch_warnings,omitempty"`
+	AuthorSealed        bool     `json:"author_sealed"`
+	NotAuthorSealed     bool     `json:"not_author_sealed,omitempty"`
+	Verified            bool     `json:"verified"`
 }
 
 // CommitNote is the structured JSON attached as a git note to main commits.

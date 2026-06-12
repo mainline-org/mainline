@@ -71,7 +71,7 @@
       return;
     }
     var groups = {};
-    var order = ['intent', 'file', 'constraint'];
+    var order = ['intent', 'external', 'file', 'constraint'];
     for (var i = 0; i < matches.length; i++) {
       var t = matches[i].entry.type;
       if (!groups[t]) groups[t] = [];
@@ -81,7 +81,7 @@
     for (var k = 0; k < order.length; k++) {
       var key = order[k];
       if (!groups[key]) continue;
-      var label = key === 'intent' ? 'Intents' : key === 'file' ? 'Files' : 'Constraints';
+      var label = key === 'intent' ? 'Intents' : key === 'external' ? 'External contributions' : key === 'file' ? 'Files' : 'Constraints';
       html += '<div class="search-group"><strong>' + label + '</strong>';
       for (var j = 0; j < groups[key].length; j++) {
         var e = groups[key][j];

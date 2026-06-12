@@ -101,9 +101,20 @@ table.intents .num.risk { color: var(--risk); font-weight: 600; }
 .status-healthy   { background: #ddf4e3; color: var(--merged); }
 .status-attention { background: #fff1e0; color: #c4730d; }
 .status-critical  { background: #fde2e2; color: var(--risk); }
+.status-imported  { background: #e6f2ff; color: var(--accent); }
+.status-unverified { background: #fff1e0; color: #9a5a00; }
+.status-verified { background: #ddf4e3; color: var(--merged); }
 tr.cov-uncovered.risk td { background: #fff5f5; }
 .lifecycle-note { font-size: 0.85em; margin-top: 8px; }
 ul.actor-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+
+.external-list { display: grid; gap: 10px; margin-top: 12px; }
+.external-contribution { display: grid; gap: 8px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.external-main { min-width: 0; }
+.external-main strong { display: block; overflow-wrap: anywhere; }
+.external-meta { display: block; color: var(--muted); font-size: 0.9em; margin-top: 2px; }
+.external-trust, .external-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.external-links { font-size: 0.9em; }
 
 .heatmap-list { display: grid; gap: 6px; margin: 12px 0 24px; }
 .heatmap-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); text-decoration: none; color: inherit; }

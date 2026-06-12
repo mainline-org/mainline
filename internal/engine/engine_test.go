@@ -833,6 +833,89 @@ func TestPublishLocalOnly(t *testing.T) {
 	}
 }
 
+func TestPublishToForkRemoteKeepsIntentSealedLocal(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	initRes, err := svc.Init("test-agent")
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	start, _ := svc.Start("fork publish", "")
+	svc.Append("turn")
+
+	data, _ := json.Marshal(validSealResult(start.IntentID))
+	res, err := svc.SealSubmitWithOptions(json.RawMessage(data), &SealSubmitOptions{Offline: true})
+	if err != nil {
+		t.Fatalf("seal offline: %v", err)
+	}
+	if res.Status != string(domain.StatusSealedLocal) {
+		t.Fatalf("expected sealed_local after offline seal, got %s", res.Status)
+	}
+
+	forkDir, err := os.MkdirTemp("", "mainline-fork-remote-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(forkDir)
+	gitCmd(t, forkDir, "init", "--bare")
+	gitCmd(t, dir, "remote", "add", "fork", forkDir)
+
+	pub, err := svc.Publish(start.IntentID, "fork")
+	if err != nil {
+		t.Fatalf("publish to fork: %v", err)
+	}
+	if !pub.Pushed || pub.Remote != "fork" || pub.Status != string(domain.StatusSealedLocal) {
+		t.Fatalf("fork publish should push without marking upstream proposed, got %+v", pub)
+	}
+	draft, _ := svc.Store.ReadDraft(start.IntentID)
+	if draft.Status != domain.StatusSealedLocal {
+		t.Fatalf("fork publish should leave draft sealed_local, got %s", draft.Status)
+	}
+	ref := svc.Store.ActorLogRef(initRes.ActorID, domain.DefaultActorLogPrefix)
+	if got := strings.TrimSpace(mustGitRun(t, forkDir, "rev-parse", ref)); got == "" {
+		t.Fatalf("fork remote missing actor log ref %s", ref)
+	}
+}
+
+func TestSealSubmitPublishFailureSuggestsForkRemote(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	remoteDir, err := os.MkdirTemp("", "mainline-reject-remote-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(remoteDir)
+	gitCmd(t, remoteDir, "init", "--bare")
+	hook := filepath.Join(remoteDir, "hooks", "pre-receive")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho permission denied >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewServiceFromRoot(dir)
+	gitCmd(t, dir, "remote", "add", "origin", remoteDir)
+	svc.Init("test-agent")
+
+	start, _ := svc.Start("fork warning", "")
+	svc.Append("turn")
+	data, _ := json.Marshal(validSealResult(start.IntentID))
+	res, err := svc.SealSubmit(json.RawMessage(data))
+	if err != nil {
+		t.Fatalf("seal submit: %v", err)
+	}
+	if res.Status != string(domain.StatusSealedLocal) || res.Published {
+		t.Fatalf("failed publish should leave sealed_local/unpublished, got %+v", res)
+	}
+	for _, want := range []string{"mainline publish --intent " + start.IntentID + " --remote <fork>", "mainline pr-description --intent " + start.IntentID} {
+		if !strings.Contains(res.Warning, want) {
+			t.Fatalf("warning should mention %q, got %q", want, res.Warning)
+		}
+	}
+}
+
 func TestFingerprintOverlap(t *testing.T) {
 	a := &domain.SemanticFingerprint{
 		Subsystems:   []string{"auth", "db"},

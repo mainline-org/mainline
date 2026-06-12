@@ -9,6 +9,16 @@
   {{if .SealedAt}}· sealed {{timeAgo .SealedAt}}{{end}}
   {{if .MergedMainCommit}}· merged into <code>{{shortCommit .MergedMainCommit}}</code>{{end}}
 </p>
+{{if .Provenance}}
+<p class="trust-line">
+  <span class="status status-verified">{{.Provenance.Kind}}</span>
+  {{if .Provenance.AuthorSealed}}<span class="status status-verified">author-sealed</span>{{end}}
+  {{if .Provenance.Verified}}<span class="status status-verified">verified</span>{{else}}<span class="status status-unverified">unverified</span>{{end}}
+  {{if .Provenance.AcceptedByActor}}<span class="muted">accepted by {{if .Provenance.AcceptedByName}}{{.Provenance.AcceptedByName}}{{else}}{{shortID .Provenance.AcceptedByActor}}{{end}}</span>{{end}}
+  {{if .Provenance.SourceRemote}}<span class="muted">from {{.Provenance.SourceRemote}}</span>{{end}}
+  {{if .Provenance.SourceRef}}<code>{{.Provenance.SourceRef}}</code>{{end}}
+</p>
+{{end}}
 
 <section class="intent-summary">
   {{if .UserGoal}}<div><span class="summary-label">User goal</span><p>{{.UserGoal}}</p></div>{{end}}

@@ -23,10 +23,13 @@ import (
 type PublishResult struct {
 	IntentID string `json:"intent_id"`
 	Ref      string `json:"ref"`
+	Remote   string `json:"remote,omitempty"`
 	Pushed   bool   `json:"pushed"`
+	Status   string `json:"status,omitempty"`
+	Warning  string `json:"warning,omitempty"`
 }
 
-func (s *Service) Publish(intentID string) (*PublishResult, error) {
+func (s *Service) Publish(intentID string, remoteOverride ...string) (*PublishResult, error) {
 	if _, err := s.requireIdentity(); err != nil {
 		return nil, err
 	}
@@ -71,29 +74,42 @@ func (s *Service) Publish(intentID string) (*PublishResult, error) {
 			fmt.Sprintf("intent %s is in status %s, expected sealed_local or proposed", intentID, draft.Status))
 	}
 
+	remote := s.remoteName()
+	if len(remoteOverride) > 0 && strings.TrimSpace(remoteOverride[0]) != "" {
+		remote = strings.TrimSpace(remoteOverride[0])
+	}
+	publishingToTeamRemote := remote == s.remoteName()
 	pushed := false
-	if s.Git.HasRemote(s.remoteName()) {
+	if s.Git.HasRemote(remote) {
 		refspec := fmt.Sprintf("%s:%s", ref, ref)
-		if err := s.Git.Push(s.remoteName(), refspec); err != nil {
+		if err := s.Git.Push(remote, refspec); err != nil {
 			return nil, domain.NewRecoverableError(domain.ErrPublishFailed,
 				fmt.Sprintf("failed to push actor log %s: %v", ref, err),
 				"check remote access",
+				"if this is a fork PR, run: mainline publish --intent "+intentID+" --remote <fork>",
+				"then push the code branch to the fork and open the upstream PR",
 				"retry mainline publish --intent "+intentID,
 			)
 		}
 		pushed = true
 	}
 
-	if pushed && draft.Status == domain.StatusSealedLocal {
+	warning := ""
+	if pushed && publishingToTeamRemote && draft.Status == domain.StatusSealedLocal {
 		draft.Status = domain.StatusProposed
 		draft.LastModifiedAt = core.Now()
 		_ = s.Store.WriteDraft(draft)
+	} else if pushed && !publishingToTeamRemote {
+		warning = "Published actor log to non-team remote; intent remains sealed_local until upstream accepts or team remote publish succeeds."
 	}
 
 	return &PublishResult{
 		IntentID: intentID,
 		Ref:      ref,
+		Remote:   remote,
 		Pushed:   pushed,
+		Status:   string(draft.Status),
+		Warning:  warning,
 	}, nil
 }
 
