@@ -11,11 +11,12 @@ import (
 )
 
 type ActorLogImportOptions struct {
-	ActorID   string
-	Remote    string
-	SourceRef string
-	ImportRef string
-	Force     bool
+	ActorID            string
+	Remote             string
+	SourceRef          string
+	ImportRef          string
+	ExpectedSourceHead string
+	Force              bool
 }
 
 type ActorLogImportResult struct {
@@ -86,6 +87,14 @@ func (s *Service) ImportActorLog(opts ActorLogImportOptions) (*ActorLogImportRes
 	if sourceHead == "" {
 		return nil, domain.NewError(domain.ErrInvalidInput,
 			fmt.Sprintf("source actor-log ref %q was not found", sourceRef))
+	}
+	expectedSourceHead := strings.TrimSpace(opts.ExpectedSourceHead)
+	if expectedSourceHead != "" && sourceHead != expectedSourceHead {
+		return nil, domain.NewRecoverableError(domain.ErrConflictDetected,
+			fmt.Sprintf("source actor log %s changed while importing: expected %s, got %s",
+				resultSourceRef, expectedSourceHead, sourceHead),
+			"rerun discovery before accepting this fork actor log",
+			"do not import a mutable fork ref that no longer matches the selected candidate")
 	}
 
 	rawEvents, err := s.Store.ReadActorLogEventsFromRef(sourceRef)

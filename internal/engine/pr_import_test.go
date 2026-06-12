@@ -199,6 +199,38 @@ func TestImportPullRequestIntentIsIdempotentAfterManualActorImport(t *testing.T)
 	}
 }
 
+func TestImportActorLogRejectsUnexpectedSourceHead(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("maintainer"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	forkDir := cloneForkForPRImport(t, dir)
+	branch := "feature/pr-import-race"
+	codeCommit, codeTree := seedForkPRBranch(t, forkDir, branch, "sources/pr_import_race.go")
+	actorID := "actor_pr_import_race"
+	sourceRef := domain.ActorLogRef(actorID, domain.DefaultActorLogPrefix)
+	writeForkActorLog(t, svc, forkDir, actorID, "int_pr_import_race", branch, codeCommit, codeTree)
+	expectedHead := strings.TrimSpace(mustGitRun(t, forkDir, "rev-parse", sourceRef))
+
+	writeForkActorLog(t, svc, forkDir, actorID, "int_pr_import_race_changed", branch, codeCommit, codeTree)
+
+	_, err := svc.ImportActorLog(ActorLogImportOptions{
+		ActorID:            actorID,
+		Remote:             forkDir,
+		ExpectedSourceHead: expectedHead,
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed while importing") {
+		t.Fatalf("expected changed source head rejection, got %v", err)
+	}
+	if got := svc.Git.ReadRef(sourceRef); got != "" {
+		t.Fatalf("mismatched source head must not accept actor log, got target ref %s", got)
+	}
+}
+
 func cloneForkForPRImport(t *testing.T, upstreamDir string) string {
 	t.Helper()
 	forkDir := t.TempDir()

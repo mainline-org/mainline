@@ -147,8 +147,9 @@ func (s *Service) ImportPullRequestIntent(opts PullRequestImportOptions) (*PullR
 	selected := top[0]
 	result.Selected = &selected
 	importResult, err := s.ImportActorLog(ActorLogImportOptions{
-		ActorID: selected.ActorID,
-		Remote:  forkURL,
+		ActorID:            selected.ActorID,
+		Remote:             forkURL,
+		ExpectedSourceHead: selected.SourceHead,
 	})
 	if err != nil {
 		return nil, err
