@@ -16,7 +16,7 @@ import (
 // -----------------------------------------------------------
 
 // TestFullLifecycleSingleAgent tests the complete intent lifecycle:
-// init → start → append → seal → publish → sync → merge → reconcile
+// init → start → append → seal → publish → sync → pin
 func TestFullLifecycleSingleAgent(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
@@ -547,6 +547,19 @@ func TestSealedLocalCanBeAbandoned(t *testing.T) {
 	sr := validSealResult(start.IntentID)
 	data, _ := json.Marshal(sr)
 	svc.SealSubmit(json.RawMessage(data))
+
+	iv := svc.readIntentViewByID(start.IntentID)
+	if iv == nil {
+		t.Fatal("expected sealed intent in view")
+	}
+	draft, err := svc.Store.ReadDraft(start.IntentID)
+	if err != nil {
+		t.Fatalf("read draft: %v", err)
+	}
+	if iv.Status == domain.StatusMerged && iv.StatusEvidence.MergedMainCommit != draft.BaseCommit {
+		t.Fatalf("test setup expected only base-commit auto-pin, got merged commit %s",
+			iv.StatusEvidence.MergedMainCommit)
+	}
 
 	if _, err := svc.Abandon(start.IntentID, "reason"); err != nil {
 		t.Errorf("sealed_local → abandoned should be valid: %v", err)

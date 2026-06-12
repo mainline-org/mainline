@@ -419,9 +419,10 @@ func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error
 	}
 
 	effectiveStatus := draft.Status
-	// Sync/pin is the modern source of merged truth. A local draft can lag
-	// behind the view after another workflow pins the intent to main.
-	if iv := s.readIntentViewByID(intentID); iv != nil && isTerminalIntentStatus(iv.Status) {
+	// Sync/pin is the modern source of merged truth when it points at a new
+	// main commit. A no-op sealed intent can otherwise look merged because
+	// its code commit equals its base commit.
+	if iv := s.readIntentViewByID(intentID); viewTerminalStatusOverridesDraft(draft, iv) {
 		effectiveStatus = iv.Status
 	}
 
@@ -508,4 +509,15 @@ func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error
 	}
 
 	return res, nil
+}
+
+func viewTerminalStatusOverridesDraft(draft *domain.DraftIntent, iv *domain.IntentView) bool {
+	if draft == nil || iv == nil || !isTerminalIntentStatus(iv.Status) {
+		return false
+	}
+	if iv.Status != domain.StatusMerged {
+		return true
+	}
+	mergedCommit := strings.TrimSpace(iv.StatusEvidence.MergedMainCommit)
+	return mergedCommit != "" && mergedCommit != draft.BaseCommit
 }
