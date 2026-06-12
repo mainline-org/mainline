@@ -221,6 +221,11 @@ import 路径要求至少有一条作者 sealed intent；fork 侧的 constraints
 follow-ups、check judgments 或 merge acknowledgements 不会被导入成 upstream
 团队信号。merged evidence 仍以 upstream pin notes 为准。
 
+upstream repo 可以安装 `.github/workflows/mainline-fork-pr-import.yml`，在 fork PR
+merge 后自动跑这条 import。这个 action 使用 upstream 的 `pull_request_target`
+token，只 checkout 受信任的 upstream 代码，发现 fork 里已发布的 actor log，并且只在
+匹配唯一时导入；重复运行和 maintainer 手动 `actor import` 是幂等的。
+
 fork PR 在 contributor 没有 upstream 可见 Mainline actor log 时，才作为
 imported external contribution fallback 显示：
 

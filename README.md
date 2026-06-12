@@ -250,6 +250,12 @@ fork-side constraints, risks, follow-ups, check judgments, or merge
 acknowledgements as upstream team signals. Upstream pin notes remain the source
 of merged evidence.
 
+Upstream repositories can install `.github/workflows/mainline-fork-pr-import.yml`
+to run this import automatically after a fork PR is merged. The action uses the
+upstream `pull_request_target` token, checks out only trusted upstream code,
+discovers published fork actor logs, and imports only a unique match; reruns are
+idempotent with manual `actor import`.
+
 The `--external-contributions` file is only the fallback when no author-owned
 actor log is available. Those records are labeled with provenance such as
 `github_pr_imported` and `not author-sealed`. Hub does not treat GitHub PR
