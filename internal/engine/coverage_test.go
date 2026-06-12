@@ -15,8 +15,8 @@ func TestCoverageWindow_CoveredViaSealedIntent(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 
-	// Seed a merged intent — Merge writes the commit_note onto the
-	// merge commit, which is exactly what coverage classifies as covered.
+	// Seed a merged intent: the commit note on the merge commit is exactly
+	// what coverage classifies as covered.
 	intentID, _ := seedMergedIntent(t, dir, svc, "covered-test", "covered.go")
 	gitCmd(t, dir, "checkout", "main")
 	if _, err := svc.Sync(); err != nil {

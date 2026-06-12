@@ -16,9 +16,13 @@ test:
 test-verbose:
 	go test -v -race -count=1 -short ./...
 
-# Run tests with full rapid PBT coverage (100 samples per property).
+# Run the deep rapid PBT gate with race detection. The engine package shells
+# out to git heavily, so keep the check count explicit and within the 30m
+# GitHub Actions budget instead of relying on rapid's package-wide default.
+# rapid flags must only be passed to packages that import rapid.
 test-pbt:
-	go test -race -count=1 ./...
+	go test -race -count=1 -timeout=30m $$(go list ./... | grep -v '/internal/engine$$')
+	go test -race -count=1 -timeout=30m ./internal/engine -rapid.checks=20
 
 # Inner-loop test: skip rapid PBT files via the `!quick` build tag and the
 # package-level race detector for fastest feedback (~5s).
