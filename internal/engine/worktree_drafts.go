@@ -11,15 +11,16 @@ import (
 // WorktreeDraft is a local draft discovered in a sibling git worktree.
 // It is local diagnostic state, not shared/proposed Mainline state.
 type WorktreeDraft struct {
-	IntentID       string `json:"intent_id"`
-	Goal           string `json:"goal,omitempty"`
-	Status         string `json:"status,omitempty"`
-	GitBranch      string `json:"git_branch,omitempty"`
-	Thread         string `json:"thread,omitempty"`
-	WorktreePath   string `json:"worktree_path"`
-	DraftPath      string `json:"draft_path"`
-	TurnCount      int    `json:"turn_count,omitempty"`
-	LastModifiedAt string `json:"last_modified_at,omitempty"`
+	IntentID           string                     `json:"intent_id"`
+	Goal               string                     `json:"goal,omitempty"`
+	Status             string                     `json:"status,omitempty"`
+	GitBranch          string                     `json:"git_branch,omitempty"`
+	Thread             string                     `json:"thread,omitempty"`
+	WorktreePath       string                     `json:"worktree_path"`
+	DraftPath          string                     `json:"draft_path"`
+	TurnCount          int                        `json:"turn_count,omitempty"`
+	LastModifiedAt     string                     `json:"last_modified_at,omitempty"`
+	PartialFingerprint *domain.PartialFingerprint `json:"partial_fingerprint,omitempty"`
 }
 
 // SiblingDraftsForCLI exposes local draft visibility for status/hub callers.
@@ -80,20 +81,23 @@ func (s *Service) collectSiblingDrafts(intentID string, skipIDs map[string]bool)
 				continue
 			}
 			turns, _ := st.ReadTurns(id)
+			draftWithTurns := *d
+			draftWithTurns.Turns = turns
 			updated := d.LastModifiedAt
 			if updated == "" {
 				updated = d.CreatedAt
 			}
 			out = append(out, WorktreeDraft{
-				IntentID:       d.IntentID,
-				Goal:           d.Goal,
-				Status:         string(d.Status),
-				GitBranch:      d.GitBranch,
-				Thread:         d.Thread,
-				WorktreePath:   wtPath,
-				DraftPath:      filepath.Join(wtPath, ".ml-cache", "drafts", d.IntentID+".json"),
-				TurnCount:      len(turns),
-				LastModifiedAt: updated,
+				IntentID:           d.IntentID,
+				Goal:               d.Goal,
+				Status:             string(d.Status),
+				GitBranch:          d.GitBranch,
+				Thread:             d.Thread,
+				WorktreePath:       wtPath,
+				DraftPath:          filepath.Join(wtPath, ".ml-cache", "drafts", d.IntentID+".json"),
+				TurnCount:          len(turns),
+				LastModifiedAt:     updated,
+				PartialFingerprint: PartialFingerprintFromDraft(&draftWithTurns),
 			})
 		}
 	}

@@ -79,6 +79,12 @@ drafting → sealed_local → proposed → merged
 | `superseded` | Replaced by a newer intent. The newer intent's `supersedes` field references this one. |
 | `reverted` | The merged code was reverted on main. |
 
+`drafting` remains unpublished and cannot be discovered by another clone.
+Within one clone, however, `status` and `preflight` may scan linked worktrees
+and surface bounded sibling-draft summaries plus partial fingerprints. This is
+an advisory same-machine coordination signal, not a substitute for a shared
+claim protocol or a `proposed` intent.
+
 **Transitions are one-way.** A merged intent cannot go back to proposed.
 An abandoned intent is not re-opened; new work starts a new intent.
 
