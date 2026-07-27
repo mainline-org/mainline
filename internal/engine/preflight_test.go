@@ -1,11 +1,141 @@
 package engine
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/mainline-org/mainline/internal/core"
 	"github.com/mainline-org/mainline/internal/domain"
 )
+
+func TestPreflightSurfacesSiblingWorktreeDraftBeforeSeal(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	markSyncedToHead(t, svc)
+
+	linked := filepath.Join(t.TempDir(), "linked-preflight-draft")
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/preflight-sibling", linked)
+	linkedSvc := NewServiceFromRoot(linked)
+	start, err := linkedSvc.Start("sibling draft remains local", "")
+	if err != nil {
+		t.Fatalf("start sibling: %v", err)
+	}
+
+	res, err := svc.Preflight()
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if res.Facts.SiblingDraftCount != 1 || len(res.SiblingWorktreeDrafts) != 1 {
+		t.Fatalf("expected one sibling draft in preflight, facts=%+v drafts=%+v", res.Facts, res.SiblingWorktreeDrafts)
+	}
+	draft := res.SiblingWorktreeDrafts[0]
+	if draft.IntentID != start.IntentID || draft.GitBranch != "feature/preflight-sibling" {
+		t.Fatalf("unexpected sibling draft: %+v", draft)
+	}
+	if draft.PartialFingerprint == nil {
+		t.Fatalf("preflight sibling draft should include a partial fingerprint: %+v", draft)
+	}
+	if !res.OKToContinue {
+		t.Fatalf("unmatched sibling draft should remain advisory: %+v", res)
+	}
+}
+
+func TestPreflightWarnsOnSiblingDraftFileOverlap(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	markSyncedToHead(t, svc)
+	gitCmd(t, dir, "checkout", "-b", "feature/current")
+	if _, err := svc.Start("current draft", ""); err != nil {
+		t.Fatalf("start current: %v", err)
+	}
+	writeFile(t, dir, "shared.go", "package shared\n")
+
+	linked := filepath.Join(t.TempDir(), "linked-preflight-overlap")
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/sibling-overlap", linked, "main")
+	linkedSvc := NewServiceFromRoot(linked)
+	start, err := linkedSvc.Start("sibling draft", "")
+	if err != nil {
+		t.Fatalf("start sibling: %v", err)
+	}
+	if err := linkedSvc.Store.AppendTurn(&domain.Turn{
+		IntentID:     start.IntentID,
+		Index:        0,
+		CreatedAt:    "2026-07-11T00:00:00Z",
+		Description:  "edit shared file",
+		FilesChanged: []domain.FileChange{{Path: "shared.go", Status: "modified"}},
+	}); err != nil {
+		t.Fatalf("append sibling turn: %v", err)
+	}
+
+	res, err := svc.Preflight()
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	var overlap *PreflightOverlap
+	for i := range res.Overlaps {
+		if res.Overlaps[i].Kind == PreflightOverlapSiblingDraft && res.Overlaps[i].IntentID == start.IntentID {
+			overlap = &res.Overlaps[i]
+			break
+		}
+	}
+	if overlap == nil {
+		t.Fatalf("expected sibling draft overlap, got %+v", res.Overlaps)
+	}
+	if overlap.Level != PreflightLevelWarn || len(overlap.MatchedFiles) != 1 || overlap.MatchedFiles[0] != "shared.go" {
+		t.Fatalf("unexpected sibling overlap: %+v", overlap)
+	}
+	if overlap.GitBranch != "feature/sibling-overlap" || overlap.WorktreePath == "" {
+		t.Fatalf("sibling location should be actionable: %+v", overlap)
+	}
+	if !res.OKToContinue {
+		t.Fatalf("partial sibling evidence should warn, not block: %+v", res)
+	}
+}
+
+func TestPreflightWarnsOnExactSiblingDraftGoal(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	markSyncedToHead(t, svc)
+	gitCmd(t, dir, "checkout", "-b", "feature/current-goal")
+	goal := "让预检看见同机草稿"
+	if _, err := svc.Start(goal, ""); err != nil {
+		t.Fatalf("start current: %v", err)
+	}
+
+	linked := filepath.Join(t.TempDir(), "linked-preflight-goal")
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/sibling-goal", linked, "main")
+	linkedSvc := NewServiceFromRoot(linked)
+	start, err := linkedSvc.Start("  让预检看见同机草稿  ", "")
+	if err != nil {
+		t.Fatalf("start sibling: %v", err)
+	}
+
+	res, err := svc.Preflight()
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	for _, overlap := range res.Overlaps {
+		if overlap.Kind == PreflightOverlapSiblingDraft && overlap.IntentID == start.IntentID {
+			if !overlap.GoalMatch || overlap.Level != PreflightLevelWarn {
+				t.Fatalf("unexpected exact-goal overlap: %+v", overlap)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected exact-goal sibling overlap, got %+v", res.Overlaps)
+}
 
 func TestPreflightCleanRepoNoActiveIntentIsOK(t *testing.T) {
 	dir, cleanup := testRepo(t)

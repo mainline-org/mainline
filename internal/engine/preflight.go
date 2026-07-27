@@ -23,6 +23,7 @@ const (
 
 	PreflightOverlapProposed       = "proposed_overlap"
 	PreflightOverlapUpstreamMerged = "upstream_merged_overlap"
+	PreflightOverlapSiblingDraft   = "sibling_draft_overlap"
 	// PreflightOverlapGoalText fires when the active draft's goal text
 	// shares enough keywords with another proposed intent's title or
 	// goal. Catches duplicate-work-in-flight before any code is written
@@ -46,28 +47,30 @@ const preflightGoalOverlapMinKeywords = 2
 const preflightGoalOverlapMinHitRate = 0.5
 
 type PreflightResult struct {
-	Level           string             `json:"level"`
-	OKToContinue    bool               `json:"ok_to_continue"`
-	Facts           PreflightFacts     `json:"facts"`
-	AgentAuthority  *AgentAuthority    `json:"agent_authority,omitempty"`
-	Findings        []PreflightFinding `json:"findings,omitempty"`
-	Overlaps        []PreflightOverlap `json:"overlaps,omitempty"`
-	RecommendedNext []string           `json:"recommended_next,omitempty"`
+	Level                 string             `json:"level"`
+	OKToContinue          bool               `json:"ok_to_continue"`
+	Facts                 PreflightFacts     `json:"facts"`
+	AgentAuthority        *AgentAuthority    `json:"agent_authority,omitempty"`
+	SiblingWorktreeDrafts []WorktreeDraft    `json:"sibling_worktree_drafts,omitempty"`
+	Findings              []PreflightFinding `json:"findings,omitempty"`
+	Overlaps              []PreflightOverlap `json:"overlaps,omitempty"`
+	RecommendedNext       []string           `json:"recommended_next,omitempty"`
 }
 
 type PreflightFacts struct {
-	Branch          string   `json:"branch,omitempty"`
-	ActiveIntentID  string   `json:"active_intent_id,omitempty"`
-	ActiveBase      string   `json:"active_base,omitempty"`
-	LocalHead       string   `json:"local_head,omitempty"`
-	MainHead        string   `json:"main_head,omitempty"`
-	SyncStale       bool     `json:"sync_stale,omitempty"`
-	WorktreeStatus  string   `json:"worktree_status,omitempty"`
-	DirtyFiles      []string `json:"dirty_files,omitempty"`
-	UntrackedFiles  []string `json:"untracked_files,omitempty"`
-	CurrentFiles    []string `json:"current_files,omitempty"`
-	CommitDiffFiles []string `json:"commit_diff_files,omitempty"`
-	ProposedCount   int      `json:"proposed_count,omitempty"`
+	Branch            string   `json:"branch,omitempty"`
+	ActiveIntentID    string   `json:"active_intent_id,omitempty"`
+	ActiveBase        string   `json:"active_base,omitempty"`
+	LocalHead         string   `json:"local_head,omitempty"`
+	MainHead          string   `json:"main_head,omitempty"`
+	SyncStale         bool     `json:"sync_stale,omitempty"`
+	WorktreeStatus    string   `json:"worktree_status,omitempty"`
+	DirtyFiles        []string `json:"dirty_files,omitempty"`
+	UntrackedFiles    []string `json:"untracked_files,omitempty"`
+	CurrentFiles      []string `json:"current_files,omitempty"`
+	CommitDiffFiles   []string `json:"commit_diff_files,omitempty"`
+	ProposedCount     int      `json:"proposed_count,omitempty"`
+	SiblingDraftCount int      `json:"sibling_draft_count,omitempty"`
 
 	NotesRewriteDrift        bool `json:"notes_rewrite_drift,omitempty"`
 	UnreachableMainlineNotes int  `json:"unreachable_mainline_notes,omitempty"`
@@ -98,8 +101,11 @@ type PreflightOverlap struct {
 	// Only filled for goal_text_overlap and proposed_overlap kinds —
 	// upstream_merged_overlap intents are already on main and the
 	// committer is shown in git log.
-	AuthorName string `json:"author_name,omitempty"`
-	AuthorID   string `json:"author_id,omitempty"`
+	AuthorName   string `json:"author_name,omitempty"`
+	AuthorID     string `json:"author_id,omitempty"`
+	GitBranch    string `json:"git_branch,omitempty"`
+	WorktreePath string `json:"worktree_path,omitempty"`
+	GoalMatch    bool   `json:"goal_match,omitempty"`
 }
 
 type preflightInput struct {
@@ -191,6 +197,8 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 		res.Facts.MainHead = in.status.MainHead
 		res.Facts.SyncStale = in.status.SyncStale
 		res.Facts.ProposedCount = in.status.ProposedCount
+		res.Facts.SiblingDraftCount = len(in.status.SiblingWorktreeDrafts)
+		res.SiblingWorktreeDrafts = compactPreflightSiblingDrafts(in.status.SiblingWorktreeDrafts)
 		if in.status.NotesHealth != nil && in.status.NotesHealth.LikelyHistoryRewrite {
 			res.Facts.NotesRewriteDrift = true
 			res.Facts.UnreachableMainlineNotes = in.status.NotesHealth.UnreachableMainlineNotes
@@ -246,6 +254,11 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 	}
 
 	currentFiles := compactSortedStrings(in.currentFiles)
+	for _, draft := range res.SiblingWorktreeDrafts {
+		if overlap := preflightSiblingDraftOverlap(in.status, currentFiles, draft); overlap != nil {
+			res.Overlaps = append(res.Overlaps, *overlap)
+		}
+	}
 	if len(currentFiles) > 0 {
 		for _, iv := range in.proposed {
 			if iv.Status != domain.StatusProposed || iv.Fingerprint == nil {
@@ -348,6 +361,63 @@ func preflightOverlapFromIntent(kind, level string, iv domain.IntentView, curren
 	return o
 }
 
+func compactPreflightSiblingDrafts(in []WorktreeDraft) []WorktreeDraft {
+	if len(in) == 0 {
+		return nil
+	}
+	out := append([]WorktreeDraft(nil), in...)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].LastModifiedAt != out[j].LastModifiedAt {
+			return out[i].LastModifiedAt > out[j].LastModifiedAt
+		}
+		if out[i].WorktreePath != out[j].WorktreePath {
+			return out[i].WorktreePath < out[j].WorktreePath
+		}
+		return out[i].IntentID < out[j].IntentID
+	})
+	if len(out) > preflightOverlapLimit {
+		out = out[:preflightOverlapLimit]
+	}
+	return out
+}
+
+func preflightSiblingDraftOverlap(status *StatusResult, currentFiles []string, draft WorktreeDraft) *PreflightOverlap {
+	if status != nil && status.ActiveIntent != nil && status.ActiveIntent.IntentID == draft.IntentID {
+		return nil
+	}
+	var siblingFiles []string
+	if draft.PartialFingerprint != nil {
+		siblingFiles = draft.PartialFingerprint.FilesTouched
+	}
+	matchedFiles := matchedOverlapFiles(currentFiles, siblingFiles)
+	goalMatch := status != nil && status.ActiveIntent != nil && preflightGoalsEqual(status.ActiveIntent.Goal, draft.Goal)
+	if len(matchedFiles) == 0 && !goalMatch {
+		return nil
+	}
+	score := len(matchedFiles)
+	if goalMatch {
+		score++
+	}
+	return &PreflightOverlap{
+		Kind:         PreflightOverlapSiblingDraft,
+		Level:        PreflightLevelWarn,
+		IntentID:     draft.IntentID,
+		Title:        draft.Goal,
+		Status:       draft.Status,
+		MatchedFiles: matchedFiles,
+		Score:        score,
+		GitBranch:    draft.GitBranch,
+		WorktreePath: draft.WorktreePath,
+		GoalMatch:    goalMatch,
+	}
+}
+
+func preflightGoalsEqual(a, b string) bool {
+	a = strings.Join(strings.Fields(a), " ")
+	b = strings.Join(strings.Fields(b), " ")
+	return a != "" && b != "" && strings.EqualFold(a, b)
+}
+
 func compactPreflightOverlaps(in []PreflightOverlap) []PreflightOverlap {
 	if len(in) == 0 {
 		return nil
@@ -436,6 +506,9 @@ func preflightRecommendations(res *PreflightResult) []string {
 	}
 	for _, o := range res.Overlaps {
 		add("mainline show " + o.IntentID + " --json")
+		if o.Kind == PreflightOverlapSiblingDraft {
+			add("inspect the sibling worktree before editing overlapping scope")
+		}
 	}
 	if len(res.Overlaps) > 0 {
 		add("if overlap is real, run mainline check or ask for human judgment before continuing")
