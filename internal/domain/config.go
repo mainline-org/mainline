@@ -14,13 +14,14 @@ const (
 
 // TeamConfig is stored at .mainline/config.toml, committed to repo.
 type TeamConfig struct {
-	Mainline MainlineSection `toml:"mainline"`
-	Agent    AgentSection    `toml:"agent"`
-	Sync     SyncSection     `toml:"sync"`
-	Check    CheckSection    `toml:"check"`
-	Publish  PublishSection  `toml:"publish"`
-	Merge    MergeSection    `toml:"merge"`
-	Log      LogSection      `toml:"log"`
+	Mainline  MainlineSection  `toml:"mainline"`
+	Agent     AgentSection     `toml:"agent"`
+	Sync      SyncSection      `toml:"sync"`
+	Check     CheckSection     `toml:"check"`
+	Preflight PreflightSection `toml:"preflight"`
+	Publish   PublishSection   `toml:"publish"`
+	Merge     MergeSection     `toml:"merge"`
+	Log       LogSection       `toml:"log"`
 
 	// Hooks controls the agent-hooks subsystem (cursor / codex /
 	// claude-code etc). When the hook entries are installed in an
@@ -225,6 +226,14 @@ type CheckSection struct {
 	RequireBeforeMerge bool    `toml:"require_before_merge"`
 }
 
+// PreflightSection controls which collaboration evidence is allowed to stop
+// local editing. The default "team" scope preserves Mainline's distributed
+// proposal gate. "local_worktrees" keeps proposed intents visible as warnings
+// while reserving blocks for verifiable sibling-worktree file overlap.
+type PreflightSection struct {
+	CoordinationScope string `toml:"coordination_scope"`
+}
+
 type PublishSection struct {
 	AutoPublish bool `toml:"auto_publish"`
 }
@@ -376,6 +385,9 @@ func DefaultTeamConfig() TeamConfig {
 			// conflicts).
 			Phase1Threshold:    0.10,
 			RequireBeforeMerge: false,
+		},
+		Preflight: PreflightSection{
+			CoordinationScope: "team",
 		},
 		Publish: PublishSection{
 			AutoPublish: false,

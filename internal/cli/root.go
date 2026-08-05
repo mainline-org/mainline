@@ -128,6 +128,12 @@ func maybeAutoSync(cmd *cobra.Command) {
 	if err != nil {
 		return
 	}
+	if !autoSyncEnabled(cfg) {
+		return
+	}
+	if skipAutoSyncForCoordinationScope(cmd.Name(), svc.PreflightCoordinationScopeForCLI(cfg)) {
+		return
+	}
 	freshness := time.Duration(cfg.Sync.FreshnessSeconds) * time.Second
 	if freshness > 0 {
 		ls, _ := svc.GetLastSyncForCLI()
@@ -147,6 +153,14 @@ func maybeAutoSync(cmd *cobra.Command) {
 			fmt.Fprintf(os.Stderr, "⚠ sync failed (%v); using local data\n", err)
 		}
 	}
+}
+
+func autoSyncEnabled(cfg *domain.TeamConfig) bool {
+	return cfg != nil && cfg.Sync.AutoSync
+}
+
+func skipAutoSyncForCoordinationScope(command, scope string) bool {
+	return command == "preflight" && scope == "local_worktrees"
 }
 
 func shouldAutoSync(cmd *cobra.Command) bool {

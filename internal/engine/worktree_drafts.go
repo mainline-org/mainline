@@ -3,24 +3,30 @@ package engine
 import (
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/mainline-org/mainline/internal/domain"
+	"github.com/mainline-org/mainline/internal/gitops"
 	"github.com/mainline-org/mainline/internal/storage"
 )
 
 // WorktreeDraft is a local draft discovered in a sibling git worktree.
 // It is local diagnostic state, not shared/proposed Mainline state.
 type WorktreeDraft struct {
-	IntentID       string `json:"intent_id"`
-	Goal           string `json:"goal,omitempty"`
-	Status         string `json:"status,omitempty"`
-	GitBranch      string `json:"git_branch,omitempty"`
-	Thread         string `json:"thread,omitempty"`
-	WorktreePath   string `json:"worktree_path"`
-	DraftPath      string `json:"draft_path"`
-	TurnCount      int    `json:"turn_count,omitempty"`
-	LastModifiedAt string `json:"last_modified_at,omitempty"`
+	IntentID           string                     `json:"intent_id"`
+	Goal               string                     `json:"goal,omitempty"`
+	Status             string                     `json:"status,omitempty"`
+	GitBranch          string                     `json:"git_branch,omitempty"`
+	Thread             string                     `json:"thread,omitempty"`
+	WorktreePath       string                     `json:"worktree_path"`
+	DraftPath          string                     `json:"draft_path"`
+	TurnCount          int                        `json:"turn_count,omitempty"`
+	LastModifiedAt     string                     `json:"last_modified_at,omitempty"`
+	Stale              bool                       `json:"stale,omitempty"`
+	PartialFingerprint *domain.PartialFingerprint `json:"-"`
 }
+
+const siblingDraftStaleAfter = 72 * time.Hour
 
 // SiblingDraftsForCLI exposes local draft visibility for status/hub callers.
 func (s *Service) SiblingDraftsForCLI() []WorktreeDraft {
@@ -65,11 +71,11 @@ func (s *Service) collectSiblingDrafts(intentID string, skipIDs map[string]bool)
 		st := storage.New(wtPath, nil)
 		ids := []string{intentID}
 		if intentID == "" {
-			var err error
-			ids, err = st.ListDrafts()
-			if err != nil {
+			draft, err := st.FindActiveDraft(wt.Branch)
+			if err != nil || draft == nil {
 				continue
 			}
+			ids = []string{draft.IntentID}
 		}
 		for _, id := range ids {
 			if skipIDs[id] {
@@ -80,20 +86,27 @@ func (s *Service) collectSiblingDrafts(intentID string, skipIDs map[string]bool)
 				continue
 			}
 			turns, _ := st.ReadTurns(id)
+			draftWithTurns := *d
+			draftWithTurns.Turns = turns
+			partial := PartialFingerprintFromDraft(&draftWithTurns)
+			partial.FilesTouched = siblingWorktreeFiles(gitops.NewFromRoot(wtPath), wt.Head, d.BaseCommit, partial.FilesTouched)
+			partial.Subsystems = subsystemsFromFiles(partial.FilesTouched)
 			updated := d.LastModifiedAt
 			if updated == "" {
 				updated = d.CreatedAt
 			}
 			out = append(out, WorktreeDraft{
-				IntentID:       d.IntentID,
-				Goal:           d.Goal,
-				Status:         string(d.Status),
-				GitBranch:      d.GitBranch,
-				Thread:         d.Thread,
-				WorktreePath:   wtPath,
-				DraftPath:      filepath.Join(wtPath, ".ml-cache", "drafts", d.IntentID+".json"),
-				TurnCount:      len(turns),
-				LastModifiedAt: updated,
+				IntentID:           d.IntentID,
+				Goal:               d.Goal,
+				Status:             string(d.Status),
+				GitBranch:          d.GitBranch,
+				Thread:             d.Thread,
+				WorktreePath:       wtPath,
+				DraftPath:          filepath.Join(wtPath, ".ml-cache", "drafts", d.IntentID+".json"),
+				TurnCount:          len(turns),
+				LastModifiedAt:     updated,
+				Stale:              staleSiblingDraft(updated, time.Now()),
+				PartialFingerprint: partial,
 			})
 		}
 	}
@@ -107,6 +120,28 @@ func (s *Service) collectSiblingDrafts(intentID string, skipIDs map[string]bool)
 		return out[i].IntentID < out[j].IntentID
 	})
 	return out
+}
+
+func staleSiblingDraft(updated string, now time.Time) bool {
+	parsed, err := time.Parse(time.RFC3339, updated)
+	return err == nil && now.Sub(parsed) > siblingDraftStaleAfter
+}
+
+func siblingWorktreeFiles(git *gitops.Git, head, base string, recorded []string) []string {
+	files := append([]string(nil), recorded...)
+	if git == nil {
+		return compactSortedStrings(files)
+	}
+	if report, err := git.WorktreeStatus(); err == nil && report != nil {
+		files = append(files, report.DirtyFiles...)
+		files = append(files, report.Untracked...)
+	}
+	if base != "" && head != "" && base != head {
+		if committed, err := git.DiffFilesAgainst(base, head); err == nil {
+			files = append(files, committed...)
+		}
+	}
+	return compactSortedStrings(files)
 }
 
 func canonicalWorktreePath(path string) string {

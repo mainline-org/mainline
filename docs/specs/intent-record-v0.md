@@ -79,6 +79,19 @@ drafting → sealed_local → proposed → merged
 | `superseded` | Replaced by a newer intent. The newer intent's `supersedes` field references this one. |
 | `reverted` | The merged code was reverted on main. |
 
+`drafting` remains unpublished and cannot be discovered by another clone.
+Within one clone, however, `status` and `preflight` may scan linked worktrees
+and surface bounded sibling-draft summaries plus partial fingerprints. A
+verified sibling file overlap may block local editing; a goal-only match stays
+advisory. Only the drafting intent for the sibling's checked-out branch is an
+active local claim; completed lifecycle files are history, and claims with no
+turn update for 72 hours are downgraded to warnings. Repositories that only
+coordinate linked worktrees can use the clone-local Git config
+`mainline.preflightCoordinationScope=local_worktrees` or set
+`[preflight] coordination_scope = "local_worktrees"`: shared proposals remain
+visible but no longer block editing. The default `team` scope preserves the
+distributed proposal gate.
+
 **Transitions are one-way.** A merged intent cannot go back to proposed.
 An abandoned intent is not re-opened; new work starts a new intent.
 

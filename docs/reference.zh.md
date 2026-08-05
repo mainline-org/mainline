@@ -155,6 +155,14 @@ mainline seal --prepare --json > .ml-cache/seal.json
 mainline seal --submit --json < .ml-cache/seal.json
 ```
 
+如果仓库只在一台机器的多个 linked worktree 之间并行，可在
+该 clone 运行 `git config mainline.preflightCoordinationScope local_worktrees`；
+该设置由所有 worktree 共享但不会提交。仓库也可以在 `.mainline/config.toml`
+设置 `[preflight] coordination_scope = "local_worktrees"` 作为团队策略。
+sibling draft 的明确文件重叠仍会阻止继续，而 shared proposed intent 重叠只保留为
+可见警告；preflight 也不再自动网络同步。默认的 `team` 模式仍会阻止 proposed
+重叠，适合跨机器协作。
+
 `preflight` 是 readiness 和 stop-line gate，会告诉 agent 是继续、先检查 overlap，
 还是在生命周期推进前停下。只读诊断或只给方案的工作可以停在只读检查后；在任务
 进入非平凡编辑或其他需要持久记录的工程工作前，不应该跑 `start`。之后 `start`

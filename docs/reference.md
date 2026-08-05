@@ -175,6 +175,15 @@ mainline seal --prepare --json > .ml-cache/seal.json
 mainline seal --submit --json < .ml-cache/seal.json
 ```
 
+For repositories whose concurrency boundary is one machine with linked
+worktrees, run `git config mainline.preflightCoordinationScope local_worktrees`
+for a clone-local setting shared by all its worktrees. Repositories may instead
+set `[preflight] coordination_scope = "local_worktrees"` in
+`.mainline/config.toml` as team policy. Sibling draft file overlaps remain blocking, while
+shared proposed-intent overlaps remain visible warnings. The default `team`
+scope keeps proposed overlaps blocking for distributed collaboration. Local
+worktree mode also skips preflight's automatic network sync.
+
 `preflight` is the readiness and stop-line gate. It tells the agent whether to
 continue, inspect overlaps, or stop before lifecycle advancement. Read-only
 diagnosis or proposal-only work can stop after read-only inspection; it should

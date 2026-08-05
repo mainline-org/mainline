@@ -1,6 +1,33 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mainline-org/mainline/internal/domain"
+)
+
+func TestAutoSyncEnabledHonorsTeamConfig(t *testing.T) {
+	cfg := domain.DefaultTeamConfig()
+	if !autoSyncEnabled(&cfg) {
+		t.Fatal("default config should enable automatic sync")
+	}
+	cfg.Sync.AutoSync = false
+	if autoSyncEnabled(&cfg) {
+		t.Fatal("auto_sync=false should disable automatic sync")
+	}
+}
+
+func TestLocalWorktreePreflightSkipsAutomaticNetworkSync(t *testing.T) {
+	if !skipAutoSyncForCoordinationScope("preflight", "local_worktrees") {
+		t.Fatal("local-worktree preflight should use local evidence without network sync")
+	}
+	if skipAutoSyncForCoordinationScope("check", "local_worktrees") {
+		t.Fatal("delivery-time check still needs the shared view")
+	}
+	if skipAutoSyncForCoordinationScope("preflight", "team") {
+		t.Fatal("team preflight should preserve automatic sync")
+	}
+}
 
 func TestSignalCommandsUsePluralQueues(t *testing.T) {
 	if cmd, _, err := rootCmd.Find([]string{"risk"}); err == nil && cmd.Name() == "risk" {

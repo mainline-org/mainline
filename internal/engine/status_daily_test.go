@@ -124,6 +124,39 @@ func TestStatus_SurfacesSiblingWorktreeDrafts(t *testing.T) {
 	}
 }
 
+func TestStatus_IgnoresCompletedSiblingDraftLifecycle(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	linked := filepath.Join(t.TempDir(), "linked-status-proposed")
+	gitCmd(t, dir, "worktree", "add", "-b", "feature/status-proposed", linked)
+	linkedSvc := NewServiceFromRoot(linked)
+	start, err := linkedSvc.Start("completed sibling lifecycle", "")
+	if err != nil {
+		t.Fatalf("start linked draft: %v", err)
+	}
+	draft, err := linkedSvc.Store.ReadDraft(start.IntentID)
+	if err != nil {
+		t.Fatalf("read linked draft: %v", err)
+	}
+	draft.Status = domain.StatusProposed
+	if err := linkedSvc.Store.WriteDraft(draft); err != nil {
+		t.Fatalf("write linked draft: %v", err)
+	}
+
+	res, err := svc.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if len(res.SiblingWorktreeDrafts) != 0 {
+		t.Fatalf("proposed draft is delivery history, not active local work: %+v", res.SiblingWorktreeDrafts)
+	}
+}
+
 func TestStatus_RecentSealedListsLatestMerged(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()
