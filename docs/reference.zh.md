@@ -163,6 +163,10 @@ sibling draft 的明确文件重叠仍会阻止继续，而 shared proposed inte
 可见警告；preflight 也不再自动网络同步。默认的 `team` 模式仍会阻止 proposed
 重叠，适合跨机器协作。
 
+为限制 Agent 上下文大小，每条 preflight overlap 最多展开 8 个
+`matched_files`；`matched_file_count` 保留完整唯一文件数，
+`omitted_matched_files` 表示未展开数量，排序与阻断仍使用完整 overlap。
+
 `preflight` 是 readiness 和 stop-line gate，会告诉 agent 是继续、先检查 overlap，
 还是在生命周期推进前停下。只读诊断或只给方案的工作可以停在只读检查后；在任务
 进入非平凡编辑或其他需要持久记录的工程工作前，不应该跑 `start`。之后 `start`

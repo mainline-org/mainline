@@ -184,6 +184,11 @@ shared proposed-intent overlaps remain visible warnings. The default `team`
 scope keeps proposed overlaps blocking for distributed collaboration. Local
 worktree mode also skips preflight's automatic network sync.
 
+To keep agent context bounded, each preflight overlap returns at most eight
+`matched_files`. `matched_file_count` preserves the full unique path count and
+`omitted_matched_files` reports how many paths were not expanded; ranking and
+blocking still use the complete overlap.
+
 `preflight` is the readiness and stop-line gate. It tells the agent whether to
 continue, inspect overlaps, or stop before lifecycle advancement. Read-only
 diagnosis or proposal-only work can stop after read-only inspection; it should

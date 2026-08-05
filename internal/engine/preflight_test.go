@@ -120,6 +120,45 @@ func TestPreflightLocalWorktreeScopeKeepsProposalsVisibleWithoutBlocking(t *test
 	}
 }
 
+func TestPreflightBoundsMatchedFileEvidenceWithoutLosingCounts(t *testing.T) {
+	files := []string{
+		"01.go", "02.go", "03.go", "04.go", "05.go",
+		"06.go", "07.go", "08.go", "09.go", "10.go",
+	}
+	res := buildPreflightResult(preflightInput{
+		status: &StatusResult{
+			Initialized:        true,
+			IdentityConfigured: true,
+			Branch:             "feature/current",
+			LocalHead:          "head-current",
+		},
+		currentFiles:      files,
+		coordinationScope: "local_worktrees",
+		proposed: []domain.IntentView{{
+			IntentID:  "int_large_overlap",
+			Status:    domain.StatusProposed,
+			GitBranch: "feature/other",
+			Fingerprint: &domain.SemanticFingerprint{
+				FilesTouched: files,
+			},
+		}},
+	})
+
+	if len(res.Overlaps) != 1 {
+		t.Fatalf("expected one overlap, got %+v", res.Overlaps)
+	}
+	overlap := res.Overlaps[0]
+	if len(overlap.MatchedFiles) != preflightMatchedFileLimit {
+		t.Fatalf("matched file evidence should be bounded: %+v", overlap)
+	}
+	if overlap.MatchedFileCount != len(files) || overlap.OmittedMatchedFiles != len(files)-preflightMatchedFileLimit {
+		t.Fatalf("full matched file counts should survive compaction: %+v", overlap)
+	}
+	if overlap.Score != len(files) {
+		t.Fatalf("ranking score should use the full overlap: %+v", overlap)
+	}
+}
+
 func TestPreflightCoordinationScopeCloneOverrideWinsTeamPolicy(t *testing.T) {
 	dir, cleanup := testRepo(t)
 	defer cleanup()

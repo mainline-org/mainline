@@ -31,7 +31,10 @@ const (
 	PreflightOverlapGoalText = "goal_text_overlap"
 )
 
-const preflightOverlapLimit = 8
+const (
+	preflightOverlapLimit     = 8
+	preflightMatchedFileLimit = 8
+)
 
 // preflightGoalOverlapMinKeywords is the minimum effective-keyword
 // count required before goal-text overlap is even attempted. One- or
@@ -92,6 +95,11 @@ type PreflightOverlap struct {
 	Title        string   `json:"title,omitempty"`
 	Status       string   `json:"status"`
 	MatchedFiles []string `json:"matched_files,omitempty"`
+	// MatchedFileCount preserves the full evidence size when MatchedFiles is
+	// bounded for compact agent context. OmittedMatchedFiles is zero when no
+	// paths were omitted.
+	MatchedFileCount    int `json:"matched_file_count,omitempty"`
+	OmittedMatchedFiles int `json:"omitted_matched_files,omitempty"`
 	// MatchedKeywords carries the goal-text words that landed on a
 	// goal_text_overlap candidate. Empty for file-overlap kinds —
 	// matched_files carries the evidence there.
@@ -482,6 +490,11 @@ func compactPreflightOverlaps(in []PreflightOverlap) []PreflightOverlap {
 			continue
 		}
 		seen[key] = true
+		o.MatchedFileCount = len(o.MatchedFiles)
+		if len(o.MatchedFiles) > preflightMatchedFileLimit {
+			o.OmittedMatchedFiles = len(o.MatchedFiles) - preflightMatchedFileLimit
+			o.MatchedFiles = append([]string(nil), o.MatchedFiles[:preflightMatchedFileLimit]...)
+		}
 		out = append(out, o)
 	}
 	return out
