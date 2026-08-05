@@ -131,8 +131,9 @@ func TestPropertyPreflightOutputCompactAndStable(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		current := []string{"shared.go"}
 		var proposed []domain.IntentView
+		uniqueCount := preflightOverlapLimit + 3
 		for i := 0; i < preflightOverlapLimit*3; i++ {
-			id := fmt.Sprintf("int_%02d", i%7) // deliberate duplicates
+			id := fmt.Sprintf("int_%02d", i%uniqueCount) // deliberate duplicates
 			proposed = append(proposed, preflightIntent(id, domain.StatusProposed, current, ""))
 		}
 
@@ -143,6 +144,12 @@ func TestPropertyPreflightOutputCompactAndStable(t *testing.T) {
 		})
 		if len(res.Overlaps) > preflightOverlapLimit {
 			rt.Fatalf("overlap limit exceeded: %d > %d", len(res.Overlaps), preflightOverlapLimit)
+		}
+		if res.Facts.OverlapCount != uniqueCount {
+			rt.Fatalf("overlap count should describe unique overlaps: got %d want %d", res.Facts.OverlapCount, uniqueCount)
+		}
+		if res.Facts.OmittedOverlaps != uniqueCount-preflightOverlapLimit {
+			rt.Fatalf("omitted overlap count mismatch: got %d want %d", res.Facts.OmittedOverlaps, uniqueCount-preflightOverlapLimit)
 		}
 		seen := map[string]bool{}
 		var keys []string

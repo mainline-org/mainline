@@ -347,6 +347,14 @@ Overlap convergence tree:
 
 ## Worktree And Intent Ownership
 
+When coordination scope is `local_worktrees`, do not create or emulate a
+separate claim/lease registry. The drafting intent for a sibling's checked-out
+branch is the active local claim. Preflight surfaces its worktree path, goal,
+and observed files so agents can reuse existing work, narrow their scope, or
+order dependent work before editing. Only a live explicit file overlap blocks;
+goal-only matches, proposed/sealed history, and stale drafts remain warnings.
+Seal, abandon, or removal of the checked-out worktree naturally ends the claim.
+
 Reuse the current worktree when it is clean or clearly owned by the current
 task.
 

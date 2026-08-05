@@ -31,7 +31,7 @@ const (
 	PreflightOverlapGoalText = "goal_text_overlap"
 )
 
-const preflightOverlapLimit = 4
+const preflightOverlapLimit = 8
 
 // preflightGoalOverlapMinKeywords is the minimum effective-keyword
 // count required before goal-text overlap is even attempted. One- or
@@ -337,8 +337,11 @@ func buildPreflightResult(in preflightInput) *PreflightResult {
 			"Worktree has dirty/untracked files but no committed diff; seal evidence and fingerprint will be weak until committed.", files)
 	}
 
-	res.Facts.OverlapCount = len(res.Overlaps)
 	res.Overlaps = compactPreflightOverlaps(res.Overlaps)
+	res.Facts.OverlapCount = len(res.Overlaps)
+	if len(res.Overlaps) > preflightOverlapLimit {
+		res.Overlaps = res.Overlaps[:preflightOverlapLimit]
+	}
 	res.Facts.OmittedOverlaps = res.Facts.OverlapCount - len(res.Overlaps)
 	res.Level = aggregatePreflightLevel(res.Findings, res.Overlaps)
 	res.OKToContinue = res.Level != PreflightLevelBlock
@@ -480,9 +483,6 @@ func compactPreflightOverlaps(in []PreflightOverlap) []PreflightOverlap {
 		}
 		seen[key] = true
 		out = append(out, o)
-		if len(out) >= preflightOverlapLimit {
-			break
-		}
 	}
 	return out
 }
