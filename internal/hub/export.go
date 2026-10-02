@@ -72,7 +72,9 @@ func Export(store *storage.Store, opts ExportOptions) (*ExportResult, error) {
 	model.Source.IncludesCurrentWorktreeDrafts = true
 	model.Source.IncludesSiblingWorktreeDraftList = model.Source.IncludesSiblingWorktreeDraftList || len(opts.SiblingDrafts) > 0
 	model.SiblingDrafts = append([]HubWorktreeDraft(nil), opts.SiblingDrafts...)
-	attachExternalContributions(model, opts.ExternalContributions)
+	if err := attachExternalContributions(model, opts.ExternalContributions); err != nil {
+		return nil, err
+	}
 	enrichIntentsWithTurns(store, model)
 	model.Dashboard = buildDashboard(model)
 	if len(opts.CoverageRows) > 0 {
@@ -114,9 +116,9 @@ func hubSourceWithDefaults(store *storage.Store, source HubSource) HubSource {
 	return source
 }
 
-func attachExternalContributions(m *HubModel, contributions []HubExternalContribution) {
+func attachExternalContributions(m *HubModel, contributions []HubExternalContribution) error {
 	if m == nil || len(contributions) == 0 {
-		return
+		return nil
 	}
 	byCommit := map[string][]string{}
 	for _, in := range m.Intents {
@@ -126,12 +128,19 @@ func attachExternalContributions(m *HubModel, contributions []HubExternalContrib
 		byCommit[in.MergedMainCommit] = append(byCommit[in.MergedMainCommit], in.ID)
 	}
 	out := make([]HubExternalContribution, 0, len(contributions))
+	explicitIDs := make(map[int]bool, len(contributions))
 	for _, in := range contributions {
+		if strings.TrimSpace(in.ID) != "" {
+			explicitIDs[len(out)] = true
+		}
 		c := normalizeExternalContribution(in)
 		if c.MergedCommit != "" {
 			c.AssociatedIntentIDs = mergeStringList(c.AssociatedIntentIDs, byCommit[c.MergedCommit])
 		}
 		out = append(out, c)
+	}
+	if err := ensureExternalContributionIDs(out, explicitIDs); err != nil {
+		return err
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].MergedAt != out[j].MergedAt {
@@ -143,6 +152,76 @@ func attachExternalContributions(m *HubModel, contributions []HubExternalContrib
 		return out[i].ID < out[j].ID
 	})
 	m.ExternalContributions = out
+	return nil
+}
+
+// externalContributionIdentity contains the stable upstream metadata used to
+// distinguish records. Display text alone is deliberately insufficient: two
+// different contributions may have the same title.
+type externalContributionIdentity struct {
+	Source       string `json:"source"`
+	Repository   string `json:"repository,omitempty"`
+	PRNumber     int    `json:"pr_number,omitempty"`
+	PRURL        string `json:"pr_url,omitempty"`
+	HeadRef      string `json:"head_ref,omitempty"`
+	BaseRef      string `json:"base_ref,omitempty"`
+	AuthorLogin  string `json:"author_login"`
+	MergedCommit string `json:"merged_commit,omitempty"`
+	MergedAt     string `json:"merged_at,omitempty"`
+	Title        string `json:"title"`
+	Description  string `json:"description,omitempty"`
+}
+
+func externalContributionIdentityHash(value string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func externalContributionFingerprint(c HubExternalContribution) string {
+	identity := externalContributionIdentity{
+		Source: c.Source, Repository: c.Repository, PRNumber: c.PRNumber,
+		PRURL: c.PRURL, HeadRef: c.HeadRef, BaseRef: c.BaseRef,
+		AuthorLogin: c.AuthorLogin, MergedCommit: c.MergedCommit,
+		MergedAt: c.MergedAt, Title: c.Title, Description: c.Description,
+	}
+	data, _ := json.Marshal(identity)
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:])
+}
+
+// ensureExternalContributionIDs validates that explicit and generated IDs are
+// unique. Generated IDs are identity-based from the start, so adding another
+// record later cannot rename an existing record.
+func ensureExternalContributionIDs(contributions []HubExternalContribution, explicitIDs map[int]bool) error {
+	byID := map[string]struct {
+		fingerprint string
+		explicit    bool
+	}{}
+	for i := range contributions {
+		c := &contributions[i]
+		fingerprint := externalContributionFingerprint(*c)
+		if c.ID == "" {
+			c.ID = externalContributionID(*c)
+		}
+		if previous, ok := byID[c.ID]; ok {
+			if previous.fingerprint == fingerprint {
+				return fmt.Errorf("hub: duplicate external contribution id %q for identical records", c.ID)
+			}
+			if previous.explicit || explicitIDs[i] {
+				return fmt.Errorf("hub: duplicate external contribution id %q", c.ID)
+			}
+			return fmt.Errorf("hub: external contribution ID collision after normalization: %q", c.ID)
+		}
+		byID[c.ID] = struct {
+			fingerprint string
+			explicit    bool
+		}{fingerprint: fingerprint, explicit: explicitIDs[i]}
+	}
+	return nil
+}
+
+func externalStableIDWithFingerprint(c HubExternalContribution, fingerprint string) string {
+	return "external-" + sanitizeExternalContributionID(c.Title) + "--" + fingerprint[:12]
 }
 
 func normalizeExternalContribution(in HubExternalContribution) HubExternalContribution {
@@ -183,10 +262,13 @@ func externalContributionID(c HubExternalContribution) string {
 	if c.Source == "github" && c.Repository != "" && c.PRNumber > 0 {
 		return "github-pr-" + sanitizeExternalContributionID(c.Repository) + "-" + fmt.Sprintf("%d", c.PRNumber)
 	}
-	if c.MergedCommit != "" {
-		return "external-" + shortExternalCommit(c.MergedCommit)
+	if c.PRURL != "" {
+		return "external-pr--" + externalContributionIdentityHash(c.PRURL)[:12]
 	}
-	return "external-" + sanitizeExternalContributionID(c.Title)
+	if c.MergedCommit != "" {
+		return "external-commit--" + sanitizeExternalContributionID(c.MergedCommit)
+	}
+	return externalStableIDWithFingerprint(c, externalContributionFingerprint(c))
 }
 
 func sanitizeExternalContributionID(in string) string {
@@ -212,13 +294,6 @@ func sanitizeExternalContributionID(in string) string {
 		return "contribution"
 	}
 	return out
-}
-
-func shortExternalCommit(commit string) string {
-	if len(commit) > 12 {
-		return commit[:12]
-	}
-	return commit
 }
 
 func mergeStringList(existing, additions []string) []string {

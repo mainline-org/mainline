@@ -18,6 +18,93 @@ import (
 // as its API DTO. The render layer is throwaway; we cover it with a
 // single smoke test that confirms every page type ends up on disk.
 
+func TestAttachExternalContributions_SameTitlesGetStableDistinctIDs(t *testing.T) {
+	m := buildHubModel(makeView())
+	input := []HubExternalContribution{
+		{Title: "Fix login bug", AuthorLogin: "alice", Description: "first contribution"},
+		{Title: "Fix login bug", AuthorLogin: "bob", Description: "second contribution"},
+	}
+	if err := attachExternalContributions(m, input); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.ExternalContributions) != 2 {
+		t.Fatalf("expected both contributions, got %d", len(m.ExternalContributions))
+	}
+	if m.ExternalContributions[0].ID == m.ExternalContributions[1].ID {
+		t.Fatalf("same-title contributions must have distinct IDs: %+v", m.ExternalContributions)
+	}
+	firstIDs := []string{m.ExternalContributions[0].ID, m.ExternalContributions[1].ID}
+	m2 := buildHubModel(makeView())
+	if err := attachExternalContributions(m2, []HubExternalContribution{input[1], input[0]}); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, c := range m2.ExternalContributions {
+		got[c.ID] = true
+	}
+	for _, id := range firstIDs {
+		if !got[id] {
+			t.Fatalf("ID changed with input order: %q vs %+v", id, m2.ExternalContributions)
+		}
+	}
+}
+
+func TestAttachExternalContributions_StableIDsUseIdentityFields(t *testing.T) {
+	m := buildHubModel(makeView())
+	input := []HubExternalContribution{
+		{Title: "Same title", PRURL: "https://github.com/acme/app/pull/1", Description: "before"},
+		{Title: "Same title", MergedCommit: "abcdef1234567890", Description: "first"},
+		{Title: "Same title", MergedCommit: "abcdef123456ffff", Description: "second"},
+	}
+	if err := attachExternalContributions(m, input); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.ExternalContributions) != 3 {
+		t.Fatalf("expected three contributions, got %d", len(m.ExternalContributions))
+	}
+	seen := map[string]bool{}
+	for _, c := range m.ExternalContributions {
+		if seen[c.ID] {
+			t.Fatalf("duplicate generated ID %q", c.ID)
+		}
+		seen[c.ID] = true
+	}
+	m2 := buildHubModel(makeView())
+	input[0].Description = "after"
+	if err := attachExternalContributions(m2, []HubExternalContribution{input[0]}); err != nil {
+		t.Fatal(err)
+	}
+	var originalPRID string
+	for _, c := range m.ExternalContributions {
+		if c.PRURL != "" {
+			originalPRID = c.ID
+		}
+	}
+	if originalPRID != m2.ExternalContributions[0].ID {
+		t.Fatalf("PR URL identity should not depend on mutable description: %q vs %q", originalPRID, m2.ExternalContributions[0].ID)
+	}
+}
+
+func TestAttachExternalContributions_ExplicitIDCollisionFails(t *testing.T) {
+	m := buildHubModel(makeView())
+	err := attachExternalContributions(m, []HubExternalContribution{
+		{ID: "same", Title: "one", AuthorLogin: "alice"},
+		{ID: "same", Title: "two", AuthorLogin: "bob"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate external contribution id") {
+		t.Fatalf("expected explicit duplicate ID error, got %v", err)
+	}
+}
+
+func TestAttachExternalContributions_IdenticalFallbackRecordsFail(t *testing.T) {
+	m := buildHubModel(makeView())
+	input := HubExternalContribution{Title: "Fix login bug", AuthorLogin: "alice"}
+	err := attachExternalContributions(m, []HubExternalContribution{input, input})
+	if err == nil || !strings.Contains(err.Error(), "identical records") {
+		t.Fatalf("expected identical-record error, got %v", err)
+	}
+}
+
 func makeView(intents ...domain.IntentView) *domain.MainlineView {
 	return &domain.MainlineView{
 		SchemaVersion: 1,
