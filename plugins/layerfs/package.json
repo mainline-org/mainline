@@ -1,0 +1,23 @@
+{
+  "name": "@mainline-org/layerfs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run Mainline's Git-native agent memory inside LayerFS Workspaces",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "mainline-layerfs": "bin/mainline-layerfs" },
+  "scripts": {
+    "preinstall": "node scripts/verify-layerfs.mjs",
+    "postinstall": "node scripts/verify-packages.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:smoke": "node scripts/smoke.mjs",
+    "install-skills": "node scripts/install-skills.mjs"
+  },
+  "dependencies": {
+    "@layerfs/agent": "file:../../../layerfs/api/agent/sdk",
+    "@layerfs/cli": "file:../../../layerfs/api/agent/cli",
+    "@layerfs/runtime": "file:../../../layerfs/api/runtime"
+  },
+  "overrides": { "@layerfs/agent": "$@layerfs/agent" }
+}

@@ -209,6 +209,10 @@ commands: [docs/reference.md](./docs/reference.md).
 
 ## Team Collaboration
 
+For agents working in LayerFS Workspaces, see
+[Mainline for LayerFS](plugins/layerfs/README.md) for the CLI adapter, host worker
+launcher and agent skills. Its default tests run without Docker.
+
 Mainline gets its collaboration model from Git.
 
 Teammates, branches, forks, CI, and other agents can all share the same intent

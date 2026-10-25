@@ -1,0 +1,40 @@
+name: LayerFS plugin
+
+on:
+  pull_request:
+    paths: ['plugins/layerfs/**', 'layerfs.json', 'internal/**', 'go.mod', 'go.sum', 'skills/mainline/**', '.github/workflows/layerfs-plugin.yml']
+  push:
+    branches: [main, feat/layerfs-plugin]
+    paths: ['plugins/layerfs/**', 'layerfs.json', 'internal/**', 'go.mod', 'go.sum', 'skills/mainline/**', '.github/workflows/layerfs-plugin.yml']
+
+jobs:
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mainline
+      - name: Read LayerFS commit
+        id: layerfs
+        run: echo "commit=$(node -p 'require("./mainline/layerfs.json").commit')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: Ephemeral-AI-Lab/layerfs
+          ref: ${{ steps.layerfs.outputs.commit }}
+          path: layerfs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: mainline/go.sum
+      - name: Install pinned local packages
+        working-directory: mainline/plugins/layerfs
+        run: npm ci --offline
+      - name: Test without Docker
+        working-directory: mainline/plugins/layerfs
+        run: npm test
+      - name: Verify LayerFS checkout remains unchanged
+        working-directory: layerfs
+        run: test -z "$(git status --porcelain)"
